@@ -492,10 +492,17 @@ def get_ssh_stats():
         ssh_stats = {
             "status": "Stopped",
             "connections": 0,
-            "sessions": []
+            "port": 22,
+            "sessions": [],
+            "auth_methods": {"password": 0, "publickey": 0, "other": 0},
+            "failed_logins": 0,
+            "hostkey_fingerprint": "-",
+            "oom_risk_processes": [],
+            "ssh_process_memory": 0,
+            "history_size": 0
         }
         try:
-            # Check SSH port (22) status and connections
+            # 1. Check SSH port (22) status and connections
             for conn in psutil.net_connections(kind='tcp'):
                 if conn.laddr.port == 22:
                     if conn.status == psutil.CONN_LISTEN:
@@ -534,6 +541,85 @@ def get_ssh_stats():
                             "ip": remote_ip,
                             "started": started
                         })
+
+            # 2. Get SSH process memory usage
+            try:
+                for proc in psutil.process_iter(['pid', 'name', 'memory_percent']):
+                    if proc.info['name'] in ['sshd', 'ssh']:
+                        ssh_stats["ssh_process_memory"] = max(
+                            ssh_stats["ssh_process_memory"],
+                            proc.info['memory_percent'] or 0
+                        )
+            except:
+                pass
+
+            # 3. Check for OOM risk processes (high memory consumers)
+            try:
+                procs = psutil.process_iter(['pid', 'name', 'memory_percent'])
+                oom_risk = []
+                for proc in procs:
+                    try:
+                        if proc.info['memory_percent'] and proc.info['memory_percent'] > 5:
+                            oom_risk.append({
+                                "pid": proc.info['pid'],
+                                "name": proc.info['name'],
+                                "memory": round(proc.info['memory_percent'], 1)
+                            })
+                    except:
+                        pass
+                ssh_stats["oom_risk_processes"] = sorted(oom_risk, key=lambda x: x['memory'], reverse=True)[:5]
+            except:
+                pass
+
+            # 4. Get host key fingerprint (低开销读文件)
+            try:
+                hostkey_path = "/etc/ssh/ssh_host_rsa_key.pub"
+                if os.path.exists(hostkey_path):
+                    with open(hostkey_path, 'r') as f:
+                        content = f.read().strip()
+                        if content:
+                            parts = content.split()
+                            if len(parts) >= 2:
+                                # 提取密钥的前24个字符作为指纹示意
+                                ssh_stats["hostkey_fingerprint"] = parts[1][:24] + "..."
+            except:
+                pass
+
+            # 5. Get SSH auth methods and failed logins (采样方式，低开销)
+            try:
+                # 采样最近 100 行 auth.log（而不是全文扫描）
+                auth_log = "/var/log/auth.log"
+                if not os.path.exists(auth_log):
+                    auth_log = "/var/log/secure"
+                
+                if os.path.exists(auth_log):
+                    with open(auth_log, 'r') as f:
+                        lines = f.readlines()
+                        # 只检查最后100行
+                        sample_lines = lines[-100:] if len(lines) > 100 else lines
+                        
+                        for line in sample_lines:
+                            if 'sshd' in line and 'Failed password' in line:
+                                ssh_stats["failed_logins"] += 1
+                            elif 'sshd' in line and 'publickey' in line:
+                                if 'Accepted' in line:
+                                    ssh_stats["auth_methods"]["publickey"] += 1
+                            elif 'sshd' in line and 'password' in line:
+                                if 'Accepted' in line:
+                                    ssh_stats["auth_methods"]["password"] += 1
+            except:
+                pass
+
+            # 6. Get SSH session history size (采样，低开销)
+            try:
+                ssh_history = os.path.expanduser("~/.ssh/")
+                if os.path.exists(ssh_history):
+                    known_hosts = os.path.join(ssh_history, "known_hosts")
+                    if os.path.exists(known_hosts):
+                        ssh_stats["history_size"] = len(open(known_hosts).readlines())
+            except:
+                pass
+
             _ssh_stats_cache = ssh_stats
         except:
             pass
@@ -857,11 +943,6 @@ def collect_stats():
     except:
         pass
 
-    # SSH Stats
-    ssh_stats = get_ssh_stats()
-    
-    # Swap Stats
-    
     # Swap Stats
     try:
         swap = psutil.swap_memory()
@@ -906,7 +987,7 @@ def collect_stats():
         "disk_io": disk_io_stats,
         "inodes": inode_stats,
         "network": network_stats,
-        "ssh": ssh_stats,
+        "ssh_stats": get_ssh_stats(),
         "boot_time": boot_time,
         "processes": get_top_processes()
     }

@@ -595,6 +595,10 @@
                 <i class="fas fa-hdd" title="Storage"></i>
                 <span>Storage</span>
             </div>
+            <div class="nav-item" onclick="switchPage('ssh')">
+                <i class="fas fa-lock" title="SSH"></i>
+                <span>SSH</span>
+            </div>
             <div class="nav-item" onclick="switchPage('processes')">
                 <i class="fas fa-tasks" title="Processes"></i>
                 <span>Processes</span>
@@ -705,15 +709,15 @@
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <div>
                     <span style="color: var(--text-dim);">Service:</span>
-                    <span id="ssh-status" style="font-weight: bold; margin-left: 5px;">-</span>
+                    <span id="general-ssh-status" style="font-weight: bold; margin-left: 5px;">-</span>
                 </div>
                 <div>
                     <span style="color: var(--text-dim);">Connections:</span>
-                    <span id="ssh-connections" style="font-weight: bold; margin-left: 5px; color: var(--accent-net);">0</span>
+                    <span id="general-ssh-connections" style="font-weight: bold; margin-left: 5px; color: var(--accent-net);">0</span>
                 </div>
             </div>
             <div style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 5px;">Active Sessions</div>
-            <div id="ssh-sessions" style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 5px; height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 5px;">
+            <div id="general-ssh-sessions" style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 5px; height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 5px;">
                 <!-- Sessions injected here -->
             </div>
         </div>
@@ -995,25 +999,6 @@
                 </div>
             </div>
 
-            <!-- SSH Manager (Network Page) -->
-            <div class="card">
-                <div class="card-title">SSH Server</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <div>
-                        <span style="color: var(--text-dim);">Status:</span>
-                        <span id="net-ssh-status" style="font-weight: bold; margin-left: 5px;">-</span>
-                    </div>
-                    <div>
-                        <span style="color: var(--text-dim);">Active:</span>
-                        <span id="net-ssh-connections" style="font-weight: bold; margin-left: 5px; color: var(--accent-net);">0</span>
-                    </div>
-                </div>
-                <div style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 5px;">Sessions</div>
-                <div id="net-ssh-sessions" style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 5px; height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 5px;">
-                    <!-- Sessions injected here -->
-                </div>
-            </div>
-
             <!-- Listening Ports -->
             <div class="card">
                 <div class="card-title">Listening Ports</div>
@@ -1092,6 +1077,72 @@
             </div>
         </div>
     </div>
+
+    <!-- SSH Page -->
+    <div id="page-ssh" class="page">
+        <div class="grid-container">
+            <!-- SSH Status Cards -->
+            <div class="card" style="grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div style="background: rgba(76, 175, 80, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent-memory);">
+                    <div style="font-size: 0.8rem; color: var(--text-dim);">SSH Port Status</div>
+                    <div id="ssh-status" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-memory);">-</div>
+                </div>
+                <div style="background: rgba(33, 150, 243, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent-network);">
+                    <div style="font-size: 0.8rem; color: var(--text-dim);">Active Connections</div>
+                    <div id="ssh-connections" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-network);">0</div>
+                </div>
+                <div style="background: rgba(255, 152, 0, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent-disk);">
+                    <div style="font-size: 0.8rem; color: var(--text-dim);">SSH Process Memory</div>
+                    <div id="ssh-memory" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-disk);">-</div>
+                </div>
+                <div style="background: rgba(244, 67, 54, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #FF6B6B;">
+                    <div style="font-size: 0.8rem; color: var(--text-dim);">Failed Logins (Last 100 lines)</div>
+                    <div id="ssh-failed-logins" style="font-size: 1.5rem; font-weight: bold; color: #FF6B6B;">0</div>
+                </div>
+            </div>
+
+            <!-- SSH Active Sessions -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Active SSH Sessions</div>
+                <div id="ssh-sessions" style="display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto;">
+                    <div style="color: var(--text-dim); text-align: center; padding: 20px;">No active sessions</div>
+                </div>
+            </div>
+
+            <!-- SSH Authentication Methods -->
+            <div class="card">
+                <div class="card-title">Auth Methods</div>
+                <div id="ssh-auth-methods" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+
+            <!-- SSH Host Key Fingerprint -->
+            <div class="card">
+                <div class="card-title">Host Key Fingerprint</div>
+                <div style="font-size: 0.9rem; word-break: break-all; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px; font-family: monospace;">
+                    <div id="ssh-hostkey" style="color: var(--text-main);">-</div>
+                </div>
+            </div>
+
+            <!-- SSH Session History -->
+            <div class="card">
+                <div class="card-title">Known Hosts</div>
+                <div style="font-size: 0.9rem; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                    <div id="ssh-history" style="color: var(--text-main);">-</div>
+                </div>
+            </div>
+
+            <!-- OOM Risk Processes -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">High Memory Processes (OOM Risk Monitoring)</div>
+                <div id="ssh-oom-processes" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="color: var(--text-dim); text-align: center; padding: 20px;">All processes within safe memory range</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="page-processes" class="page">
         <div class="grid-container">
             <!-- 统计面板 -->
@@ -1220,6 +1271,7 @@
                 'memory': 'Memory Analysis',
                 'network': 'Network Traffic',
                 'storage': 'Storage Manager',
+                'ssh': 'SSH Monitor',
                 'processes': 'Process Manager'
             };
             if (titles[pageId]) {
@@ -1618,24 +1670,38 @@
             const svg = document.getElementById('mem-pie-chart');
             if (!svg) return;
 
-            const total = memoryData.total.match(/\d+\.?\d*/)[0];
-            const used = memoryData.used.match(/\d+\.?\d*/)[0];
-            const cached = memoryData.cached.match(/\d+\.?\d*/)[0];
-            const buffers = memoryData.buffers.match(/\d+\.?\d*/)[0];
+            // Helper function to convert memory strings to bytes
+            function parseMemory(str) {
+                const match = str.match(/(\d+\.?\d*)\s*([GMK]iB)/);
+                if (!match) return 0;
+                
+                const value = parseFloat(match[1]);
+                const unit = match[2];
+                
+                const multipliers = {
+                    'GiB': 1024 * 1024 * 1024,
+                    'MiB': 1024 * 1024,
+                    'KiB': 1024,
+                };
+                
+                return value * (multipliers[unit] || 1);
+            }
 
-            const usedNum = parseFloat(used);
-            const cachedNum = parseFloat(cached);
-            const buffersNum = parseFloat(buffers);
-            const totalNum = parseFloat(total);
-            const free = totalNum - usedNum - cachedNum - buffersNum;
+            const totalBytes = parseMemory(memoryData.total);
+            const usedBytes = parseMemory(memoryData.used);
+            const cachedBytes = parseMemory(memoryData.cached);
+            const buffersBytes = parseMemory(memoryData.buffers);
+            
+            const cacheBufferBytes = cachedBytes + buffersBytes;
+            const freeBytes = totalBytes - usedBytes - cacheBufferBytes;
 
             const segments = [
-                { label: 'Used', value: usedNum, color: '#ff4757' },
-                { label: 'Cached', value: cachedNum, color: '#2ed573' },
-                { label: 'Buffers', value: buffersNum, color: '#ffa502' },
-                { label: 'Free', value: Math.max(0, free), color: '#888' }
+                { label: 'Used', value: usedBytes, color: '#ff4757' },
+                { label: 'Buffer/Cache', value: cacheBufferBytes, color: '#2ed573' },
+                { label: 'Free', value: Math.max(0, freeBytes), color: '#888' }
             ].filter(s => s.value > 0);
 
+            // Draw pie chart
             // Draw pie chart
             let currentAngle = -Math.PI / 2;
             const radius = 70;
@@ -1645,7 +1711,7 @@
             svg.innerHTML = '';
             
             segments.forEach(segment => {
-                const percentage = segment.value / totalNum;
+                const percentage = segment.value / totalBytes;
                 const sliceAngle = percentage * 2 * Math.PI;
                 
                 const x1 = centerX + radius * Math.cos(currentAngle);
@@ -1674,7 +1740,7 @@
                         <div style="width: 12px; height: 12px; background-color: ${s.color}; border-radius: 2px;"></div>
                         <div>
                             <div style="font-weight: bold;">${s.label}</div>
-                            <div style="color: var(--text-dim); font-size: 0.75rem;">${(s.value / totalNum * 100).toFixed(1)}%</div>
+                            <div style="color: var(--text-dim); font-size: 0.75rem;">${(s.value / totalBytes * 100).toFixed(1)}%</div>
                         </div>
                     </div>
                 `).join('');
@@ -2277,47 +2343,6 @@
                         }
                     }
 
-                    // SSH Stats (Network Page)
-                    if (data.ssh) {
-                        const statusEl = document.getElementById('net-ssh-status');
-                        statusEl.innerText = data.ssh.status;
-                        statusEl.style.color = data.ssh.status === 'Running' ? '#2ed573' : '#ff4757';
-                        document.getElementById('net-ssh-connections').innerText = data.ssh.connections;
-                        
-                        updateList('net-ssh-sessions', data.ssh.sessions,
-                            (session) => {
-                                const div = document.createElement('div');
-                                div.style.display = 'flex';
-                                div.style.justifyContent = 'space-between';
-                                div.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
-                                div.style.padding = '4px 0';
-                                div.innerHTML = `
-                                    <div>
-                                        <span class="ssh-user" style="color: var(--accent-cpu); font-weight: bold;"></span>
-                                        <span class="ssh-ip" style="color: var(--text-dim); font-size: 0.8em; margin-left: 5px;"></span>
-                                    </div>
-                                    <span class="ssh-time" style="color: var(--text-dim);"></span>
-                                `;
-                                return div;
-                            },
-                            (el, session) => {
-                                el.querySelector('.ssh-user').innerText = session.user;
-                                el.querySelector('.ssh-ip').innerText = `(${session.ip})`;
-                                if (session.started && session.started !== '-') {
-                                    const now = new Date();
-                                    const [hours, minutes, seconds] = session.started.split(':');
-                                    const utcDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, seconds));
-                                    el.querySelector('.ssh-time').innerText = utcDate.toLocaleTimeString();
-                                } else {
-                                    el.querySelector('.ssh-time').innerText = session.started;
-                                }
-                            }
-                        );
-                        if (data.ssh.sessions.length === 0) {
-                            document.getElementById('net-ssh-sessions').innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 10px;">No active sessions</div>';
-                        }
-                    }
-
                     // Listening Ports (Network Page)
                     if (data.network && data.network.listening_ports) {
                         const portsContainer = document.getElementById('listening-ports');
@@ -2377,15 +2402,15 @@
                 }
             }
 
-            // SSH
-            if (data.ssh) {
-                const statusEl = document.getElementById('ssh-status');
-                statusEl.innerText = data.ssh.status;
-                statusEl.style.color = data.ssh.status === 'Running' ? '#2ed573' : '#ff4757';
+            // SSH (General Page)
+            if (data.ssh_stats) {
+                const statusEl = document.getElementById('general-ssh-status');
+                statusEl.innerText = data.ssh_stats.status;
+                statusEl.style.color = data.ssh_stats.status === 'Running' ? '#2ed573' : '#ff4757';
                 
-                document.getElementById('ssh-connections').innerText = data.ssh.connections;
+                document.getElementById('general-ssh-connections').innerText = data.ssh_stats.connections;
 
-                updateList('ssh-sessions', data.ssh.sessions,
+                updateList('general-ssh-sessions', data.ssh_stats.sessions,
                     (session) => {
                         const div = document.createElement('div');
                         div.style.display = 'flex';
@@ -2397,7 +2422,7 @@
                                 <span class="ssh-user" style="color: var(--accent-cpu); font-weight: bold;"></span>
                                 <span class="ssh-ip" style="color: var(--text-dim); font-size: 0.8em; margin-left: 5px;"></span>
                             </div>
-                            <span class="ssh-time" style="color: var(--text-dim);"></span>
+                            <span class="ssh-time" style="color: var(--text-dim); text-align: right;"></span>
                         `;
                         return div;
                     },
@@ -2419,8 +2444,8 @@
                     }
                 );
                 
-                if (data.ssh.sessions.length === 0) {
-                    const container = document.getElementById('ssh-sessions');
+                if (data.ssh_stats.sessions.length === 0) {
+                    const container = document.getElementById('general-ssh-sessions');
                     if (container.innerHTML === '') {
                          container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 10px;">No active sessions</div>';
                     } else if (container.children.length > 0 && !container.querySelector('.ssh-user')) {
@@ -2614,6 +2639,109 @@
                         `;
                         container.appendChild(div);
                     });
+                }
+            }
+
+            // SSH Page Rendering (always update, not just when page is active)
+            if (data.ssh_stats) {
+                const ssh = data.ssh_stats;
+
+                // SSH Status
+                const statusEl = document.getElementById('ssh-status');
+                if (statusEl) {
+                    statusEl.innerText = ssh.status || 'Unknown';
+                    statusEl.style.color = 
+                        ssh.status === 'Running' ? 'var(--accent-memory)' : '#ff4757';
+                }
+
+                // SSH Connections
+                const connEl = document.getElementById('ssh-connections');
+                if (connEl) connEl.innerText = ssh.connections || 0;
+
+                // SSH Memory
+                const memEl = document.getElementById('ssh-memory');
+                if (memEl) memEl.innerText = 
+                    ssh.ssh_process_memory ? ssh.ssh_process_memory.toFixed(2) + '%' : '-';
+
+                // Failed Logins
+                const failedEl = document.getElementById('ssh-failed-logins');
+                if (failedEl) failedEl.innerText = ssh.failed_logins || 0;
+
+                // Active Sessions
+                const sessContainer = document.getElementById('ssh-sessions');
+                if (sessContainer) {
+                    if (!ssh.sessions || ssh.sessions.length === 0) {
+                        sessContainer.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">No active sessions</div>';
+                    } else {
+                        sessContainer.innerHTML = '';
+                        ssh.sessions.forEach(session => {
+                            const div = document.createElement('div');
+                            div.className = 'process-item level-0';
+                            div.style.padding = '12px';
+                            div.style.background = 'rgba(255,255,255,0.05)';
+                            div.style.borderRadius = '6px';
+                            div.innerHTML = `
+                                <div class="process-name">${session.user}@${session.ip}</div>
+                                <div class="process-meta">Connected: ${session.started}</div>
+                            `;
+                            sessContainer.appendChild(div);
+                        });
+                    }
+                }
+
+                // Auth Methods
+                const authContainer = document.getElementById('ssh-auth-methods');
+                if (authContainer && ssh.auth_methods) {
+                    authContainer.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <span style="color: var(--text-dim);">Public Key</span>
+                            <span style="font-weight: bold; color: var(--accent-network);">${ssh.auth_methods.publickey || 0}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <span style="color: var(--text-dim);">Password</span>
+                            <span style="font-weight: bold; color: var(--accent-disk);">${ssh.auth_methods.password || 0}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                            <span style="color: var(--text-dim);">Other Methods</span>
+                            <span style="font-weight: bold; color: var(--accent-cpu);">${ssh.auth_methods.other || 0}</span>
+                        </div>
+                    `;
+                }
+
+                // Host Key Fingerprint
+                const hostKeyEl = document.getElementById('ssh-hostkey');
+                if (hostKeyEl) hostKeyEl.innerText = ssh.hostkey_fingerprint || '-';
+
+                // Known Hosts
+                const historyEl = document.getElementById('ssh-history');
+                if (historyEl) historyEl.innerText = 
+                    ssh.history_size ? `${ssh.history_size} entries` : '-';
+
+                // OOM Risk Processes
+                const oomContainer = document.getElementById('ssh-oom-processes');
+                if (oomContainer) {
+                    if (!ssh.oom_risk_processes || ssh.oom_risk_processes.length === 0) {
+                        oomContainer.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">All processes within safe memory range</div>';
+                    } else {
+                        oomContainer.innerHTML = '';
+                        ssh.oom_risk_processes.forEach(proc => {
+                            const div = document.createElement('div');
+                            div.style.padding = '12px';
+                            div.style.background = 'rgba(255,107,107,0.1)';
+                            div.style.borderRadius = '6px';
+                            div.style.borderLeft = '4px solid #FF6B6B';
+                            div.innerHTML = `
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <div style="font-weight: bold;">${proc.name}</div>
+                                        <div style="font-size: 0.85rem; color: var(--text-dim);">PID: ${proc.pid}</div>
+                                    </div>
+                                    <div style="font-size: 1.2rem; font-weight: bold; color: #FF6B6B;">${proc.memory}%</div>
+                                </div>
+                            `;
+                            oomContainer.appendChild(div);
+                        });
+                    }
                 }
             }
         }
