@@ -30,6 +30,13 @@ _last_connection_states_time = 0
 # Cache for SSH stats
 _ssh_stats_cache = {"status": "Stopped", "connections": 0, "sessions": []}
 _last_ssh_time = 0
+_ssh_auth_log_offset = 0  # Track position in auth.log for incremental reading
+_ssh_auth_counters = {  # Cumulative counters
+    "publickey": 0,
+    "password": 0,
+    "other": 0,
+    "failed": 0
+}
 
 # Cache for GPU info
 _gpu_info_cache = None
@@ -214,23 +221,21 @@ def get_gpu_info():
 
 def get_top_processes():
     global _process_cache, _last_process_time
-    if time.time() - _last_process_time > 5:
+    if time.time() - _last_process_time > 15:
         processes = []
         try:
-            # 获取所有进程信息（包括父进程、启动时间、I/O 统计、工作目录等）
-            for p in psutil.process_iter(['pid', 'name', 'username', 'num_threads', 'memory_percent', 'cpu_percent']):
+            # 获取所有进程信息（只获取必需的属性，避免多次系统调用）
+            for p in psutil.process_iter(['pid', 'name', 'username', 'num_threads', 'memory_percent', 'cpu_percent', 'ppid']):
                 try:
                     p_info = p.info
                     if p_info['memory_percent'] is None: p_info['memory_percent'] = 0
                     if p_info['cpu_percent'] is None: p_info['cpu_percent'] = 0
                     if p_info['username'] is None: p_info['username'] = "unknown"
+                    if p_info['ppid'] is None: p_info['ppid'] = 0
                     
-                    # 附加信息（低开销获取）
+                    # 附加信息（仅获取最低开销的信息）
                     try:
                         p_obj = psutil.Process(p_info['pid'])
-                        
-                        # 父进程 ID
-                        p_info['ppid'] = p_obj.ppid()
                         
                         # 启动时间（转换为可读格式）
                         try:
@@ -247,30 +252,19 @@ def get_top_processes():
                         except:
                             p_info['uptime'] = "-"
                         
-                        # 工作目录
-                        try:
-                            p_info['cwd'] = p_obj.cwd()
-                        except:
-                            p_info['cwd'] = "-"
-                        
-                        # 完整命令行
+                        # 完整命令行（低开销获取）
                         try:
                             cmdline = p_obj.cmdline()
                             p_info['cmdline'] = ' '.join(cmdline) if cmdline else "-"
                         except:
                             p_info['cmdline'] = "-"
                         
-                        # I/O 统计（可能不支持所有系统）
-                        try:
-                            io = p_obj.io_counters()
-                            p_info['io_read'] = get_size(io.read_bytes)
-                            p_info['io_write'] = get_size(io.write_bytes)
-                        except:
-                            p_info['io_read'] = "-"
-                            p_info['io_write'] = "-"
+                        # 省略 cwd 和 I/O 统计以降低 CPU 占用
+                        p_info['cwd'] = "-"
+                        p_info['io_read'] = "-"
+                        p_info['io_write'] = "-"
                         
                     except:
-                        p_info['ppid'] = 0
                         p_info['uptime'] = "-"
                         p_info['cwd'] = "-"
                         p_info['cmdline'] = "-"
@@ -455,10 +449,10 @@ async def get_info():
     }
 
 def get_connection_states():
-    """获取TCP连接状态统计，带10秒缓存"""
+    """获取TCP连接状态统计，带30秒缓存（N150优化）"""
     global _connection_states_cache, _last_connection_states_time
     
-    if time.time() - _last_connection_states_time > 10:
+    if time.time() - _last_connection_states_time > 30:
         states = {
             "ESTABLISHED": 0,
             "SYN_SENT": 0,
@@ -486,9 +480,9 @@ def get_connection_states():
     return _connection_states_cache
 
 def get_ssh_stats():
-    global _ssh_stats_cache, _last_ssh_time
-    # SSH连接变化较慢，改为10秒缓存
-    if time.time() - _last_ssh_time > 10:
+    global _ssh_stats_cache, _last_ssh_time, _ssh_auth_log_offset, _ssh_auth_counters
+    # SSH连接变化较慢，改为120秒缓存（N150优化）
+    if time.time() - _last_ssh_time > 120:
         ssh_stats = {
             "status": "Stopped",
             "connections": 0,
@@ -542,81 +536,134 @@ def get_ssh_stats():
                             "started": started
                         })
 
-            # 2. Get SSH process memory usage
-            try:
-                for proc in psutil.process_iter(['pid', 'name', 'memory_percent']):
-                    if proc.info['name'] in ['sshd', 'ssh']:
-                        ssh_stats["ssh_process_memory"] = max(
-                            ssh_stats["ssh_process_memory"],
-                            proc.info['memory_percent'] or 0
-                        )
-            except:
-                pass
-
-            # 3. Check for OOM risk processes (high memory consumers)
+            # 2. Get process info for SSH memory and OOM risk (single iteration)
             try:
                 procs = psutil.process_iter(['pid', 'name', 'memory_percent'])
                 oom_risk = []
                 for proc in procs:
                     try:
-                        if proc.info['memory_percent'] and proc.info['memory_percent'] > 5:
+                        name = proc.info['name']
+                        mem_percent = proc.info['memory_percent'] or 0
+                        
+                        # Check for SSH process
+                        if name in ['sshd', 'ssh']:
+                            ssh_stats["ssh_process_memory"] = max(
+                                ssh_stats["ssh_process_memory"],
+                                mem_percent
+                            )
+                        
+                        # Check for OOM risk processes
+                        if mem_percent > 5:
                             oom_risk.append({
                                 "pid": proc.info['pid'],
-                                "name": proc.info['name'],
-                                "memory": round(proc.info['memory_percent'], 1)
+                                "name": name,
+                                "memory": round(mem_percent, 1)
                             })
                     except:
                         pass
+                
                 ssh_stats["oom_risk_processes"] = sorted(oom_risk, key=lambda x: x['memory'], reverse=True)[:5]
             except:
                 pass
 
-            # 4. Get host key fingerprint (低开销读文件)
+            # 3. Get host key fingerprint (读取 RSA 密钥)
             try:
-                hostkey_path = "/etc/ssh/ssh_host_rsa_key.pub"
-                if os.path.exists(hostkey_path):
-                    with open(hostkey_path, 'r') as f:
-                        content = f.read().strip()
-                        if content:
-                            parts = content.split()
-                            if len(parts) >= 2:
-                                # 提取密钥的前24个字符作为指纹示意
-                                ssh_stats["hostkey_fingerprint"] = parts[1][:24] + "..."
+                hostkey_paths = [
+                    "/etc/ssh/ssh_host_rsa_key.pub",
+                    "/hostfs/etc/ssh/ssh_host_rsa_key.pub"
+                ]
+                for hostkey_path in hostkey_paths:
+                    if os.path.exists(hostkey_path):
+                        with open(hostkey_path, 'r') as f:
+                            content = f.read().strip()
+                            if content:
+                                parts = content.split()
+                                if len(parts) >= 2:
+                                    # 显示完整的密钥指纹
+                                    ssh_stats["hostkey_fingerprint"] = parts[1]
+                                    break
             except:
                 pass
 
-            # 5. Get SSH auth methods and failed logins (采样方式，低开销)
+            # 4. Get SSH auth methods and failed logins (增量读取方式，低开销)
             try:
-                # 采样最近 100 行 auth.log（而不是全文扫描）
-                auth_log = "/var/log/auth.log"
-                if not os.path.exists(auth_log):
-                    auth_log = "/var/log/secure"
+                # 尝试不同的路径（支持容器和主机环境）
+                auth_log_paths = [
+                    "/var/log/auth.log",
+                    "/hostfs/var/log/auth.log",
+                    "/var/log/secure",
+                    "/hostfs/var/log/secure"
+                ]
+                auth_log = None
+                for path in auth_log_paths:
+                    if os.path.exists(path):
+                        auth_log = path
+                        break
                 
-                if os.path.exists(auth_log):
-                    with open(auth_log, 'r') as f:
-                        lines = f.readlines()
-                        # 只检查最后100行
-                        sample_lines = lines[-100:] if len(lines) > 100 else lines
+                if auth_log:
+                    # 增量读取：只读取新增的行
+                    with open(auth_log, 'r', errors='ignore') as f:
+                        # 如果偏移量有效，跳到上次读取的位置
+                        if _ssh_auth_log_offset > 0 and _ssh_auth_log_offset <= os.path.getsize(auth_log):
+                            f.seek(_ssh_auth_log_offset)
+                            new_lines = f.readlines()
+                        else:
+                            # 首次读取或日志轮转，读取最后 10000 字节
+                            file_size = os.path.getsize(auth_log)
+                            f.seek(max(0, file_size - 10000))
+                            new_lines = f.readlines()
                         
-                        for line in sample_lines:
-                            if 'sshd' in line and 'Failed password' in line:
-                                ssh_stats["failed_logins"] += 1
-                            elif 'sshd' in line and 'publickey' in line:
-                                if 'Accepted' in line:
-                                    ssh_stats["auth_methods"]["publickey"] += 1
-                            elif 'sshd' in line and 'password' in line:
-                                if 'Accepted' in line:
-                                    ssh_stats["auth_methods"]["password"] += 1
-            except:
+                        # 处理新行
+                        for line in new_lines:
+                            if 'sshd' not in line:
+                                continue
+                            
+                            if 'Failed password' in line or 'Invalid user' in line or 'authentication failure' in line:
+                                _ssh_auth_counters["failed"] += 1
+                            elif 'Accepted publickey' in line:
+                                _ssh_auth_counters["publickey"] += 1
+                            elif 'Accepted password' in line:
+                                _ssh_auth_counters["password"] += 1
+                            elif 'Accepted' in line:
+                                # 其他认证方式 (gssapi, keyboard-interactive, etc.)
+                                _ssh_auth_counters["other"] += 1
+                        
+                        # 保存新的偏移量
+                        _ssh_auth_log_offset = f.tell()
+                    
+                    # 复制累积计数到当前统计
+                    ssh_stats["auth_methods"]["publickey"] = _ssh_auth_counters["publickey"]
+                    ssh_stats["auth_methods"]["password"] = _ssh_auth_counters["password"]
+                    ssh_stats["auth_methods"]["other"] = _ssh_auth_counters["other"]
+                    ssh_stats["failed_logins"] = _ssh_auth_counters["failed"]
+            except Exception as e:
                 pass
 
-            # 6. Get SSH session history size (采样，低开销)
+            # 5. Get SSH session history size (从用户的 known_hosts)
             try:
-                ssh_history = os.path.expanduser("~/.ssh/")
-                if os.path.exists(ssh_history):
-                    known_hosts = os.path.join(ssh_history, "known_hosts")
+                # 优先读取 root 用户的 known_hosts，然后尝试当前用户，支持容器和主机环境
+                known_hosts_paths = [
+                    "/root/.ssh/known_hosts",
+                    "/hostfs/root/.ssh/known_hosts",
+                    "/home/lipsc/.ssh/known_hosts",  # 特定用户
+                    "/hostfs/home/lipsc/.ssh/known_hosts",  # 容器内的特定用户
+                    "/home/lipsc/.ssh/known_hosts",
+                    os.path.expanduser("~/.ssh/known_hosts")  # 当前用户
+                ]
+                # 除重
+                known_hosts_paths = list(dict.fromkeys(known_hosts_paths))
+                
+                for known_hosts in known_hosts_paths:
                     if os.path.exists(known_hosts):
-                        ssh_stats["history_size"] = len(open(known_hosts).readlines())
+                        try:
+                            with open(known_hosts, 'r', errors='ignore') as f:
+                                lines = f.readlines()
+                                count = len(lines)
+                                ssh_stats["history_size"] = count
+                                if count > 0:
+                                    break
+                        except Exception as e:
+                            pass
             except:
                 pass
 
@@ -997,11 +1044,11 @@ async def get_stats():
     return collect_stats()
 
 @app.websocket("/ws/stats")
-async def websocket_endpoint(websocket: WebSocket, interval: float = 1.0):
+async def websocket_endpoint(websocket: WebSocket, interval: float = 5.0):
     await websocket.accept()
     
-    # Clamp interval to reasonable bounds
-    if interval < 0.1: interval = 0.1
+    # Clamp interval to reasonable bounds (minimum 2.0s to reduce CPU usage)
+    if interval < 2.0: interval = 2.0
     if interval > 60: interval = 60
     
     try:

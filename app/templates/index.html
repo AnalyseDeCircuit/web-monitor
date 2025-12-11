@@ -612,10 +612,12 @@
                     <h1 id="page-title">General Dashboard</h1>
                     <div id="status-dot" class="status-dot" title="Connection Status"></div>
                     <select id="interval-select" onchange="changeInterval()" style="background: rgba(255,255,255,0.1); color: var(--text-main); border: none; padding: 5px; border-radius: 4px; font-family: inherit; font-size: 0.8rem; cursor: pointer;">
-                        <option value="0.5">0.5s</option>
-                        <option value="1.0" selected>1.0s</option>
-                        <option value="2.0">2.0s</option>
-                        <option value="5.0">5.0s</option>
+                        <option value="2">2s</option>
+                        <option value="5" selected>5s</option>
+                        <option value="10">10s</option>
+                        <option value="20">20s</option>
+                        <option value="30">30s</option>
+                        <option value="60">60s</option>
                     </select>
                 </div>
                 <div id="boot-time" class="boot-time">Booting...</div>
@@ -1096,7 +1098,7 @@
                     <div id="ssh-memory" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-disk);">-</div>
                 </div>
                 <div style="background: rgba(244, 67, 54, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid #FF6B6B;">
-                    <div style="font-size: 0.8rem; color: var(--text-dim);">Failed Logins (Last 100 lines)</div>
+                    <div style="font-size: 0.8rem; color: var(--text-dim);">Failed Logins</div>
                     <div id="ssh-failed-logins" style="font-size: 1.5rem; font-weight: bold; color: #FF6B6B;">0</div>
                 </div>
             </div>
@@ -1119,8 +1121,8 @@
 
             <!-- SSH Host Key Fingerprint -->
             <div class="card">
-                <div class="card-title">Host Key Fingerprint</div>
-                <div style="font-size: 0.9rem; word-break: break-all; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px; font-family: monospace;">
+                <div class="card-title">Host Key Fingerprint (RSA)</div>
+                <div style="font-size: 0.85rem; word-break: break-all; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px; font-family: monospace; line-height: 1.4; max-height: 150px; overflow-y: auto;">
                     <div id="ssh-hostkey" style="color: var(--text-main);">-</div>
                 </div>
             </div>
@@ -2680,9 +2682,19 @@
                             div.style.padding = '12px';
                             div.style.background = 'rgba(255,255,255,0.05)';
                             div.style.borderRadius = '6px';
+                            
+                            // Convert UTC time to local time (same as General page)
+                            let displayTime = session.started;
+                            if (session.started && session.started !== '-') {
+                                const now = new Date();
+                                const [hours, minutes, seconds] = session.started.split(':');
+                                const utcDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, seconds));
+                                displayTime = utcDate.toLocaleTimeString();
+                            }
+                            
                             div.innerHTML = `
                                 <div class="process-name">${session.user}@${session.ip}</div>
-                                <div class="process-meta">Connected: ${session.started}</div>
+                                <div class="process-meta">Connected: ${displayTime}</div>
                             `;
                             sessContainer.appendChild(div);
                         });
