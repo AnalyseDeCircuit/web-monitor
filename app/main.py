@@ -217,13 +217,66 @@ def get_top_processes():
     if time.time() - _last_process_time > 5:
         processes = []
         try:
-            # Fetch more details: username, num_threads
+            # 获取所有进程信息（包括父进程、启动时间、I/O 统计、工作目录等）
             for p in psutil.process_iter(['pid', 'name', 'username', 'num_threads', 'memory_percent', 'cpu_percent']):
                 try:
                     p_info = p.info
                     if p_info['memory_percent'] is None: p_info['memory_percent'] = 0
                     if p_info['cpu_percent'] is None: p_info['cpu_percent'] = 0
                     if p_info['username'] is None: p_info['username'] = "unknown"
+                    
+                    # 附加信息（低开销获取）
+                    try:
+                        p_obj = psutil.Process(p_info['pid'])
+                        
+                        # 父进程 ID
+                        p_info['ppid'] = p_obj.ppid()
+                        
+                        # 启动时间（转换为可读格式）
+                        try:
+                            create_time = p_obj.create_time()
+                            uptime_sec = time.time() - create_time
+                            if uptime_sec < 60:
+                                p_info['uptime'] = f"{int(uptime_sec)}s"
+                            elif uptime_sec < 3600:
+                                p_info['uptime'] = f"{int(uptime_sec // 60)}m"
+                            elif uptime_sec < 86400:
+                                p_info['uptime'] = f"{int(uptime_sec // 3600)}h"
+                            else:
+                                p_info['uptime'] = f"{int(uptime_sec // 86400)}d"
+                        except:
+                            p_info['uptime'] = "-"
+                        
+                        # 工作目录
+                        try:
+                            p_info['cwd'] = p_obj.cwd()
+                        except:
+                            p_info['cwd'] = "-"
+                        
+                        # 完整命令行
+                        try:
+                            cmdline = p_obj.cmdline()
+                            p_info['cmdline'] = ' '.join(cmdline) if cmdline else "-"
+                        except:
+                            p_info['cmdline'] = "-"
+                        
+                        # I/O 统计（可能不支持所有系统）
+                        try:
+                            io = p_obj.io_counters()
+                            p_info['io_read'] = get_size(io.read_bytes)
+                            p_info['io_write'] = get_size(io.write_bytes)
+                        except:
+                            p_info['io_read'] = "-"
+                            p_info['io_write'] = "-"
+                        
+                    except:
+                        p_info['ppid'] = 0
+                        p_info['uptime'] = "-"
+                        p_info['cwd'] = "-"
+                        p_info['cmdline'] = "-"
+                        p_info['io_read'] = "-"
+                        p_info['io_write'] = "-"
+                    
                     processes.append(p_info)
                 except:
                     pass
@@ -235,6 +288,70 @@ def get_top_processes():
         _process_cache = processes
         _last_process_time = time.time()
     return _process_cache
+
+def build_process_tree(processes):
+    """构建进程树结构，用于前端树形展示"""
+    # 创建 PID 到进程的映射
+    pid_map = {p['pid']: p for p in processes}
+    
+    # 标记每个进程的子进程
+    for p in processes:
+        p['children'] = []
+    
+    # 构建父子关系
+    root_processes = []
+    for p in processes:
+        ppid = p.get('ppid', 0)
+        if ppid in pid_map:
+            pid_map[ppid]['children'].append(p)
+        else:
+            # 没有父进程或父进程不在列表中，作为根进程
+            root_processes.append(p)
+    
+    return root_processes
+
+def get_listening_ports():
+    """获取监听的端口信息"""
+    try:
+        listening_ports = {}
+        for conn in psutil.net_connections():
+            try:
+                if conn.status == 'LISTEN' and conn.laddr:
+                    port = conn.laddr[1]
+                    proto = conn.type
+                    protocol = 'TCP' if proto == 1 else 'UDP' if proto == 2 else 'OTHER'
+                    
+                    # 获取使用该端口的进程名称
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        proc_name = proc.name()
+                    except:
+                        proc_name = f"PID {conn.pid}"
+                    
+                    if port not in listening_ports:
+                        listening_ports[port] = {'tcp': None, 'udp': None}
+                    
+                    proto_key = protocol.lower()
+                    listening_ports[port][proto_key] = proc_name
+            except:
+                continue
+        
+        # 返回格式化的端口列表（最多显示前 20 个）
+        result = []
+        for port in sorted(listening_ports.keys())[:20]:
+            port_info = listening_ports[port]
+            proto_str = ""
+            if port_info['tcp']:
+                proto_str += f"TCP:{port_info['tcp']}"
+            if port_info['udp']:
+                if proto_str:
+                    proto_str += ", "
+                proto_str += f"UDP:{port_info['udp']}"
+            result.append({"port": port, "protocol": proto_str})
+        
+        return result
+    except:
+        return []
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -716,7 +833,8 @@ def collect_stats():
             "total_errors_out": net_io.errout,
             "total_drops_in": net_io.dropin,
             "total_drops_out": net_io.dropout
-        }
+        },
+        "listening_ports": get_listening_ports()
     }
     
     # Socket Stats (Low overhead via /proc/net/sockstat)

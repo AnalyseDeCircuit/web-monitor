@@ -270,6 +270,117 @@
         .disk-fill { background: var(--accent-disk); }
         .temp-fill { background: var(--accent-temp); }
 
+        /* Process 页面样式 */
+        .sort-btn {
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text-dim);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .sort-btn:hover {
+            background: rgba(255,255,255,0.15);
+            color: var(--text-main);
+        }
+
+        .sort-btn.active {
+            background: rgba(255, 71, 87, 0.3);
+            color: var(--accent-cpu);
+            border-color: var(--accent-cpu);
+        }
+
+        .process-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .process-item:hover {
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .process-item.level-0 { margin-left: 0; }
+        .process-item.level-1 { margin-left: 20px; }
+        .process-item.level-2 { margin-left: 40px; }
+        .process-item.level-3 { margin-left: 60px; }
+        .process-item.level-4 { margin-left: 80px; }
+
+        .process-icon {
+            min-width: 30px;
+            text-align: center;
+            color: var(--accent-cpu);
+            margin-right: 10px;
+        }
+
+        .process-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .process-name {
+            font-weight: bold;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .process-meta {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 4px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .process-bars {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            min-width: 200px;
+        }
+
+        .process-bar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 0.75rem;
+        }
+
+        .process-bar-label {
+            color: var(--text-dim);
+        }
+
+        .process-bar-bg {
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .process-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+
         .cpu-grid {
             display: flex;
             flex-direction: column;
@@ -760,6 +871,17 @@
                 </div>
             </div>
 
+            <!-- Memory Pie Chart -->
+            <div class="card">
+                <div class="card-title">Memory Distribution</div>
+                <div style="display: flex; flex-direction: column; gap: 15px; align-items: center; padding: 10px;">
+                    <svg id="mem-pie-chart" width="180" height="180" style="margin: 0 auto;"></svg>
+                    <div id="mem-pie-legend" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; font-size: 0.85rem;">
+                        <!-- Legend injected here -->
+                    </div>
+                </div>
+            </div>
+
             <!-- Process Manager -->
             <div class="card" style="grid-column: 1 / -1;">
                 <div class="card-title">
@@ -892,6 +1014,14 @@
                 </div>
             </div>
 
+            <!-- Listening Ports -->
+            <div class="card">
+                <div class="card-title">Listening Ports</div>
+                <div id="listening-ports" style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 5px; max-height: 250px; overflow-y: auto;">
+                    <!-- Ports injected here -->
+                </div>
+            </div>
+
             <!-- Network Errors & Packet Loss -->
             <div class="card" style="grid-column: 1 / -1;">
                 <div class="card-title">Network Errors & Packet Loss</div>
@@ -946,26 +1076,92 @@
                 </div>
             </div>
 
-            <!-- Disk I/O Statistics -->
-            <div class="card">
-                <div class="card-title">Disk I/O</div>
-                <div id="disk-io-stats" style="display: flex; flex-direction: column; gap: 10px;">
-                    <!-- Injected via JS --></div>
-            </div>
-
             <!-- Inode Usage -->
-            <div class="card">
+            <div class="card" style="grid-column: 1 / -1;">
                 <div class="card-title">Inode Usage</div>
                 <div id="inode-usage" style="display: flex; flex-direction: column; gap: 10px;">
                     <!-- Injected via JS -->
                 </div>
             </div>
+
+            <!-- Disk I/O Statistics -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Disk I/O</div>
+                <div id="disk-io-stats" style="display: flex; flex-direction: column; gap: 10px; max-height: 600px; overflow-y: auto;">
+                    <!-- Injected via JS --></div>
+            </div>
         </div>
     </div>
     <div id="page-processes" class="page">
-        <div class="card">
-            <div class="card-title">Process Manager</div>
-            <div style="padding: 20px; color: var(--text-dim);">Detailed Process list coming soon...</div>
+        <div class="grid-container">
+            <!-- 统计面板 -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Process Statistics</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; text-align: center;">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Total Processes</div>
+                        <div id="proc-total" style="font-size: 1.8rem; font-weight: bold; color: var(--accent-cpu);">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Total Threads</div>
+                        <div id="proc-threads" style="font-size: 1.8rem; font-weight: bold; color: var(--accent-mem);">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Avg CPU %</div>
+                        <div id="proc-avg-cpu" style="font-size: 1.8rem; font-weight: bold; color: var(--accent-net);">0%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Avg Memory %</div>
+                        <div id="proc-avg-mem" style="font-size: 1.8rem; font-weight: bold; color: var(--accent-disk);">0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 搜索和排序 -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <input type="text" id="proc-search" placeholder="Search process..." 
+                           style="flex: 1; min-width: 200px; padding: 8px 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; color: var(--text-main); font-family: inherit;"
+                           onkeyup="filterAndRenderProcesses()">
+                    <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                        <button class="sort-btn active" onclick="setProcessSort('memory')" title="Sort by Memory">
+                            <i class="fas fa-sort-amount-down-alt"></i> Memory
+                        </button>
+                        <button class="sort-btn" onclick="setProcessSort('cpu')" title="Sort by CPU">
+                            <i class="fas fa-microchip"></i> CPU
+                        </button>
+                        <button class="sort-btn" onclick="setProcessSort('threads')" title="Sort by Threads">
+                            <i class="fas fa-sitemap"></i> Threads
+                        </button>
+                        <button class="sort-btn" onclick="setProcessSort('uptime')" title="Sort by Uptime">
+                            <i class="fas fa-hourglass-start"></i> Uptime
+                        </button>
+                        <button class="sort-btn" onclick="setProcessSort('tree')" title="Process Tree">
+                            <i class="fas fa-tree"></i> Tree
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 进程列表 -->
+            <div class="card" style="grid-column: 1 / -1; max-height: 600px; overflow-y: auto;">
+                <div id="process-container" style="font-size: 0.9rem;">
+                    <!-- 进程列表将注入这里 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 进程详情模态框 -->
+    <div id="proc-detail-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; overflow-y: auto;">
+        <div style="background: var(--card-bg); margin: 50px auto; max-width: 700px; border-radius: 12px; padding: 20px; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+                <h2 id="proc-detail-name" style="margin: 0; color: var(--accent-cpu);">Process Name</h2>
+                <button onclick="closeProcDetail()" style="background: none; border: none; color: var(--text-main); cursor: pointer; font-size: 1.5rem;">×</button>
+            </div>
+            <div id="proc-detail-content" style="display: flex; flex-direction: column; gap: 12px;">
+                <!-- 详情内容将注入这里 -->
+            </div>
         </div>
     </div>
 
@@ -1058,6 +1254,11 @@
         let lastData = null;
         let currentSort = { column: 'memory_percent', direction: 'desc' };
 
+        // Processes page state
+        let currentProcessSort = 'memory'; // 'memory', 'cpu', 'threads', 'uptime', 'tree'
+        let currentProcessSearch = '';
+        let allProcesses = [];
+
         function setSort(column) {
             if (currentSort.column === column) {
                 currentSort.direction = currentSort.direction === 'desc' ? 'asc' : 'desc';
@@ -1070,12 +1271,414 @@
             }
         }
 
+        // Process sorting function
+        function setProcessSort(sortType) {
+            currentProcessSort = sortType;
+            
+            // Update active button UI
+            document.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.closest('.sort-btn').classList.add('active');
+            
+            // Save preference
+            localStorage.setItem('processSortMode', sortType);
+            
+            // Re-render
+            filterAndRenderProcesses();
+        }
+
+        // Filter and render processes based on search and sort
+        function filterAndRenderProcesses() {
+            const searchInput = document.getElementById('proc-search');
+            currentProcessSearch = (searchInput ? searchInput.value : '').toLowerCase();
+            
+            let filtered = allProcesses.filter(proc => {
+                if (!currentProcessSearch) return true;
+                const searchStr = currentProcessSearch;
+                return (
+                    proc.name.toLowerCase().includes(searchStr) ||
+                    proc.pid.toString().includes(searchStr) ||
+                    (proc.username && proc.username.toLowerCase().includes(searchStr))
+                );
+            });
+
+            // Sort based on current mode
+            if (currentProcessSort === 'tree') {
+                renderProcessTree(filtered);
+            } else {
+                // Perform sorting
+                filtered.sort((a, b) => {
+                    let valA, valB;
+                    switch(currentProcessSort) {
+                        case 'cpu':
+                            valA = a.cpu_percent || 0;
+                            valB = b.cpu_percent || 0;
+                            return valB - valA; // Descending
+                        case 'threads':
+                            valA = a.num_threads || 0;
+                            valB = b.num_threads || 0;
+                            return valB - valA;
+                        case 'uptime':
+                            valA = a.uptime_seconds || 0;
+                            valB = b.uptime_seconds || 0;
+                            return valB - valA;
+                        case 'memory':
+                        default:
+                            valA = a.memory_percent || 0;
+                            valB = b.memory_percent || 0;
+                            return valB - valA;
+                    }
+                });
+                renderProcessList(filtered);
+            }
+            
+            updateProcessStats();
+        }
+
+        // Render process list (for non-tree views)
+        function renderProcessList(processes) {
+            const container = document.getElementById('process-container');
+            container.innerHTML = '';
+            
+            if (processes.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">No processes found</div>';
+                return;
+            }
+            
+            processes.forEach(proc => {
+                const div = document.createElement('div');
+                div.className = 'process-item level-0';
+                div.style.cursor = 'pointer';
+                
+                const cpuPercent = (proc.cpu_percent || 0).toFixed(1);
+                const memPercent = (proc.memory_percent || 0).toFixed(1);
+                const uptime = proc.uptime || '-';
+                
+                div.innerHTML = `
+                    <div class="process-info">
+                        <div class="process-name">[${proc.pid}] ${proc.name}</div>
+                        <div class="process-meta">${proc.username || '-'} • ${proc.num_threads || 0} threads • ${uptime}</div>
+                    </div>
+                    <div class="process-bars">
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <div style="min-width: 80px;">
+                                <div style="font-size: 0.75rem; color: var(--text-dim);">CPU</div>
+                                <div class="progress-bg" style="height: 4px;">
+                                    <div class="progress-fill" style="width: ${cpuPercent}%; background: var(--accent-cpu);"></div>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--accent-cpu);">${cpuPercent}%</div>
+                            </div>
+                            <div style="min-width: 80px;">
+                                <div style="font-size: 0.75rem; color: var(--text-dim);">Memory</div>
+                                <div class="progress-bg" style="height: 4px;">
+                                    <div class="progress-fill" style="width: ${memPercent}%; background: var(--accent-mem);"></div>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--accent-mem);">${memPercent}%</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                div.addEventListener('click', () => showProcDetail(proc.pid));
+                container.appendChild(div);
+            });
+        }
+
+        // Render process tree (hierarchical)
+        function renderProcessTree(processes) {
+            const container = document.getElementById('process-container');
+            container.innerHTML = '';
+            
+            if (processes.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">No processes found</div>';
+                return;
+            }
+            
+            // Create PID map for faster lookup
+            const pidMap = {};
+            processes.forEach(p => { pidMap[p.pid] = p; });
+            
+            // Find root processes (no parent in filtered list)
+            const rootProcesses = processes.filter(p => !pidMap[p.ppid]);
+            
+            // Render each root and its children
+            rootProcesses.forEach(root => {
+                renderProcessTreeNode(root, processes, pidMap, 0, container);
+            });
+        }
+
+        // Helper to render a process node and its children
+        function renderProcessTreeNode(proc, allProcs, pidMap, level, container) {
+            const div = document.createElement('div');
+            div.className = `process-item level-${Math.min(level, 4)}`;
+            div.style.cursor = 'pointer';
+            div.style.marginLeft = (level * 20) + 'px';
+            
+            const cpuPercent = (proc.cpu_percent || 0).toFixed(1);
+            const memPercent = (proc.memory_percent || 0).toFixed(1);
+            const uptime = proc.uptime || '-';
+            
+            // Check if has children
+            const hasChildren = proc.children && proc.children.length > 0;
+            const expandIcon = hasChildren ? '<i class="fas fa-chevron-right" style="margin-right: 5px; transition: transform 0.2s;"></i>' : '<span style="margin-right: 5px; display: inline-block; width: 16px;"></span>';
+            
+            div.innerHTML = `
+                <div class="process-info" style="display: flex; gap: 10px; flex-grow: 1;">
+                    <div style="display: flex; align-items: center;">${expandIcon}</div>
+                    <div style="flex: 1;">
+                        <div class="process-name">[${proc.pid}] ${proc.name}</div>
+                        <div class="process-meta">${proc.username || '-'} • ${proc.num_threads || 0} threads • ${uptime}</div>
+                    </div>
+                </div>
+                <div class="process-bars" style="display: flex; gap: 15px; align-items: center;">
+                    <div style="min-width: 70px;">
+                        <div class="progress-bg" style="height: 4px;">
+                            <div class="progress-fill" style="width: ${cpuPercent}%; background: var(--accent-cpu);"></div>
+                        </div>
+                        <div style="font-size: 0.75rem; color: var(--accent-cpu);">${cpuPercent}%</div>
+                    </div>
+                    <div style="min-width: 70px;">
+                        <div class="progress-bg" style="height: 4px;">
+                            <div class="progress-fill" style="width: ${memPercent}%; background: var(--accent-mem);"></div>
+                        </div>
+                        <div style="font-size: 0.75rem; color: var(--accent-mem);">${memPercent}%</div>
+                    </div>
+                </div>
+            `;
+            
+            div.addEventListener('click', (e) => {
+                if (hasChildren && e.target.closest('.fas')) {
+                    // Toggle children visibility
+                    const childrenContainer = div.nextElementSibling;
+                    if (childrenContainer && childrenContainer.classList.contains('children-group')) {
+                        childrenContainer.style.display = childrenContainer.style.display === 'none' ? '' : 'none';
+                        const icon = div.querySelector('.fas');
+                        if (icon) icon.style.transform = childrenContainer.style.display === 'none' ? '' : 'rotate(90deg)';
+                    }
+                } else {
+                    showProcDetail(proc.pid);
+                }
+            });
+            
+            container.appendChild(div);
+            
+            // Render children
+            if (hasChildren && proc.children) {
+                const childrenContainer = document.createElement('div');
+                childrenContainer.className = 'children-group';
+                
+                proc.children.forEach(child => {
+                    renderProcessTreeNode(child, allProcs, pidMap, level + 1, childrenContainer);
+                });
+                
+                container.appendChild(childrenContainer);
+            }
+        }
+
+        // Show process detail modal
+        function showProcDetail(pid) {
+            const proc = allProcesses.find(p => p.pid === pid);
+            if (!proc) return;
+            
+            const modal = document.getElementById('proc-detail-modal');
+            const titleEl = document.getElementById('proc-detail-name');
+            const contentEl = document.getElementById('proc-detail-content');
+            
+            titleEl.innerText = `${proc.name} (PID: ${proc.pid})`;
+            
+            contentEl.innerHTML = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Process ID</div>
+                        <div style="font-weight: bold; color: var(--accent-cpu);">${proc.pid}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Parent PID</div>
+                        <div style="font-weight: bold; color: var(--accent-cpu);">${proc.ppid || '-'}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">User</div>
+                        <div style="font-weight: bold;">${proc.username || '-'}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Threads</div>
+                        <div style="font-weight: bold; color: var(--accent-mem);">${proc.num_threads || '-'}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">CPU Usage</div>
+                        <div style="font-weight: bold; color: var(--accent-cpu);">${(proc.cpu_percent || 0).toFixed(1)}%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Memory Usage</div>
+                        <div style="font-weight: bold; color: var(--accent-mem);">${(proc.memory_percent || 0).toFixed(1)}%</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Uptime</div>
+                        <div style="font-weight: bold;">${proc.uptime || '-'}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Status</div>
+                        <div style="font-weight: bold;">${proc.status || '-'}</div>
+                    </div>
+                </div>
+                <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0;">
+                <div>
+                    <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 5px;">Command Line</div>
+                    <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85rem; word-break: break-all; color: #90ee90;">
+                        ${(proc.cmdline || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+                    </div>
+                </div>
+                <div style="margin-top: 15px;">
+                    <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 5px;">Working Directory</div>
+                    <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85rem; word-break: break-all;">
+                        ${(proc.cwd || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+                    </div>
+                </div>
+                ${proc.io_read !== '-' ? `
+                <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">I/O Read</div>
+                        <div style="font-weight: bold; color: var(--accent-net);">${proc.io_read || '-'}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">I/O Write</div>
+                        <div style="font-weight: bold; color: var(--accent-net);">${proc.io_write || '-'}</div>
+                    </div>
+                </div>
+                ` : ''}
+            `;
+            
+            modal.style.display = 'flex';
+        }
+
+        // Close process detail modal
+        function closeProcDetail() {
+            document.getElementById('proc-detail-modal').style.display = 'none';
+        }
+
+        // Update process statistics
+        function updateProcessStats() {
+            if (allProcesses.length === 0) {
+                document.getElementById('proc-total').innerText = '0';
+                document.getElementById('proc-threads').innerText = '0';
+                document.getElementById('proc-avg-cpu').innerText = '0%';
+                document.getElementById('proc-avg-mem').innerText = '0%';
+                return;
+            }
+            
+            const totalThreads = allProcesses.reduce((sum, p) => sum + (p.num_threads || 0), 0);
+            const avgCpu = allProcesses.reduce((sum, p) => sum + (p.cpu_percent || 0), 0) / allProcesses.length;
+            const avgMem = allProcesses.reduce((sum, p) => sum + (p.memory_percent || 0), 0) / allProcesses.length;
+            
+            document.getElementById('proc-total').innerText = allProcesses.length;
+            document.getElementById('proc-threads').innerText = totalThreads;
+            document.getElementById('proc-avg-cpu').innerText = avgCpu.toFixed(1) + '%';
+            document.getElementById('proc-avg-mem').innerText = avgMem.toFixed(1) + '%';
+        }
+
+        // Restore sort preference on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            const saved = localStorage.getItem('processSortMode');
+            if (saved) {
+                currentProcessSort = saved;
+                const btn = document.querySelector(`.sort-btn[onclick="setProcessSort('${saved}')"]`);
+                if (btn) {
+                    document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                }
+            }
+            
+            // Modal interaction
+            const modal = document.getElementById('proc-detail-modal');
+            if (modal) {
+                // Close on ESC key
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && modal.style.display !== 'none') {
+                        closeProcDetail();
+                    }
+                });
+                
+                // Close on background click
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        closeProcDetail();
+                    }
+                });
+            }
+        });
+
         function formatSize(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
             const sizes = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function drawMemoryPieChart(memoryData) {
+            const svg = document.getElementById('mem-pie-chart');
+            if (!svg) return;
+
+            const total = memoryData.total.match(/\d+\.?\d*/)[0];
+            const used = memoryData.used.match(/\d+\.?\d*/)[0];
+            const cached = memoryData.cached.match(/\d+\.?\d*/)[0];
+            const buffers = memoryData.buffers.match(/\d+\.?\d*/)[0];
+
+            const usedNum = parseFloat(used);
+            const cachedNum = parseFloat(cached);
+            const buffersNum = parseFloat(buffers);
+            const totalNum = parseFloat(total);
+            const free = totalNum - usedNum - cachedNum - buffersNum;
+
+            const segments = [
+                { label: 'Used', value: usedNum, color: '#ff4757' },
+                { label: 'Cached', value: cachedNum, color: '#2ed573' },
+                { label: 'Buffers', value: buffersNum, color: '#ffa502' },
+                { label: 'Free', value: Math.max(0, free), color: '#888' }
+            ].filter(s => s.value > 0);
+
+            // Draw pie chart
+            let currentAngle = -Math.PI / 2;
+            const radius = 70;
+            const centerX = 90;
+            const centerY = 90;
+
+            svg.innerHTML = '';
+            
+            segments.forEach(segment => {
+                const percentage = segment.value / totalNum;
+                const sliceAngle = percentage * 2 * Math.PI;
+                
+                const x1 = centerX + radius * Math.cos(currentAngle);
+                const y1 = centerY + radius * Math.sin(currentAngle);
+                
+                currentAngle += sliceAngle;
+                
+                const x2 = centerX + radius * Math.cos(currentAngle);
+                const y2 = centerY + radius * Math.sin(currentAngle);
+                
+                const largeArc = sliceAngle > Math.PI ? 1 : 0;
+                
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${centerX} ${centerY} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`);
+                path.setAttribute('fill', segment.color);
+                path.setAttribute('stroke', '#121212');
+                path.setAttribute('stroke-width', '2');
+                svg.appendChild(path);
+            });
+
+            // Draw legend
+            const legend = document.getElementById('mem-pie-legend');
+            if (legend) {
+                legend.innerHTML = segments.map(s => `
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 12px; height: 12px; background-color: ${s.color}; border-radius: 2px;"></div>
+                        <div>
+                            <div style="font-weight: bold;">${s.label}</div>
+                            <div style="color: var(--text-dim); font-size: 0.75rem;">${(s.value / totalNum * 100).toFixed(1)}%</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
         }
 
         let websocket = null;
@@ -1380,6 +1983,11 @@
                     document.getElementById('swap-page-bar').style.width = data.swap.percent + '%';
                 }
 
+                // Memory Pie Chart
+                if (data.memory) {
+                    drawMemoryPieChart(data.memory);
+                }
+
                 // Process Table
                 if (data.processes) {
                     document.getElementById('proc-count').innerText = `${data.processes.length} processes`;
@@ -1446,6 +2054,32 @@
                         el.querySelector('.proc-mem').innerText = proc.memory_percent.toFixed(1) + '%';
                     }
                 );
+            }
+
+            // Processes Page
+            const isProcessesPage = document.getElementById('page-processes').classList.contains('active');
+            if (isProcessesPage && data.processes) {
+                // Update allProcesses with uptime_seconds for sorting
+                allProcesses = data.processes.map(p => {
+                    let uptimeSeconds = 0;
+                    if (p.uptime) {
+                        const match = p.uptime.match(/(\d+)([smhd])/);
+                        if (match) {
+                            const num = parseInt(match[1]);
+                            const unit = match[2];
+                            switch(unit) {
+                                case 's': uptimeSeconds = num; break;
+                                case 'm': uptimeSeconds = num * 60; break;
+                                case 'h': uptimeSeconds = num * 3600; break;
+                                case 'd': uptimeSeconds = num * 86400; break;
+                            }
+                        }
+                    }
+                    return { ...p, uptime_seconds: uptimeSeconds };
+                });
+                
+                // Render the processes
+                filterAndRenderProcesses();
             }
 
             // Sensors
@@ -1684,6 +2318,23 @@
                         }
                     }
 
+                    // Listening Ports (Network Page)
+                    if (data.network && data.network.listening_ports) {
+                        const portsContainer = document.getElementById('listening-ports');
+                        if (data.network.listening_ports.length > 0) {
+                            portsContainer.innerHTML = data.network.listening_ports.map(port => `
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: rgba(255,255,255,0.02); border-radius: 4px; border-left: 3px solid var(--accent-net);">
+                                    <div>
+                                        <div style="font-weight: bold; color: var(--accent-cpu);">Port ${port.port}</div>
+                                        <div style="font-size: 0.8rem; color: var(--text-dim);">${port.protocol}</div>
+                                    </div>
+                                </div>
+                            `).join('');
+                        } else {
+                            portsContainer.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 10px;">No listening ports</div>';
+                        }
+                    }
+
                     if (data.network.interfaces) {
                         const interfaces = Object.entries(data.network.interfaces).map(([name, stats]) => ({name, ...stats}));
                         updateList('net-interfaces', interfaces,
@@ -1904,16 +2555,26 @@
                     container.innerHTML = '';
                     ioList.forEach(io => {
                         const div = document.createElement('div');
-                        div.style.padding = '10px';
-                        div.style.background = 'rgba(255,255,255,0.03)';
-                        div.style.borderRadius = '6px';
+                        div.className = 'process-item level-0';
+                        div.style.cursor = 'default';
+                        
                         div.innerHTML = `
-                            <div style="font-weight: bold; margin-bottom: 8px; color: var(--accent-net);">${io.name}</div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
-                                <div><span style="color: var(--text-dim);">Read:</span> ${io.read_bytes}</div>
-                                <div><span style="color: var(--text-dim);">Write:</span> ${io.write_bytes}</div>
-                                <div><span style="color: var(--text-dim);">Read Ops:</span> ${io.read_count.toLocaleString()}</div>
-                                <div><span style="color: var(--text-dim);">Write Ops:</span> ${io.write_count.toLocaleString()}</div>
+                            <div class="process-info">
+                                <div class="process-name">${io.name}</div>
+                                <div class="process-meta">
+                                    Read: ${io.read_bytes} (${io.read_count.toLocaleString()} ops) • 
+                                    Write: ${io.write_bytes} (${io.write_count.toLocaleString()} ops)
+                                </div>
+                            </div>
+                            <div class="process-bars" style="display: flex; gap: 15px; align-items: center;">
+                                <div style="min-width: 80px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-dim);">Read Ops</div>
+                                    <div style="font-size: 0.9rem; font-weight: bold; color: var(--accent-net);">${(io.read_count / 1000).toFixed(1)}k</div>
+                                </div>
+                                <div style="min-width: 80px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-dim);">Write Ops</div>
+                                    <div style="font-size: 0.9rem; font-weight: bold; color: var(--accent-disk);">${(io.write_count / 1000).toFixed(1)}k</div>
+                                </div>
                             </div>
                         `;
                         container.appendChild(div);
@@ -1930,19 +2591,25 @@
                     container.innerHTML = '';
                     data.inodes.forEach(inode => {
                         const div = document.createElement('div');
-                        div.style.padding = '10px';
-                        div.style.background = 'rgba(255,255,255,0.03)';
-                        div.style.borderRadius = '6px';
+                        div.style.padding = '15px';
+                        div.style.background = 'rgba(255,255,255,0.05)';
+                        div.style.borderRadius = '8px';
+                        div.style.borderLeft = '4px solid var(--accent-disk)';
                         div.innerHTML = `
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                <span style="font-weight: bold;">${inode.mountpoint}</span>
-                                <span style="color: ${inode.percent > 80 ? '#ff4757' : 'var(--text-main)'};">${inode.percent}%</span>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                                <div>
+                                    <div style="font-weight: bold; margin-bottom: 5px;">${inode.mountpoint}</div>
+                                    <div style="font-size: 0.85rem; color: var(--text-dim);">
+                                        ${inode.used.toLocaleString()} / ${inode.total.toLocaleString()} inodes
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-weight: bold; font-size: 1.2rem; color: ${inode.percent > 80 ? '#ff4757' : 'var(--accent-mem)'};">${inode.percent}%</div>
+                                    <div style="font-size: 0.8rem; color: var(--text-dim);">${inode.free.toLocaleString()} free</div>
+                                </div>
                             </div>
-                            <div class="progress-bg" style="height: 6px;">
-                                <div class="progress-fill" style="width: ${inode.percent}%; background: ${inode.percent > 80 ? '#ff4757' : 'var(--accent-mem)'}"></div>
-                            </div>
-                            <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 5px;">
-                                ${inode.used.toLocaleString()} / ${inode.total.toLocaleString()} inodes
+                            <div class="progress-bg">
+                                <div class="progress-fill" style="width: ${inode.percent}%; background: ${inode.percent > 80 ? '#ff4757' : 'var(--accent-disk)'}"></div>
                             </div>
                         `;
                         container.appendChild(div);
