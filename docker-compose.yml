@@ -1,0 +1,13 @@
+services:
+  web-monitor:
+    build: .
+    container_name: web-monitor
+    network_mode: host
+    privileged: true
+    volumes:
+      - /:/hostfs:ro
+      - /sys:/sys:ro
+      - /proc:/proc
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/utmp:/var/run/utmp:ro
+    restart: unless-stopped

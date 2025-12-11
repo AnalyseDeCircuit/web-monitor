@@ -1,0 +1,1959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Monitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-main: #e0e0e0;
+            --text-dim: #888;
+            --accent-cpu: #ff4757;
+            --accent-mem: #2ed573;
+            --accent-net: #1e90ff;
+            --accent-disk: #ffa502;
+            --accent-temp: #ff6b81;
+            --border-radius: 12px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'JetBrains Mono', monospace;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 250px;
+            background-color: #181818;
+            border-right: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .sidebar.collapsed {
+            width: 70px;
+            padding: 20px 10px;
+        }
+
+        .sidebar.collapsed .sidebar-title span,
+        .sidebar.collapsed .nav-item span {
+            display: none;
+        }
+
+        .sidebar.collapsed .nav-item {
+            justify-content: center;
+        }
+
+        .sidebar-toggle {
+            position: absolute;
+            top: 20px;
+            right: 15px;
+            background: none;
+            border: none;
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            z-index: 100;
+        }
+
+        .sidebar.collapsed .sidebar-toggle {
+            right: 8px;
+        }
+
+        .sidebar-toggle:hover {
+            color: var(--accent-cpu);
+            transform: scale(1.1);
+        }
+
+        .sidebar-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 30px;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-right: 25px;
+        }
+
+        .nav-item {
+            padding: 12px 15px;
+            margin-bottom: 5px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-dim);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: flex-start;
+            white-space: nowrap;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(255,255,255,0.05);
+            color: var(--text-main);
+        }
+
+        .nav-item.active {
+            background-color: rgba(255, 71, 87, 0.1);
+            color: var(--accent-cpu);
+        }
+
+        .nav-item i {
+            min-width: 20px;
+            text-align: center;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .page {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            background: linear-gradient(45deg, #ff4757, #2ed573);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .boot-time {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            background: rgba(255,255,255,0.05);
+            padding: 5px 10px;
+            border-radius: 20px;
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-container {
+                grid-template-columns: 1fr;
+            }
+            body {
+                padding: 10px;
+            }
+            .sidebar {
+                width: 60px;
+                padding: 15px 8px;
+            }
+            .sidebar.collapsed {
+                width: 60px;
+            }
+            .sidebar-title span,
+            .sidebar.collapsed .sidebar-title span,
+            .nav-item span,
+            .sidebar.collapsed .nav-item span {
+                display: none;
+            }
+            .nav-item,
+            .sidebar .nav-item {
+                padding: 12px;
+                justify-content: center;
+            }
+            .sidebar-title {
+                margin-bottom: 20px;
+                margin-right: 0;
+            }
+            .sidebar-toggle {
+                right: 8px;
+            }
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 10px;
+        }
+
+        .stat-group {
+            margin-bottom: 15px;
+        }
+
+        .stat-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+
+        .progress-bg {
+            background: rgba(255,255,255,0.1);
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        /* Specific Colors */
+        .cpu-fill { background: var(--accent-cpu); box-shadow: 0 0 10px rgba(255, 71, 87, 0.3); }
+        .mem-fill { background: var(--accent-mem); box-shadow: 0 0 10px rgba(46, 213, 115, 0.3); }
+        .disk-fill { background: var(--accent-disk); }
+        .temp-fill { background: var(--accent-temp); }
+
+        .cpu-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        #sensors-container {
+            max-height: 200px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .core-item {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            text-align: left;
+            font-size: 1rem;
+        }
+
+        .core-bar {
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            margin-top: 5px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .core-fill {
+            height: 100%;
+            background: var(--accent-cpu);
+            transition: width 0.3s;
+            box-shadow: 0 0 10px rgba(255, 71, 87, 0.3);
+        }
+
+        .sensor-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px dashed rgba(255,255,255,0.1);
+            font-size: 0.9rem;
+        }
+
+        .sensor-value {
+            font-weight: bold;
+        }
+
+        .network-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .network-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .net-box {
+            background: rgba(30, 144, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(30, 144, 255, 0.2);
+        }
+
+        .net-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--accent-net);
+            margin-top: 5px;
+        }
+
+        .disk-item {
+            margin-bottom: 15px;
+        }
+        
+        .disk-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .freq-badge {
+            background: rgba(255, 71, 87, 0.1);
+            color: var(--accent-cpu);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ff4757; /* Red by default */
+            box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+            transition: background-color 0.3s, box-shadow 0.3s;
+            display: inline-block;
+        }
+
+        .status-dot.connected {
+            background-color: #2ed573; /* Green */
+            box-shadow: 0 0 10px rgba(46, 213, 115, 0.5);
+        }
+
+        /* Fastfetch Style */
+        .fastfetch-container {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        
+        .ascii-logo {
+            color: var(--accent-net);
+            font-weight: bold;
+            font-size: 0.8rem;
+            line-height: 1.2;
+            white-space: pre;
+        }
+
+        .sys-info-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
+        .sys-key {
+            color: var(--accent-mem);
+            font-weight: bold;
+            min-width: 100px;
+            display: inline-block;
+        }
+
+        .sys-val {
+            color: var(--text-main);
+        }
+
+        /* Scrollbar styling for processes */
+        #processes-container::-webkit-scrollbar,
+        .cpu-grid::-webkit-scrollbar,
+        #sensors-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        #processes-container::-webkit-scrollbar-track,
+        .cpu-grid::-webkit-scrollbar-track,
+        #sensors-container::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+        }
+        #processes-container::-webkit-scrollbar-thumb,
+        .cpu-grid::-webkit-scrollbar-thumb,
+        #sensors-container::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+        #processes-container::-webkit-scrollbar-thumb:hover,
+        .cpu-grid::-webkit-scrollbar-thumb:hover,
+        #sensors-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        @media (max-width: 600px) {
+            .fastfetch-container {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            .ascii-logo {
+                display: none; /* Hide ASCII on small screens to save space */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <div class="sidebar-title">
+                <i class="fas fa-bolt" style="color: var(--accent-cpu);"></i>
+                <span>MONITOR</span>
+            </div>
+            <div class="nav-item active" onclick="switchPage('general')">
+                <i class="fas fa-home" title="General Dashboard"></i>
+                <span>General</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('cpu')">
+                <i class="fas fa-microchip" title="CPU Details"></i>
+                <span>CPU Details</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('memory')">
+                <i class="fas fa-memory" title="Memory"></i>
+                <span>Memory</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('network')">
+                <i class="fas fa-network-wired" title="Network"></i>
+                <span>Network</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('storage')">
+                <i class="fas fa-hdd" title="Storage"></i>
+                <span>Storage</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('processes')">
+                <i class="fas fa-tasks" title="Processes"></i>
+                <span>Processes</span>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="header">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <h1 id="page-title">General Dashboard</h1>
+                    <div id="status-dot" class="status-dot" title="Connection Status"></div>
+                    <select id="interval-select" onchange="changeInterval()" style="background: rgba(255,255,255,0.1); color: var(--text-main); border: none; padding: 5px; border-radius: 4px; font-family: inherit; font-size: 0.8rem; cursor: pointer;">
+                        <option value="0.5">0.5s</option>
+                        <option value="1.0" selected>1.0s</option>
+                        <option value="2.0">2.0s</option>
+                        <option value="5.0">5.0s</option>
+                    </select>
+                </div>
+                <div id="boot-time" class="boot-time">Booting...</div>
+            </div>
+
+            <!-- Page: General -->
+            <div id="page-general" class="page active">
+                <div class="grid-container">
+        <!-- System Info (Fastfetch) -->
+        <div class="card" style="grid-column: 1 / -1;">
+            <div class="card-title">System Information</div>
+            <div class="fastfetch-container">
+                <div class="sys-info-list" id="sys-info-list">
+                    <div>Loading system info...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CPU Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>CPU</span>
+                <span id="cpu-freq" class="freq-badge">0 MHz</span>
+            </div>
+            <div class="stat-group">
+                <div class="stat-label">
+                    <span>Total Load</span>
+                    <span id="cpu-total-text">0%</span>
+                </div>
+                <div class="progress-bg">
+                    <div id="cpu-total-bar" class="progress-fill cpu-fill" style="width: 0%"></div>
+                </div>
+            </div>
+            <div id="cpu-cores" class="cpu-grid">
+                <!-- Cores injected here -->
+            </div>
+        </div>
+
+        <!-- Memory Card -->
+        <div class="card">
+            <div class="card-title">Memory</div>
+            <div class="stat-group">
+                <div class="stat-label">
+                    <span>RAM Usage</span>
+                    <span id="mem-text">0 / 0</span>
+                </div>
+                <div class="progress-bg">
+                    <div id="mem-bar" class="progress-fill mem-fill" style="width: 0%"></div>
+                </div>
+                <div style="text-align: right; font-size: 0.8rem; color: var(--text-dim); margin-top: 5px;">
+                    <span id="mem-percent">0%</span>
+                </div>
+            </div>
+            <div id="mem-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85rem; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                <!-- Details injected here -->
+            </div>
+            
+            <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                <div style="font-size: 0.9rem; margin-bottom: 10px; color: var(--text-dim);">Top Processes</div>
+                <div id="processes-container" style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 5px; max-height: 200px; overflow-y: auto; padding-right: 5px;">
+                    <!-- Processes injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Sensors Card -->
+        <div class="card">
+            <div class="card-title">Sensors & Power</div>
+            <div id="sensors-container"></div>
+            <div id="power-container" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;"></div>
+        </div>
+
+        <!-- Network Card -->
+        <div class="card">
+            <div class="card-title">Network</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="net-box">
+                    <div style="font-size: 0.8rem; color: var(--text-dim);">UPLOAD SPEED</div>
+                    <div id="net-speed-sent" class="net-value" style="color: var(--accent-cpu)">0 B/s</div>
+                </div>
+                 <div class="net-box">
+                    <div style="font-size: 0.8rem; color: var(--text-dim);">DOWNLOAD SPEED</div>
+                    <div id="net-speed-recv" class="net-value" style="color: var(--accent-mem)">0 B/s</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SSH Card -->
+        <div class="card">
+            <div class="card-title">SSH Status</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div>
+                    <span style="color: var(--text-dim);">Service:</span>
+                    <span id="ssh-status" style="font-weight: bold; margin-left: 5px;">-</span>
+                </div>
+                <div>
+                    <span style="color: var(--text-dim);">Connections:</span>
+                    <span id="ssh-connections" style="font-weight: bold; margin-left: 5px; color: var(--accent-net);">0</span>
+                </div>
+            </div>
+            <div style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 5px;">Active Sessions</div>
+            <div id="ssh-sessions" style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 5px; height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 5px;">
+                <!-- Sessions injected here -->
+            </div>
+        </div>
+
+        <!-- Disk Card -->
+        <div class="card" style="grid-column: 1 / -1;">
+            <div class="card-title">Storage</div>
+            <div id="disk-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                <!-- Disks injected here -->
+            </div>
+        </div>
+    </div> <!-- End grid-container -->
+    </div> <!-- End page-general -->
+
+    <!-- Other Pages (Placeholders) -->
+    <div id="page-cpu" class="page">
+        <div class="grid-container">
+            <!-- Load Average & Stats -->
+            <div class="card">
+                <div class="card-title">Load Average & Stats</div>
+                <div style="display: flex; justify-content: space-around; text-align: center; margin-bottom: 20px;">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">1 Min</div>
+                        <div id="cpu-load-1" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu);">0.00</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">5 Min</div>
+                        <div id="cpu-load-5" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu);">0.00</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">15 Min</div>
+                        <div id="cpu-load-15" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu);">0.00</div>
+                    </div>
+                </div>
+                <div class="stat-group">
+                    <div class="stat-label">
+                        <span>Context Switches</span>
+                        <span id="cpu-ctx-switches" style="color: var(--text-main);">0</span>
+                    </div>
+                    <div class="stat-label">
+                        <span>Interrupts</span>
+                        <span id="cpu-interrupts" style="color: var(--text-main);">0</span>
+                    </div>
+                    <div class="stat-label">
+                        <span>Syscalls</span>
+                        <span id="cpu-syscalls" style="color: var(--text-main);">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CPU Times Breakdown -->
+            <div class="card">
+                <div class="card-title">CPU Time Distribution</div>
+                <div id="cpu-times-container" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+
+            <!-- CPU Information -->
+            <div class="card">
+                <div class="card-title">CPU Information</div>
+                <div id="cpu-info" style="display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-dim);">Model:</span>
+                        <span id="cpu-model" style="font-weight: 500;">-</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-dim);">Architecture:</span>
+                        <span id="cpu-arch" style="font-weight: 500;">-</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-dim);">Cores:</span>
+                        <span id="cpu-cores" style="font-weight: 500;">-</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-dim);">Threads:</span>
+                        <span id="cpu-threads" style="font-weight: 500;">-</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-dim);">Frequency:</span>
+                        <span id="cpu-freq-range" style="font-weight: 500;">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CPU Temperature Trends -->
+            <div class="card">
+                <div class="card-title">Temperature Trends (Last 60s)</div>
+                <div id="cpu-temp-trend" style="height: 120px; position: relative; display: flex; align-items: flex-end; gap: 2px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                    <!-- Bar chart injected here -->
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.85rem;">
+                    <span style="color: var(--text-dim);">Average Temp:</span>
+                    <span id="cpu-temp-avg" style="font-weight: bold; color: #ff6b6b;">0°C</span>
+                </div>
+            </div>
+
+            <!-- Detailed Core Grid -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Per Core Usage</div>
+                <div id="cpu-detailed-cores" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px;">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="page-memory" class="page">
+        <div class="grid-container">
+            <!-- Memory Usage -->
+            <div class="card">
+                <div class="card-title">Memory Usage</div>
+                <div class="stat-group">
+                    <div class="stat-label">
+                        <span>RAM Usage</span>
+                        <span id="mem-page-text">0 / 0</span>
+                    </div>
+                    <div class="progress-bg">
+                        <div id="mem-page-bar" class="progress-fill mem-fill" style="width: 0%"></div>
+                    </div>
+                    <div style="text-align: right; font-size: 0.8rem; color: var(--text-dim); margin-top: 5px;">
+                        <span id="mem-page-percent">0%</span>
+                    </div>
+                </div>
+                <div id="mem-page-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85rem; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                    <!-- Details injected here -->
+                </div>
+            </div>
+
+            <!-- Memory Usage Trends -->
+            <div class="card">
+                <div class="card-title">Memory Usage Trends (Last 60s)</div>
+                <div id="mem-trend" style="height: 120px; position: relative; display: flex; align-items: flex-end; gap: 2px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                    <!-- Bar chart injected here -->
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.85rem;">
+                    <span style="color: var(--text-dim);">Current Usage:</span>
+                    <span id="mem-trend-current" style="font-weight: bold; color: var(--accent-mem);">0%</span>
+                </div>
+            </div>
+
+            <!-- Swap Usage -->
+            <div class="card">
+                <div class="card-title">Swap Usage</div>
+                <div class="stat-group">
+                    <div class="stat-label">
+                        <span>Swap</span>
+                        <span id="swap-page-text">0 / 0</span>
+                    </div>
+                    <div class="progress-bg">
+                        <div id="swap-page-bar" class="progress-fill disk-fill" style="width: 0%"></div>
+                    </div>
+                    <div style="text-align: right; font-size: 0.8rem; color: var(--text-dim); margin-top: 5px;">
+                        <span id="swap-page-percent">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Process Manager -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">
+                    <span>Process Manager</span>
+                    <span id="proc-count" style="font-size: 0.8rem; color: var(--text-dim); font-weight: normal;">0 processes</span>
+                </div>
+                <div style="overflow-x: auto; max-height: 500px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                        <thead style="position: sticky; top: 0; background: var(--card-bg); z-index: 1;">
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
+                                <th style="padding: 10px; color: var(--text-dim); cursor: pointer;" onclick="setSort('pid')">PID <i class="fas fa-sort"></i></th>
+                                <th style="padding: 10px; color: var(--text-dim); cursor: pointer;" onclick="setSort('name')">Name <i class="fas fa-sort"></i></th>
+                                <th style="padding: 10px; color: var(--text-dim);">User</th>
+                                <th style="padding: 10px; color: var(--text-dim);">Threads</th>
+                                <th style="padding: 10px; color: var(--text-dim);">CPU%</th>
+                                <th style="padding: 10px; color: var(--text-dim); cursor: pointer;" onclick="setSort('memory_percent')">Mem% <i class="fas fa-sort"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="process-table-body">
+                            <!-- Injected via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="page-network" class="page">
+        <div class="grid-container">
+            <!-- Global Network Stats -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Global Traffic</div>
+                <div class="network-stats">
+                    <div class="net-box">
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">UPLOAD SPEED</div>
+                        <div id="net-page-speed-sent" class="net-value" style="color: var(--accent-cpu)">0 B/s</div>
+                    </div>
+                    <div class="net-box">
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">DOWNLOAD SPEED</div>
+                        <div id="net-page-speed-recv" class="net-value" style="color: var(--accent-mem)">0 B/s</div>
+                    </div>
+                    <div class="net-box">
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">TOTAL SENT</div>
+                        <div id="net-page-sent" class="net-value">0 B</div>
+                    </div>
+                    <div class="net-box">
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">TOTAL RECV</div>
+                        <div id="net-page-recv" class="net-value">0 B</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection State Details -->
+            <div class="card">
+                <div class="card-title">TCP Connection States</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 0.85rem;">
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">ESTABLISHED</span>
+                        <span id="tcp-established" style="font-weight: bold; color: var(--accent-cpu);">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">TIME_WAIT</span>
+                        <span id="tcp-time-wait" style="font-weight: bold; color: var(--text-dim);">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">CLOSE_WAIT</span>
+                        <span id="tcp-close-wait" style="font-weight: bold;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">LISTEN</span>
+                        <span id="tcp-listen" style="font-weight: bold; color: var(--accent-mem);">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">SYN_SENT</span>
+                        <span id="tcp-syn-sent" style="font-weight: bold;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">SYN_RECV</span>
+                        <span id="tcp-syn-recv" style="font-weight: bold;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">FIN_WAIT1</span>
+                        <span id="tcp-fin-wait1" style="font-weight: bold;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">FIN_WAIT2</span>
+                        <span id="tcp-fin-wait2" style="font-weight: bold;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px; background: var(--card-bg); border-radius: 4px;">
+                        <span style="color: var(--text-dim);">LAST_ACK</span>
+                        <span id="tcp-last-ack" style="font-weight: bold;">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Protocol Stats -->
+            <div class="card">
+                <div class="card-title">Active Connections</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; text-align: center;">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">TCP</div>
+                        <div id="net-tcp-count" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-cpu);">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">UDP</div>
+                        <div id="net-udp-count" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-mem);">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">TCP TimeWait</div>
+                        <div id="net-tcp-tw" style="font-size: 1.5rem; font-weight: bold; color: var(--text-dim);">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SSH Manager (Network Page) -->
+            <div class="card">
+                <div class="card-title">SSH Server</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div>
+                        <span style="color: var(--text-dim);">Status:</span>
+                        <span id="net-ssh-status" style="font-weight: bold; margin-left: 5px;">-</span>
+                    </div>
+                    <div>
+                        <span style="color: var(--text-dim);">Active:</span>
+                        <span id="net-ssh-connections" style="font-weight: bold; margin-left: 5px; color: var(--accent-net);">0</span>
+                    </div>
+                </div>
+                <div style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 5px;">Sessions</div>
+                <div id="net-ssh-sessions" style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 5px; height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 5px;">
+                    <!-- Sessions injected here -->
+                </div>
+            </div>
+
+            <!-- Network Errors & Packet Loss -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Network Errors & Packet Loss</div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; text-align: center;">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">ERRORS IN</div>
+                        <div id="net-errors-in" style="font-size: 1.3rem; font-weight: bold; color: #ff6b6b;">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">ERRORS OUT</div>
+                        <div id="net-errors-out" style="font-size: 1.3rem; font-weight: bold; color: #ff6b6b;">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">DROPS IN</div>
+                        <div id="net-drops-in" style="font-size: 1.3rem; font-weight: bold; color: #ffa94d;">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">DROPS OUT</div>
+                        <div id="net-drops-out" style="font-size: 1.3rem; font-weight: bold; color: #ffa94d;">0</div>
+                    </div>
+                </div>
+                <div style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 10px;">Per-Interface Statistics</div>
+                <div id="net-error-details" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 10px;">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+
+            <!-- Interfaces Grid -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Interfaces</div>
+                <div id="net-interfaces" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="page-storage" class="page">
+        <div class="grid-container">
+            <!-- Disk Overview -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Disk Overview</div>
+                <div id="disk-overview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+
+            <!-- Partitions List -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Partitions & Mount Points</div>
+                <div id="storage-partitions" style="display: flex; flex-direction: column; gap: 15px;">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+
+            <!-- Disk I/O Statistics -->
+            <div class="card">
+                <div class="card-title">Disk I/O</div>
+                <div id="disk-io-stats" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Injected via JS --></div>
+            </div>
+
+            <!-- Inode Usage -->
+            <div class="card">
+                <div class="card-title">Inode Usage</div>
+                <div id="inode-usage" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="page-processes" class="page">
+        <div class="card">
+            <div class="card-title">Process Manager</div>
+            <div style="padding: 20px; color: var(--text-dim);">Detailed Process list coming soon...</div>
+        </div>
+    </div>
+
+    </div> <!-- End main-content -->
+</div> <!-- End app-container -->
+
+    <script>
+        // 侧边栏切换函数
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const toggle = document.getElementById('sidebar-toggle');
+            sidebar.classList.toggle('collapsed');
+            
+            // 保存状态到本地存储
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            localStorage.setItem('sidebarCollapsed', isCollapsed);
+            
+            // 更新按钮图标
+            if (isCollapsed) {
+                toggle.innerHTML = '<i class="fas fa-chevron-right"></i>';
+            } else {
+                toggle.innerHTML = '<i class="fas fa-chevron-left"></i>';
+            }
+        }
+
+        // 页面加载时恢复侧边栏状态
+        window.addEventListener('DOMContentLoaded', function() {
+            const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+            if (isCollapsed) {
+                const sidebar = document.getElementById('sidebar');
+                sidebar.classList.add('collapsed');
+                const toggle = document.getElementById('sidebar-toggle');
+                toggle.innerHTML = '<i class="fas fa-chevron-right"></i>';
+            }
+        });
+
+        function switchPage(pageId) {
+            // Hide all pages
+            document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+            // Show selected page
+            document.getElementById('page-' + pageId).classList.add('active');
+            
+            // Update nav active state
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            // Find the nav item that corresponds to the page
+            const navItem = document.querySelector(`.nav-item[onclick*="'${pageId}'"]`);
+            if (navItem) {
+                navItem.classList.add('active');
+            }
+            
+            // Update title
+            const titles = {
+                'general': 'General Dashboard',
+                'cpu': 'CPU Details',
+                'memory': 'Memory Analysis',
+                'network': 'Network Traffic',
+                'storage': 'Storage Manager',
+                'processes': 'Process Manager'
+            };
+            if (titles[pageId]) {
+                document.getElementById('page-title').innerText = titles[pageId];
+            }
+        }
+
+        // Fetch static info once
+        fetch('/api/info')
+            .then(response => response.json())
+            .then(data => {
+                const infoList = document.getElementById('sys-info-list');
+                infoList.innerHTML = `
+                    <div style="color: var(--accent-cpu); font-weight: bold; margin-bottom: 5px;">${data.header}</div>
+                    <div style="color: var(--text-dim); margin-bottom: 10px;">--------------------------</div>
+                    <div><span class="sys-key">OS:</span><span class="sys-val">${data.os}</span></div>
+                    <div><span class="sys-key">Kernel:</span><span class="sys-val">${data.kernel}</span></div>
+                    <div><span class="sys-key">Uptime:</span><span class="sys-val">${data.uptime}</span></div>
+                    <div><span class="sys-key">Shell:</span><span class="sys-val">${data.shell}</span></div>
+                    <div><span class="sys-key">CPU:</span><span class="sys-val">${data.cpu}</span></div>
+                    <div><span class="sys-key">GPU:</span><span class="sys-val">${data.gpu}</span></div>
+                    <div><span class="sys-key">Memory:</span><span class="sys-val">${data.memory}</span></div>
+                    <div><span class="sys-key">Swap:</span><span class="sys-val">${data.swap}</span></div>
+                    <div><span class="sys-key">Disk (/):</span><span class="sys-val">${data.disk}</span></div>
+                    <div><span class="sys-key">Local IP:</span><span class="sys-val">${data.ip}</span></div>
+                    <div><span class="sys-key">Locale:</span><span class="sys-val">${data.locale}</span></div>
+                `;
+            });
+
+        let lastNetwork = null;
+        let lastTime = null;
+        let lastData = null;
+        let currentSort = { column: 'memory_percent', direction: 'desc' };
+
+        function setSort(column) {
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'desc' ? 'asc' : 'desc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'desc';
+            }
+            if (lastData) {
+                _renderStatsInternal(lastData);
+            }
+        }
+
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        let websocket = null;
+        let reconnectTimer = null;
+
+        function connectWebSocket() {
+            if (websocket) {
+                // Prevent auto-reconnect from the old socket
+                websocket.onclose = null;
+                websocket.close();
+            }
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+
+            const interval = document.getElementById('interval-select').value;
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}`;
+            
+            websocket = new WebSocket(wsUrl);
+            const statusDot = document.getElementById('status-dot');
+
+            websocket.onopen = function() {
+                statusDot.classList.add('connected');
+            };
+
+            websocket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                renderStats(data);
+            };
+
+            websocket.onclose = function() {
+                statusDot.classList.remove('connected');
+                // Try to reconnect in 1 second
+                reconnectTimer = setTimeout(connectWebSocket, 1000);
+            };
+
+            websocket.onerror = function(err) {
+                statusDot.classList.remove('connected');
+                console.error('Socket encountered error: ', err.message, 'Closing socket');
+                websocket.close();
+            };
+        }
+
+        function changeInterval() {
+            connectWebSocket();
+        }
+
+        // Helper for DOM reuse
+        function updateList(containerId, items, createFn, updateFn) {
+            const container = document.getElementById(containerId);
+            const children = Array.from(container.children);
+            
+            // Remove excess
+            while (container.children.length > items.length) {
+                container.removeChild(container.lastChild);
+            }
+
+            items.forEach((item, index) => {
+                let el = container.children[index];
+                if (!el) {
+                    el = createFn(item, index);
+                    container.appendChild(el);
+                } else {
+                    updateFn(el, item, index);
+                }
+            });
+        }
+
+        function renderStats(data) {
+            lastData = data;
+            requestAnimationFrame(() => {
+                _renderStatsInternal(data);
+            });
+        }
+
+        function _renderStatsInternal(data) {
+            // Boot Time
+            document.getElementById('boot-time').innerText = 'Up since: ' + data.boot_time;
+
+            // Check active page to optimize rendering
+            const isCpuPage = document.getElementById('page-cpu').classList.contains('active');
+            const isMemPage = document.getElementById('page-memory').classList.contains('active');
+            const isGeneralPage = document.getElementById('page-general').classList.contains('active');
+
+            // General Page CPU Widget
+            if (isGeneralPage) {
+                document.getElementById('cpu-total-text').innerText = data.cpu.percent + '%';
+                document.getElementById('cpu-total-bar').style.width = data.cpu.percent + '%';
+                if (data.cpu.freq && data.cpu.freq.avg !== undefined) {
+                    document.getElementById('cpu-freq').innerText = data.cpu.freq.avg.toFixed(0) + ' MHz';
+                }
+                
+                updateList('cpu-cores', data.cpu.per_core, 
+                    (core, index) => {
+                        const div = document.createElement('div');
+                        div.className = 'core-item';
+                        div.innerHTML = `
+                            <div class="stat-label">
+                                <span class="core-label">Core ${index} <span class="core-freq" style="color: var(--text-dim); font-size: 0.8em;"></span></span>
+                                <span class="core-val"></span>
+                            </div>
+                            <div class="core-bar">
+                                <div class="core-fill" style="width: 0%;"></div>
+                            </div>
+                        `;
+                        return div;
+                    },
+                    (el, core, index) => {
+                        const freq = data.cpu.freq.per_core[index] ? data.cpu.freq.per_core[index].toFixed(0) : '-';
+                        el.querySelector('.core-freq').innerText = `@ ${freq} MHz`;
+                        el.querySelector('.core-val').innerText = `${core}%`;
+                        el.querySelector('.core-fill').style.width = `${core}%`;
+                    }
+                );
+            }
+
+            // CPU Details Page
+            if (isCpuPage && data.cpu.load_avg) {
+                document.getElementById('cpu-load-1').innerText = data.cpu.load_avg[0].toFixed(2);
+                document.getElementById('cpu-load-5').innerText = data.cpu.load_avg[1].toFixed(2);
+                document.getElementById('cpu-load-15').innerText = data.cpu.load_avg[2].toFixed(2);
+
+                // Stats
+                if (data.cpu.stats) {
+                    document.getElementById('cpu-ctx-switches').innerText = data.cpu.stats.ctx_switches.toLocaleString();
+                    document.getElementById('cpu-interrupts').innerText = data.cpu.stats.interrupts.toLocaleString();
+                    document.getElementById('cpu-syscalls').innerText = data.cpu.stats.syscalls.toLocaleString();
+                }
+
+                // CPU Times
+                if (data.cpu.times) {
+                    const timeLabels = {
+                        'user': { color: '#ff4757', label: 'User' },
+                        'system': { color: '#2ed573', label: 'System' },
+                        'idle': { color: '#2f3542', label: 'Idle' },
+                        'iowait': { color: '#ffa502', label: 'IO Wait' },
+                        'irq': { color: '#1e90ff', label: 'IRQ' },
+                        'softirq': { color: '#70a1ff', label: 'Soft IRQ' }
+                    };
+                    
+                    const timesData = Object.entries(data.cpu.times)
+                        .filter(([key, val]) => timeLabels[key] && val > 0)
+                        .map(([key, val]) => ({ key, val, ...timeLabels[key] }))
+                        .sort((a, b) => b.val - a.val);
+
+                    updateList('cpu-times-container', timesData,
+                        (item) => {
+                            const div = document.createElement('div');
+                            div.innerHTML = `
+                                <div class="stat-label">
+                                    <span>${item.label}</span>
+                                    <span class="time-val"></span>
+                                </div>
+                                <div class="progress-bg">
+                                    <div class="progress-fill time-fill" style="width: 0%"></div>
+                                </div>
+                            `;
+                            return div;
+                        },
+                        (el, item) => {
+                            el.querySelector('.time-val').innerText = item.val.toFixed(1) + '%';
+                            el.querySelector('.time-fill').style.width = item.val + '%';
+                            el.querySelector('.time-fill').style.backgroundColor = item.color;
+                        }
+                    );
+                }
+
+                // CPU Information
+                if (data.cpu.info) {
+                    const info = data.cpu.info;
+                    document.getElementById('cpu-model').innerText = info.model || '-';
+                    document.getElementById('cpu-arch').innerText = info.architecture || '-';
+                    document.getElementById('cpu-cores').innerText = info.cores || '-';
+                    document.getElementById('cpu-threads').innerText = info.threads || '-';
+                    const freqRange = info.min_freq && info.max_freq 
+                        ? `${info.min_freq.toFixed(0)} - ${info.max_freq.toFixed(0)} MHz`
+                        : '-';
+                    document.getElementById('cpu-freq-range').innerText = freqRange;
+                }
+
+                // CPU Temperature Trends
+                if (data.cpu.temp_history && data.cpu.temp_history.length > 0) {
+                    const trendContainer = document.getElementById('cpu-temp-trend');
+                    const history = data.cpu.temp_history;
+                    const maxTemp = Math.max(...history.map(h => h.avg));
+                    const minTemp = Math.min(...history.map(h => h.avg));
+                    const range = maxTemp - minTemp || 1;
+                    
+                    trendContainer.innerHTML = history.map(h => {
+                        const height = ((h.avg - minTemp) / range) * 100;
+                        return `<div style="flex: 1; height: ${height}%; background: linear-gradient(to top, #ff6b6b, #ff9999); border-radius: 2px 2px 0 0; min-width: 2px;"></div>`;
+                    }).join('');
+                    
+                    const latestTemp = history[history.length - 1]?.avg || 0;
+                    document.getElementById('cpu-temp-avg').innerText = `${latestTemp.toFixed(1)}°C`;
+                }
+
+                // Detailed Cores
+                updateList('cpu-detailed-cores', data.cpu.per_core,
+                    (core, index) => {
+                        const div = document.createElement('div');
+                        div.className = 'card';
+                        div.style.padding = '15px';
+                        div.style.marginBottom = '0';
+                        div.innerHTML = `
+                            <div style="font-size: 0.9rem; margin-bottom: 5px; display: flex; justify-content: space-between;">
+                                <span>Core ${index}</span>
+                                <span class="core-val" style="font-weight: bold; color: var(--accent-cpu);"></span>
+                            </div>
+                            <div class="progress-bg" style="height: 6px;">
+                                <div class="progress-fill core-fill" style="width: 0%; background: var(--accent-cpu);"></div>
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 5px; text-align: right;" class="core-freq"></div>
+                        `;
+                        return div;
+                    },
+                    (el, core, index) => {
+                        el.querySelector('.core-val').innerText = core + '%';
+                        el.querySelector('.core-fill').style.width = core + '%';
+                        const freq = data.cpu.freq.per_core[index] ? data.cpu.freq.per_core[index].toFixed(0) : '-';
+                        el.querySelector('.core-freq').innerText = `${freq} MHz`;
+                    }
+                );
+            }
+
+            // Memory
+            document.getElementById('mem-text').innerText = `${data.memory.used} / ${data.memory.total}`;
+            document.getElementById('mem-percent').innerText = data.memory.percent + '%';
+            document.getElementById('mem-bar').style.width = data.memory.percent + '%';
+
+            // Memory Details
+            const memDetails = [
+                { label: 'Buffers', val: data.memory.buffers },
+                { label: 'Cached', val: data.memory.cached },
+                { label: 'Shared', val: data.memory.shared },
+                { label: 'Slab', val: data.memory.slab },
+                { label: 'Active', val: data.memory.active },
+                { label: 'Inactive', val: data.memory.inactive },
+            ];
+            
+            updateList('mem-details', memDetails,
+                (item) => {
+                    const div = document.createElement('div');
+                    div.innerHTML = `<span style="color: var(--text-dim);">${item.label}:</span> <span class="mem-val" style="float: right;">${item.val}</span>`;
+                    return div;
+                },
+                (el, item) => {
+                    el.querySelector('.mem-val').innerText = item.val;
+                }
+            );
+
+            // Memory Page
+            if (isMemPage) {
+                // Memory Stats
+                document.getElementById('mem-page-text').innerText = `${data.memory.used} / ${data.memory.total}`;
+                document.getElementById('mem-page-percent').innerText = data.memory.percent + '%';
+                document.getElementById('mem-page-bar').style.width = data.memory.percent + '%';
+
+                // Memory Usage Trends
+                if (data.memory.history && data.memory.history.length > 0) {
+                    const trendContainer = document.getElementById('mem-trend');
+                    const history = data.memory.history;
+                    const maxPercent = Math.max(...history.map(h => h.percent));
+                    
+                    trendContainer.innerHTML = history.map(h => {
+                        const height = (h.percent / maxPercent) * 100;
+                        return `<div style="flex: 1; height: ${height}%; background: linear-gradient(to top, var(--accent-mem), #7dd3fc); border-radius: 2px 2px 0 0; min-width: 2px;"></div>`;
+                    }).join('');
+                    
+                    const latestPercent = history[history.length - 1]?.percent || 0;
+                    document.getElementById('mem-trend-current').innerText = `${latestPercent.toFixed(1)}%`;
+                }
+
+                // Memory Details
+                const memDetails = [
+                    { label: 'Available', val: data.memory.available },
+                    { label: 'Buffers', val: data.memory.buffers },
+                    { label: 'Cached', val: data.memory.cached },
+                    { label: 'Shared', val: data.memory.shared },
+                    { label: 'Slab', val: data.memory.slab },
+                    { label: 'Active', val: data.memory.active },
+                    { label: 'Inactive', val: data.memory.inactive }
+                ];
+                
+                updateList('mem-page-details', memDetails,
+                    (item) => {
+                        const div = document.createElement('div');
+                        div.innerHTML = `<span style="color: var(--text-dim);">${item.label}:</span> <span class="mem-val" style="float: right;">${item.val}</span>`;
+                        return div;
+                    },
+                    (el, item) => {
+                        el.querySelector('.mem-val').innerText = item.val;
+                    }
+                );
+
+                // Swap Stats
+                if (data.swap) {
+                    document.getElementById('swap-page-text').innerText = `${data.swap.used} / ${data.swap.total}`;
+                    document.getElementById('swap-page-percent').innerText = data.swap.percent + '%';
+                    document.getElementById('swap-page-bar').style.width = data.swap.percent + '%';
+                }
+
+                // Process Table
+                if (data.processes) {
+                    document.getElementById('proc-count').innerText = `${data.processes.length} processes`;
+                    
+                    let sortedProcs = [...data.processes];
+                    sortedProcs.sort((a, b) => {
+                        let valA = a[currentSort.column];
+                        let valB = b[currentSort.column];
+                        
+                        if (typeof valA === 'string') valA = valA.toLowerCase();
+                        if (typeof valB === 'string') valB = valB.toLowerCase();
+                        
+                        if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+                        if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+
+                    updateList('process-table-body', sortedProcs,
+                        (proc) => {
+                            const tr = document.createElement('tr');
+                            tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                            tr.innerHTML = `
+                                <td style="padding: 8px; color: var(--accent-cpu); font-family: monospace;"></td>
+                                <td style="padding: 8px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></td>
+                                <td style="padding: 8px; color: var(--text-dim);"></td>
+                                <td style="padding: 8px; text-align: center;"></td>
+                                <td style="padding: 8px; color: var(--accent-net);"></td>
+                                <td style="padding: 8px; color: var(--accent-mem);"></td>
+                            `;
+                            return tr;
+                        },
+                        (el, proc) => {
+                            el.children[0].innerText = proc.pid;
+                            el.children[1].innerText = proc.name;
+                            el.children[1].title = proc.name;
+                            el.children[2].innerText = proc.username || '-';
+                            el.children[3].innerText = proc.num_threads || '-';
+                            el.children[4].innerText = proc.cpu_percent.toFixed(1) + '%';
+                            el.children[5].innerText = proc.memory_percent.toFixed(1) + '%';
+                        }
+                    );
+                }
+            }
+
+            // Top Processes (General Page Widget)
+            if (isGeneralPage && data.processes) {
+                updateList('processes-container', data.processes,
+                    (proc) => {
+                        const div = document.createElement('div');
+                        div.style.display = 'flex';
+                        div.style.justifyContent = 'space-between';
+                        div.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        div.style.padding = '2px 0';
+                        div.innerHTML = `
+                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;" class="proc-name"></span>
+                            <span>
+                                <span class="proc-mem" style="color: var(--accent-mem); font-weight: bold;"></span>
+                            </span>
+                        `;
+                        return div;
+                    },
+                    (el, proc) => {
+                        el.querySelector('.proc-name').innerText = `[${proc.pid}] ${proc.name}`;
+                        el.querySelector('.proc-mem').innerText = proc.memory_percent.toFixed(1) + '%';
+                    }
+                );
+            }
+
+            // Sensors
+            const sensorsContainer = document.getElementById('sensors-container');
+            let sensorsList = [];
+            
+            if (data.fans) {
+                data.fans.forEach(fan => sensorsList.push({type: 'fan', ...fan}));
+            }
+            if (data.sensors) {
+                for (const [chip, sensors] of Object.entries(data.sensors)) {
+                    sensors.forEach(sensor => sensorsList.push({type: 'temp', chip: chip, ...sensor}));
+                }
+            }
+
+            if (sensorsList.length === 0) {
+                sensorsContainer.innerHTML = '<div class="no-data" style="color: var(--text-dim); text-align: center; padding: 20px;">No sensors detected</div>';
+            } else {
+                if (sensorsContainer.querySelector('.no-data')) {
+                    sensorsContainer.innerHTML = '';
+                }
+                updateList('sensors-container', sensorsList,
+                    (item) => {
+                        const div = document.createElement('div');
+                        div.className = 'sensor-item';
+                        div.innerHTML = `<span></span><span class="sensor-value"></span>`;
+                        return div;
+                    },
+                    (el, item) => {
+                        const labelSpan = el.firstElementChild;
+                        const valSpan = el.lastElementChild;
+                        
+                        if (item.type === 'fan') {
+                            labelSpan.innerText = item.label;
+                            valSpan.style.color = 'var(--accent-net)';
+                            valSpan.innerText = `${item.current} RPM`;
+                        } else {
+                            labelSpan.innerText = item.label || item.chip;
+                            valSpan.style.color = item.current > 70 ? '#ff4757' : '#2ed573';
+                            valSpan.innerText = `${item.current}°C`;
+                        }
+                    }
+                );
+            }
+
+            // Power
+            const powerContainer = document.getElementById('power-container');
+            let powerList = [];
+            
+            if (data.power) {
+                if (data.power.percent !== undefined) {
+                    powerList.push({type: 'battery', ...data.power});
+                }
+                if (data.power.consumption_watts !== undefined) {
+                    powerList.push({type: 'total', watts: data.power.consumption_watts});
+                }
+                if (data.power.rapl) {
+                    for (const [domain, watts] of Object.entries(data.power.rapl)) {
+                        if (domain.includes('Package') && data.power.consumption_watts == watts) continue;
+                        powerList.push({type: 'rapl', domain: domain, watts: watts});
+                    }
+                }
+            }
+
+            if (powerList.length === 0) {
+                powerContainer.innerHTML = '<div class="no-data" style="color: var(--text-dim); text-align: center; padding: 10px;">No power data</div>';
+            } else {
+                if (powerContainer.querySelector('.no-data')) {
+                    powerContainer.innerHTML = '';
+                }
+                updateList('power-container', powerList,
+                    (item) => {
+                        const div = document.createElement('div');
+                        div.className = 'sensor-item';
+                        div.innerHTML = `<span></span><span class="sensor-value"></span>`;
+                        return div;
+                    },
+                    (el, item) => {
+                        const labelSpan = el.firstElementChild;
+                        const valSpan = el.lastElementChild;
+                        
+                        if (item.type === 'battery') {
+                            labelSpan.innerText = 'Battery';
+                            valSpan.innerText = `${item.percent}% ${item.power_plugged ? '(Charging)' : ''}`;
+                            valSpan.style.color = 'inherit';
+                        } else if (item.type === 'total') {
+                            labelSpan.innerText = 'Power Draw';
+                            valSpan.innerText = `${item.watts} W`;
+                            valSpan.style.color = '#ffa502';
+                        } else {
+                            labelSpan.innerText = item.domain;
+                            labelSpan.style.color = 'var(--text-dim)';
+                            labelSpan.style.fontSize = '0.85em';
+                            labelSpan.style.paddingLeft = '10px';
+                            valSpan.innerText = `${item.watts} W`;
+                            valSpan.style.fontSize = '0.85em';
+                            valSpan.style.color = 'inherit';
+                        }
+                    }
+                );
+            }
+
+            // Network
+            if (data.network) {
+                // General Page
+                if (document.getElementById('net-sent')) {
+                    document.getElementById('net-sent').innerText = data.network.bytes_sent;
+                    document.getElementById('net-recv').innerText = data.network.bytes_recv;
+                }
+                
+                // Network Page
+                if (document.getElementById('net-page-sent')) {
+                    document.getElementById('net-page-sent').innerText = data.network.bytes_sent;
+                    document.getElementById('net-page-recv').innerText = data.network.bytes_recv;
+                }
+
+                if (lastNetwork && lastTime) {
+                    const now = Date.now();
+                    const timeDiff = (now - lastTime) / 1000; // seconds
+                    if (timeDiff > 0) {
+                        const sentDiff = data.network.raw_sent - lastNetwork.raw_sent;
+                        const recvDiff = data.network.raw_recv - lastNetwork.raw_recv;
+                        
+                        const sentSpeed = sentDiff / timeDiff;
+                        const recvSpeed = recvDiff / timeDiff;
+                        const sentSpeedStr = formatSize(sentSpeed) + '/s';
+                        const recvSpeedStr = formatSize(recvSpeed) + '/s';
+
+                        if (document.getElementById('net-speed-sent')) {
+                            document.getElementById('net-speed-sent').innerText = sentSpeedStr;
+                            document.getElementById('net-speed-recv').innerText = recvSpeedStr;
+                        }
+                        if (document.getElementById('net-page-speed-sent')) {
+                            document.getElementById('net-page-speed-sent').innerText = sentSpeedStr;
+                            document.getElementById('net-page-speed-recv').innerText = recvSpeedStr;
+                        }
+                    }
+                }
+                lastNetwork = data.network;
+                lastTime = Date.now();
+
+                // Network Page Interfaces
+                const isNetPage = document.getElementById('page-network').classList.contains('active');
+                if (isNetPage) {
+                    // TCP Connection States
+                    if (data.network.connection_states) {
+                        const states = data.network.connection_states;
+                        document.getElementById('tcp-established').innerText = states.ESTABLISHED || 0;
+                        document.getElementById('tcp-time-wait').innerText = states.TIME_WAIT || 0;
+                        document.getElementById('tcp-close-wait').innerText = states.CLOSE_WAIT || 0;
+                        document.getElementById('tcp-listen').innerText = states.LISTEN || 0;
+                        document.getElementById('tcp-syn-sent').innerText = states.SYN_SENT || 0;
+                        document.getElementById('tcp-syn-recv').innerText = states.SYN_RECV || 0;
+                        document.getElementById('tcp-fin-wait1').innerText = states.FIN_WAIT1 || 0;
+                        document.getElementById('tcp-fin-wait2').innerText = states.FIN_WAIT2 || 0;
+                        document.getElementById('tcp-last-ack').innerText = states.LAST_ACK || 0;
+                    }
+
+                    // Socket Stats
+                    if (data.network.sockets) {
+                        document.getElementById('net-tcp-count').innerText = data.network.sockets.tcp;
+                        document.getElementById('net-udp-count').innerText = data.network.sockets.udp;
+                        document.getElementById('net-tcp-tw').innerText = data.network.sockets.tcp_tw;
+                    }
+
+                    // Network Errors & Packet Loss
+                    if (data.network.errors) {
+                        document.getElementById('net-errors-in').innerText = data.network.errors.total_errors_in || 0;
+                        document.getElementById('net-errors-out').innerText = data.network.errors.total_errors_out || 0;
+                        document.getElementById('net-drops-in').innerText = data.network.errors.total_drops_in || 0;
+                        document.getElementById('net-drops-out').innerText = data.network.errors.total_drops_out || 0;
+                    }
+
+                    // Per-Interface Error Details
+                    if (data.network.interfaces) {
+                        const interfaces = Object.entries(data.network.interfaces)
+                            .map(([name, stats]) => ({name, ...stats}))
+                            .filter(i => (i.errors_in || 0) > 0 || (i.errors_out || 0) > 0 || (i.drops_in || 0) > 0 || (i.drops_out || 0) > 0);
+                        
+                        const errorContainer = document.getElementById('net-error-details');
+                        if (interfaces.length === 0) {
+                            errorContainer.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 10px;">No errors or drops detected</div>';
+                        } else {
+                            errorContainer.innerHTML = interfaces.map(iface => `
+                                <div style="padding: 10px; background: rgba(255,255,255,0.03); border-radius: 4px; border-left: 3px solid ${(iface.errors_in + iface.errors_out) > 0 ? '#ff6b6b' : '#ffa94d'};">
+                                    <div style="font-weight: bold; margin-bottom: 5px;">${iface.name}</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.85rem;">
+                                        <div style="color: var(--text-dim);">Errors In: <span style="color: #ff6b6b; font-weight: bold;">${iface.errors_in || 0}</span></div>
+                                        <div style="color: var(--text-dim);">Errors Out: <span style="color: #ff6b6b; font-weight: bold;">${iface.errors_out || 0}</span></div>
+                                        <div style="color: var(--text-dim);">Drops In: <span style="color: #ffa94d; font-weight: bold;">${iface.drops_in || 0}</span></div>
+                                        <div style="color: var(--text-dim);">Drops Out: <span style="color: #ffa94d; font-weight: bold;">${iface.drops_out || 0}</span></div>
+                                    </div>
+                                </div>
+                            `).join('');
+                        }
+                    }
+
+                    // SSH Stats (Network Page)
+                    if (data.ssh) {
+                        const statusEl = document.getElementById('net-ssh-status');
+                        statusEl.innerText = data.ssh.status;
+                        statusEl.style.color = data.ssh.status === 'Running' ? '#2ed573' : '#ff4757';
+                        document.getElementById('net-ssh-connections').innerText = data.ssh.connections;
+                        
+                        updateList('net-ssh-sessions', data.ssh.sessions,
+                            (session) => {
+                                const div = document.createElement('div');
+                                div.style.display = 'flex';
+                                div.style.justifyContent = 'space-between';
+                                div.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                                div.style.padding = '4px 0';
+                                div.innerHTML = `
+                                    <div>
+                                        <span class="ssh-user" style="color: var(--accent-cpu); font-weight: bold;"></span>
+                                        <span class="ssh-ip" style="color: var(--text-dim); font-size: 0.8em; margin-left: 5px;"></span>
+                                    </div>
+                                    <span class="ssh-time" style="color: var(--text-dim);"></span>
+                                `;
+                                return div;
+                            },
+                            (el, session) => {
+                                el.querySelector('.ssh-user').innerText = session.user;
+                                el.querySelector('.ssh-ip').innerText = `(${session.ip})`;
+                                if (session.started && session.started !== '-') {
+                                    const now = new Date();
+                                    const [hours, minutes, seconds] = session.started.split(':');
+                                    const utcDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, seconds));
+                                    el.querySelector('.ssh-time').innerText = utcDate.toLocaleTimeString();
+                                } else {
+                                    el.querySelector('.ssh-time').innerText = session.started;
+                                }
+                            }
+                        );
+                        if (data.ssh.sessions.length === 0) {
+                            document.getElementById('net-ssh-sessions').innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 10px;">No active sessions</div>';
+                        }
+                    }
+
+                    if (data.network.interfaces) {
+                        const interfaces = Object.entries(data.network.interfaces).map(([name, stats]) => ({name, ...stats}));
+                        updateList('net-interfaces', interfaces,
+                            (iface) => {
+                                const div = document.createElement('div');
+                                div.className = 'card';
+                                div.style.marginBottom = '0';
+                                div.style.padding = '15px';
+                                div.innerHTML = `
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <span class="iface-name" style="font-weight: bold; color: var(--accent-cpu);"></span>
+                                    <span class="iface-status" style="font-size: 0.8rem; padding: 2px 6px; border-radius: 4px;"></span>
+                                </div>
+                                <div style="font-size: 0.9rem; margin-bottom: 5px;">
+                                    <span style="color: var(--text-dim);">IP:</span> <span class="iface-ip"></span>
+                                </div>
+                                <div style="font-size: 0.9rem; margin-bottom: 5px;">
+                                    <span style="color: var(--text-dim);">Speed:</span> <span class="iface-speed"></span>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; font-size: 0.85rem;">
+                                    <div><i class="fas fa-arrow-up" style="color: var(--accent-cpu);"></i> <span class="iface-sent"></span></div>
+                                    <div><i class="fas fa-arrow-down" style="color: var(--accent-mem);"></i> <span class="iface-recv"></span></div>
+                                </div>
+                            `;
+                            return div;
+                        },
+                        (el, iface) => {
+                            el.querySelector('.iface-name').innerText = iface.name;
+                            const statusEl = el.querySelector('.iface-status');
+                            statusEl.innerText = iface.is_up ? 'UP' : 'DOWN';
+                            statusEl.style.background = iface.is_up ? 'rgba(46, 213, 115, 0.2)' : 'rgba(255, 71, 87, 0.2)';
+                            statusEl.style.color = iface.is_up ? '#2ed573' : '#ff4757';
+                            
+                            el.querySelector('.iface-ip').innerText = iface.ip;
+                            el.querySelector('.iface-speed').innerText = iface.speed > 0 ? iface.speed + ' Mb/s' : 'N/A';
+                            el.querySelector('.iface-sent').innerText = iface.bytes_sent;
+                            el.querySelector('.iface-recv').innerText = iface.bytes_recv;
+                        }
+                    );
+                }
+            }
+
+            // SSH
+            if (data.ssh) {
+                const statusEl = document.getElementById('ssh-status');
+                statusEl.innerText = data.ssh.status;
+                statusEl.style.color = data.ssh.status === 'Running' ? '#2ed573' : '#ff4757';
+                
+                document.getElementById('ssh-connections').innerText = data.ssh.connections;
+
+                updateList('ssh-sessions', data.ssh.sessions,
+                    (session) => {
+                        const div = document.createElement('div');
+                        div.style.display = 'flex';
+                        div.style.justifyContent = 'space-between';
+                        div.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        div.style.padding = '4px 0';
+                        div.innerHTML = `
+                            <div>
+                                <span class="ssh-user" style="color: var(--accent-cpu); font-weight: bold;"></span>
+                                <span class="ssh-ip" style="color: var(--text-dim); font-size: 0.8em; margin-left: 5px;"></span>
+                            </div>
+                            <span class="ssh-time" style="color: var(--text-dim);"></span>
+                        `;
+                        return div;
+                    },
+                    (el, session) => {
+                        el.querySelector('.ssh-user').innerText = session.user;
+                        el.querySelector('.ssh-ip').innerText = `(${session.ip})`;
+                        
+                        // Convert UTC time to local time
+                        if (session.started && session.started !== '-') {
+                            // Assuming session.started is HH:MM:SS in UTC (from backend)
+                            // We need a full date to convert, so we use today's date
+                            const now = new Date();
+                            const [hours, minutes, seconds] = session.started.split(':');
+                            const utcDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, seconds));
+                            el.querySelector('.ssh-time').innerText = utcDate.toLocaleTimeString();
+                        } else {
+                            el.querySelector('.ssh-time').innerText = session.started;
+                        }
+                    }
+                );
+                
+                if (data.ssh.sessions.length === 0) {
+                    const container = document.getElementById('ssh-sessions');
+                    if (container.innerHTML === '') {
+                         container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 10px;">No active sessions</div>';
+                    } else if (container.children.length > 0 && !container.querySelector('.ssh-user')) {
+                         // Keep "No active sessions" if it's already there and we have no data
+                    } else {
+                         container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 10px;">No active sessions</div>';
+                    }
+                }
+            }
+
+            // Disk (General Page)
+            if (data.disk) {
+                updateList('disk-container', data.disk,
+                (disk) => {
+                    const div = document.createElement('div');
+                    div.className = 'disk-item';
+                    div.innerHTML = `
+                        <div class="stat-label">
+                            <span class="disk-mount"></span>
+                            <span class="disk-percent"></span>
+                        </div>
+                        <div class="progress-bg">
+                            <div class="progress-fill disk-fill" style="width: 0%"></div>
+                        </div>
+                        <div class="disk-info">
+                            <span class="disk-device"></span>
+                            <span class="disk-usage"></span>
+                        </div>
+                    `;
+                    return div;
+                },
+                (el, disk) => {
+                    el.querySelector('.disk-mount').innerText = disk.mountpoint;
+                    el.querySelector('.disk-percent').innerText = disk.percent + '%';
+                    el.querySelector('.disk-fill').style.width = disk.percent + '%';
+                    el.querySelector('.disk-device').innerText = disk.device;
+                    el.querySelector('.disk-usage').innerText = `${disk.used} used of ${disk.total}`;
+                }
+            );
+            }
+
+            // Storage Page
+            const isStoragePage = document.getElementById('page-storage').classList.contains('active');
+            if (isStoragePage && data.disk) {
+                // Disk Overview - Aggregate by device
+                const deviceMap = {};
+                data.disk.forEach(disk => {
+                    if (!deviceMap[disk.device]) {
+                        deviceMap[disk.device] = {
+                            device: disk.device,
+                            total: disk.total,
+                            used: disk.used,
+                            free: disk.free,
+                            percent: disk.percent,
+                            mounts: []
+                        };
+                    }
+                    deviceMap[disk.device].mounts.push(disk.mountpoint);
+                });
+                
+                const devices = Object.values(deviceMap);
+                updateList('disk-overview', devices,
+                    (dev) => {
+                        const div = document.createElement('div');
+                        div.className = 'card';
+                        div.style.padding = '15px';
+                        div.style.marginBottom = '0';
+                        div.innerHTML = `
+                            <div style="font-weight: bold; margin-bottom: 10px; color: var(--accent-disk);" class="dev-name"></div>
+                            <div class="progress-bg" style="height: 12px; margin-bottom: 8px;">
+                                <div class="progress-fill disk-fill" style="width: 0%"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                                <span class="dev-used"></span>
+                                <span class="dev-percent"></span>
+                            </div>
+                        `;
+                        return div;
+                    },
+                    (el, dev) => {
+                        el.querySelector('.dev-name').innerText = dev.device;
+                        el.querySelector('.disk-fill').style.width = dev.percent + '%';
+                        el.querySelector('.dev-used').innerText = `${dev.used} / ${dev.total}`;
+                        el.querySelector('.dev-percent').innerText = dev.percent + '%';
+                    }
+                );
+
+                // Partitions List
+                updateList('storage-partitions', data.disk,
+                    (disk) => {
+                        const div = document.createElement('div');
+                        div.style.background = 'rgba(255,255,255,0.03)';
+                        div.style.padding = '15px';
+                        div.style.borderRadius = '8px';
+                        div.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div>
+                                    <div style="font-weight: bold; color: var(--accent-cpu);" class="part-mount"></div>
+                                    <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 2px;" class="part-device"></div>
+                                </div>
+                                <div style="font-size: 1.2rem; font-weight: bold;" class="part-percent"></div>
+                            </div>
+                            <div class="progress-bg" style="height: 8px; margin-bottom: 8px;">
+                                <div class="progress-fill disk-fill" style="width: 0%"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-dim);">
+                                <span class="part-usage"></span>
+                                <span class="part-free"></span>
+                            </div>
+                        `;
+                        return div;
+                    },
+                    (el, disk) => {
+                        el.querySelector('.part-mount').innerText = disk.mountpoint;
+                        el.querySelector('.part-device').innerText = disk.device;
+                        el.querySelector('.part-percent').innerText = disk.percent + '%';
+                        el.querySelector('.disk-fill').style.width = disk.percent + '%';
+                        el.querySelector('.part-usage').innerText = `Used: ${disk.used}`;
+                        el.querySelector('.part-free').innerText = `Free: ${disk.free}`;
+                    }
+                );
+            }
+
+            // Disk I/O Stats
+            if (isStoragePage && data.disk_io) {
+                const ioList = Object.entries(data.disk_io).map(([name, stats]) => ({name, ...stats}));
+                
+                const container = document.getElementById('disk-io-stats');
+                if (ioList.length === 0) {
+                    container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">No I/O data available</div>';
+                } else {
+                    container.innerHTML = '';
+                    ioList.forEach(io => {
+                        const div = document.createElement('div');
+                        div.style.padding = '10px';
+                        div.style.background = 'rgba(255,255,255,0.03)';
+                        div.style.borderRadius = '6px';
+                        div.innerHTML = `
+                            <div style="font-weight: bold; margin-bottom: 8px; color: var(--accent-net);">${io.name}</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
+                                <div><span style="color: var(--text-dim);">Read:</span> ${io.read_bytes}</div>
+                                <div><span style="color: var(--text-dim);">Write:</span> ${io.write_bytes}</div>
+                                <div><span style="color: var(--text-dim);">Read Ops:</span> ${io.read_count.toLocaleString()}</div>
+                                <div><span style="color: var(--text-dim);">Write Ops:</span> ${io.write_count.toLocaleString()}</div>
+                            </div>
+                        `;
+                        container.appendChild(div);
+                    });
+                }
+            }
+
+            // Inode Usage
+            if (isStoragePage && data.inodes) {
+                const container = document.getElementById('inode-usage');
+                if (data.inodes.length === 0) {
+                    container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">No inode data available</div>';
+                } else {
+                    container.innerHTML = '';
+                    data.inodes.forEach(inode => {
+                        const div = document.createElement('div');
+                        div.style.padding = '10px';
+                        div.style.background = 'rgba(255,255,255,0.03)';
+                        div.style.borderRadius = '6px';
+                        div.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="font-weight: bold;">${inode.mountpoint}</span>
+                                <span style="color: ${inode.percent > 80 ? '#ff4757' : 'var(--text-main)'};">${inode.percent}%</span>
+                            </div>
+                            <div class="progress-bg" style="height: 6px;">
+                                <div class="progress-fill" style="width: ${inode.percent}%; background: ${inode.percent > 80 ? '#ff4757' : 'var(--accent-mem)'}"></div>
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 5px;">
+                                ${inode.used.toLocaleString()} / ${inode.total.toLocaleString()} inodes
+                            </div>
+                        `;
+                        container.appendChild(div);
+                    });
+                }
+            }
+        }
+    }
+
+        // Start WebSocket connection
+        connectWebSocket();
+    </script>
+</body>
+</html>
