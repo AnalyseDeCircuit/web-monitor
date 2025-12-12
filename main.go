@@ -1301,7 +1301,8 @@ func collectStats() Response {
 	}
 
 	if len(cpuTempHistory) >= 300 {
-		cpuTempHistory = cpuTempHistory[1:]
+		copy(cpuTempHistory, cpuTempHistory[1:])
+		cpuTempHistory = cpuTempHistory[:len(cpuTempHistory)-1]
 	}
 	cpuTempHistory = append(cpuTempHistory, currentTemp)
 	resp.CPU.TempHistory = make([]float64, len(cpuTempHistory))
@@ -1326,7 +1327,8 @@ func collectStats() Response {
 
 	historyMutex.Lock()
 	if len(memHistory) >= 300 {
-		memHistory = memHistory[1:]
+		copy(memHistory, memHistory[1:])
+		memHistory = memHistory[:len(memHistory)-1]
 	}
 	memHistory = append(memHistory, v.UsedPercent)
 	resp.Memory.History = make([]float64, len(memHistory))
