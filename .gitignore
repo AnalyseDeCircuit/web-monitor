@@ -1,0 +1,50 @@
+# Binaries
+/web-monitor-go
+web-monitor-go
+bin/
+build/
+dist/
+out/
+
+# Release / packaging artifacts
+release/
+*.deb
+*.tar.gz
+web-monitor-go-*.tar.gz
+web-monitor-go-docker-image*.tar.gz
+web-monitor-go_*.deb
+deb_build/
+
+# Logs
+*.log
+
+# Go artifacts
+*.exe
+*.test
+*.out
+*.cover
+*.coverprofile
+coverage*
+
+# Go workspaces
+go.work
+go.work.sum
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Env/config
+.env
+.env.*
+
+# Local caches
+/go-pkg-mod/
+
+# Packaging scripts
+package*.sh
+
+# Templates generated files
+/templates/*.cache
