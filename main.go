@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -48,6 +49,21 @@ type User struct {
 	CreatedAt time.Time  `json:"created_at"`
 	LastLogin *time.Time `json:"last_login"`
 }
+
+// 告警配置
+type AlertConfig struct {
+	Enabled       bool    `json:"enabled"`
+	WebhookURL    string  `json:"webhook_url"`
+	CPUThreshold  float64 `json:"cpu_threshold"`  // Percent
+	MemThreshold  float64 `json:"mem_threshold"`  // Percent
+	DiskThreshold float64 `json:"disk_threshold"` // Percent
+}
+
+var (
+	alertConfig   AlertConfig
+	alertMutex    sync.RWMutex
+	lastAlertTime time.Time
+)
 
 // 用户数据库
 type UserDatabase struct {
@@ -241,6 +257,81 @@ func saveUserDatabase() error {
 	}
 	log.Println("User database saved successfully")
 	return nil
+}
+
+func loadAlerts() {
+	alertMutex.Lock()
+	defer alertMutex.Unlock()
+
+	data, err := ioutil.ReadFile("/data/alerts.json")
+	if err != nil {
+		// Default config
+		alertConfig = AlertConfig{
+			Enabled:       false,
+			CPUThreshold:  90,
+			MemThreshold:  90,
+			DiskThreshold: 90,
+		}
+		return
+	}
+	json.Unmarshal(data, &alertConfig)
+}
+
+func saveAlerts() error {
+	alertMutex.RLock()
+	data, err := json.MarshalIndent(alertConfig, "", "  ")
+	alertMutex.RUnlock()
+
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile("/data/alerts.json", data, 0666)
+}
+
+func checkAlerts(cpuPercent float64, memPercent float64, diskPercent float64) {
+	alertMutex.RLock()
+	config := alertConfig
+	alertMutex.RUnlock()
+
+	if !config.Enabled || config.WebhookURL == "" {
+		return
+	}
+
+	// Debounce: only alert once every 5 minutes
+	if time.Since(lastAlertTime) < 5*time.Minute {
+		return
+	}
+
+	var alerts []string
+	if cpuPercent > config.CPUThreshold {
+		alerts = append(alerts, fmt.Sprintf("CPU usage is high: %.1f%% (Threshold: %.1f%%)", cpuPercent, config.CPUThreshold))
+	}
+	if memPercent > config.MemThreshold {
+		alerts = append(alerts, fmt.Sprintf("Memory usage is high: %.1f%% (Threshold: %.1f%%)", memPercent, config.MemThreshold))
+	}
+	if diskPercent > config.DiskThreshold {
+		alerts = append(alerts, fmt.Sprintf("Disk usage is high: %.1f%% (Threshold: %.1f%%)", diskPercent, config.DiskThreshold))
+	}
+
+	if len(alerts) > 0 {
+		message := strings.Join(alerts, "\n")
+		go sendWebhook(config.WebhookURL, message)
+		lastAlertTime = time.Now()
+	}
+}
+
+func sendWebhook(url string, message string) {
+	payload := map[string]string{
+		"text": "Web Monitor Alert:\n" + message,
+	}
+	jsonPayload, _ := json.Marshal(payload)
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		log.Printf("Failed to send webhook: %v", err)
+		return
+	}
+	defer resp.Body.Close()
 }
 
 // 验证用户
@@ -1713,12 +1804,18 @@ func setPowerProfile(profile string) error {
 
 	// Try powerprofilesctl
 	cmd := exec.Command("chroot", "/hostfs", "powerprofilesctl", "set", profile)
-	if err := cmd.Run(); err == nil {
+	if output, err := cmd.CombinedOutput(); err == nil {
 		return nil
+	} else {
+		log.Printf("powerprofilesctl failed: %v, output: %s", err, string(output))
 	}
 
 	// Fallback to sysfs
-	return ioutil.WriteFile("/sys/firmware/acpi/platform_profile", []byte(profile), 0644)
+	sysfsProfile := profile
+	if profile == "power-saver" {
+		sysfsProfile = "low-power"
+	}
+	return ioutil.WriteFile("/sys/firmware/acpi/platform_profile", []byte(sysfsProfile), 0644)
 }
 
 func collectStats() Response {
@@ -3065,10 +3162,13 @@ func initPrometheus() {
 
 func updatePrometheusMetrics() {
 	for {
+		var cpuVal, memVal, diskVal float64
+
 		// CPU
 		percent, err := cpu.Percent(0, false)
 		if err == nil && len(percent) > 0 {
 			promCpuUsage.Set(percent[0])
+			cpuVal = percent[0]
 		}
 
 		// Memory
@@ -3077,6 +3177,7 @@ func updatePrometheusMetrics() {
 			promMemUsage.Set(v.UsedPercent)
 			promMemTotal.Set(float64(v.Total))
 			promMemUsed.Set(float64(v.Used))
+			memVal = v.UsedPercent
 		}
 
 		// Disk
@@ -3086,6 +3187,9 @@ func updatePrometheusMetrics() {
 				usage, err := disk.Usage(part.Mountpoint)
 				if err == nil {
 					promDiskUsage.WithLabelValues(part.Mountpoint).Set(usage.UsedPercent)
+					if part.Mountpoint == "/" {
+						diskVal = usage.UsedPercent
+					}
 				}
 			}
 		}
@@ -3104,6 +3208,8 @@ func updatePrometheusMetrics() {
 				promTemp.WithLabelValues(t.SensorKey).Set(t.Temperature)
 			}
 		}
+
+		checkAlerts(cpuVal, memVal, diskVal)
 
 		time.Sleep(5 * time.Second)
 	}
@@ -3126,6 +3232,9 @@ func main() {
 
 	// 加载操作日志
 	loadOpLogs()
+
+	// Load alerts
+	loadAlerts()
 
 	// 公开路由（不需要认证）
 	http.HandleFunc("/api/login", securityHeadersMiddleware(loginHandler))
@@ -3165,6 +3274,45 @@ func main() {
 
 	// Network API
 	http.HandleFunc("/api/network/test", authMiddleware(networkTestHandler))
+
+	// Alerts API
+	http.HandleFunc("/api/alerts", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			alertMutex.RLock()
+			config := alertConfig
+			alertMutex.RUnlock()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(config)
+		} else if r.Method == "POST" {
+			// Check Admin
+			sess, err := getSessionInfo(r)
+			if err != nil || sess.Role != "admin" {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			var newConfig AlertConfig
+			if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
+				http.Error(w, "Invalid request", http.StatusBadRequest)
+				return
+			}
+
+			alertMutex.Lock()
+			alertConfig = newConfig
+			alertMutex.Unlock()
+
+			if err := saveAlerts(); err != nil {
+				http.Error(w, "Failed to save alerts", http.StatusInternalServerError)
+				return
+			}
+
+			logOperation(sess.Username, "alerts", "Updated alert configuration", r.RemoteAddr)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
 
 	// Power Profile API
 	http.HandleFunc("/api/power/profile", authMiddleware(powerProfileHandler))

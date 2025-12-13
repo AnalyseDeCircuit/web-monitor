@@ -861,6 +861,50 @@
                 display: none; /* Hide ASCII on small screens to save space */
             }
         }
+        /* Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255,255,255,0.1);
+            transition: .4s;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+        }
+        input:checked + .slider {
+            background-color: var(--accent-cpu);
+        }
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        .slider.round {
+            border-radius: 24px;
+        }
+        .slider.round:before {
+            border-radius: 50%;
+        }
     </style>
 </head>
 <body>
@@ -940,6 +984,11 @@
                 <span>Cron</span>
             </div>
             
+            <div class="nav-item" onclick="switchPage('alerts')">
+                <i class="fas fa-bell" title="Alerts"></i>
+                <span>Alerts</span>
+            </div>
+
             <div style="margin-top: auto;"></div>
 
             <!-- Admin Only -->
@@ -1123,6 +1172,39 @@
         </div>
     </div> <!-- End grid-container -->
     </div> <!-- End page-general -->
+
+        <!-- Page: Alerts -->
+        <div id="page-alerts" class="page">
+            <div class="card">
+                <div class="card-title">Alert Configuration</div>
+                <div style="max-width: 600px;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Enable Alerts</label>
+                        <label class="switch">
+                            <input type="checkbox" id="alert-enabled">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Webhook URL</label>
+                        <input type="text" id="alert-webhook" style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); border-radius: 4px;" placeholder="https://hooks.slack.com/...">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">CPU Threshold (%)</label>
+                        <input type="number" id="alert-cpu" min="0" max="100" style="width: 100px; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); border-radius: 4px;">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Memory Threshold (%)</label>
+                        <input type="number" id="alert-mem" min="0" max="100" style="width: 100px; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); border-radius: 4px;">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Disk Threshold (%)</label>
+                        <input type="number" id="alert-disk" min="0" max="100" style="width: 100px; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); border-radius: 4px;">
+                    </div>
+                    <button onclick="saveAlerts()" style="background: var(--accent-cpu); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold;">Save Configuration</button>
+                </div>
+            </div>
+        </div>
 
     <!-- Other Pages (Placeholders) -->
     <div id="page-cpu" class="page">
@@ -2681,6 +2763,7 @@
                 document.getElementById('nav-logs').style.display = 'flex';
             }
             loadPowerProfile();
+            loadAlerts();
         }
 
         function loadPowerProfile() {
@@ -2763,6 +2846,48 @@
                 }
             })
             .catch(err => console.error('Error setting profile:', err));
+        }
+
+        function loadAlerts() {
+            fetch('/api/alerts', {
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('alert-enabled').checked = data.enabled;
+                document.getElementById('alert-webhook').value = data.webhook_url || '';
+                document.getElementById('alert-cpu').value = data.cpu_threshold || 90;
+                document.getElementById('alert-mem').value = data.mem_threshold || 90;
+                document.getElementById('alert-disk').value = data.disk_threshold || 90;
+            })
+            .catch(err => console.error('Failed to load alerts:', err));
+        }
+
+        function saveAlerts() {
+            const config = {
+                enabled: document.getElementById('alert-enabled').checked,
+                webhook_url: document.getElementById('alert-webhook').value,
+                cpu_threshold: parseFloat(document.getElementById('alert-cpu').value),
+                mem_threshold: parseFloat(document.getElementById('alert-mem').value),
+                disk_threshold: parseFloat(document.getElementById('alert-disk').value)
+            };
+
+            fetch('/api/alerts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getAuthToken()}`
+                },
+                body: JSON.stringify(config)
+            })
+            .then(res => {
+                if (res.ok) {
+                    alert('Alert configuration saved');
+                } else {
+                    alert('Failed to save alert configuration');
+                }
+            })
+            .catch(err => console.error('Error saving alerts:', err));
         }
 
         // Fetch static info once
