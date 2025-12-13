@@ -1,128 +1,83 @@
-# Web Monitor (Go)
+# Web Monitor (Go Version)
 
-A lightweight, high-performance Linux system monitoring service with a modern Web UI and real-time WebSocket streaming. Designed for small hosts, NAS, and container environments.
+A lightweight, high-performance Linux server monitoring and management dashboard. Built with a Go backend and pure HTML/JS frontend, it has a minimal footprint and is easy to deploy.
 
-## Key Features
+## ✨ Features
 
-### Comprehensive System Monitoring
-- **CPU Monitoring**: Real-time CPU usage, per-core usage, frequency, temperature history, load averages, context switches and interrupt statistics
-- **GPU Support**: Support for Intel iGPUs, NVIDIA GPUs, and AMD GPUs with frequency, load, VRAM, and temperature monitoring, including process-level GPU VRAM usage
-- **Memory Monitoring**: Virtual memory and swap space detailed statistics, buffer/cache analysis, memory usage history
-- **Disk Monitoring**: Partition usage, disk I/O statistics, inode usage rate
-- **Network Monitoring**: Interface status, bytes sent/received, error and drop monitoring, TCP connection state classification, listening ports list, socket statistics
-- **Sensor Monitoring**: Hardware temperature sensors, power consumption monitoring
-- **SSH Auditing**: Real-time SSH connections, active sessions, failed login tracking, authentication method statistics, and known hosts changes
+*   **Real-time Monitoring**: CPU, Memory, Disk I/O, Network Traffic, GPU (NVIDIA/AMD/Intel), Temperature Sensors.
+*   **Process Management**: View top system processes, sortable by resource usage.
+*   **Docker Management**: List containers/images, start, stop, restart, and remove containers.
+*   **System Management**:
+    *   **Systemd Services**: View service status, start, stop, restart, enable, and disable services.
+    *   **Cron Jobs**: View and edit scheduled tasks.
+*   **Network Tools**: Built-in Ping, Traceroute, Dig, Curl diagnostics.
+*   **SSH Monitoring**: Monitor SSH connections, active sessions, login history, and failed attempts.
+*   **Security Auditing**: Built-in Role-Based Access Control (Admin/User), logging critical operations.
 
-### Process and Container Monitoring
-- Process list (sorted by CPU/memory usage)
-- Process tree view, memory/CPU percentage, IO statistics
-- Process details (command line, working directory, thread count, uptime)
-- OOM risk process warnings
+## 🚀 Quick Start (Docker Compose)
 
-### Web Interface and API
-- Real-time responsive dashboard
-- WebSocket real-time data streaming (configurable update interval 2-60 seconds)
-- RESTful API support
-- Modern HTML/CSS/JavaScript frontend
+This is the recommended deployment method, pre-configured for full functionality.
 
-## Technical Features
-
-- **Resource Efficient**: Written in Go, statically compiled, zero external dependencies
-- **Container Ready**: Docker-friendly with configurable ports via environment variables and host network support for full metrics visibility
-- **Cross-Platform**: Primarily for Linux, supports multiple architectures
-
-## Quick Start (Docker Compose)
-
-Using `host` network mode is recommended for the most accurate network and SSH metrics:
-
-```yaml
-version: '3.8'
-services:
-  web-monitor-go:
-    image: web-monitor-go:latest
-    container_name: web-monitor-go
-    privileged: true
-    network_mode: host
-    environment:
-      - PORT=38080  # Custom listening port
-    volumes:
-      - /:/hostfs:ro
-      - /sys:/sys:ro
-      - /proc:/proc
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/run/utmp:/var/run/utmp:ro
-      - /etc/passwd:/etc/passwd:ro
-      - /etc/group:/etc/group:ro
-    restart: unless-stopped
-```
-
-Start: `docker-compose up -d`
-
-Access: `http://<IP>:38080`
-
-## Local Compilation and Run
+1.  Ensure Docker and Docker Compose are installed.
+2.  Run the following command in the project root:
 
 ```bash
-# Build
-go build -o web-monitor main.go
-
-# Defaults to port 8000
-./web-monitor
-
-# Custom port
-PORT=9090 ./web-monitor
+docker-compose up -d
 ```
 
-## System Requirements
+3.  Open your browser: `http://<Server-IP>:38080`
+4.  **Default User**: `admin`
+5.  **Default Password**: `admin123` **(Change immediately after login)**
 
-- **Operating System**: Linux (recommended)
-- **Go Version**: 1.21+ (if compiling from source)
-- **Permissions**: Administrator/root privileges (required for certain features)
-- **Dependencies**: gopsutil v3, Gorilla WebSocket
+### ⚠️ Critical Configuration
 
-## API Endpoints
+To enable full monitoring and management capabilities, the container requires elevated privileges and specific mounts:
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Web frontend page |
-| `WebSocket` | `/ws/stats?interval=2` | Real-time system statistics stream, interval parameter sets 2-60 seconds |
-| `GET` | `/api/info` | Get system basic information (JSON format) |
+*   `privileged: true`: Required to access hardware sensors and execute privileged commands.
+*   `network_mode: host`: Recommended for accurate host network monitoring.
+*   `pid: host`: Required to view host processes.
+*   `volumes`:
+    *   `/:/hostfs`: **Core Configuration**. The app uses `chroot /hostfs` to manage the host's Systemd and Cron.
+    *   `/var/run/docker.sock`: For Docker management features.
+    *   `/proc`, `/sys`: For hardware statistics collection.
 
-## Environment Variables
+## 🛠️ Manual Build & Run
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8000` | Web service listening port |
-| `SHELL` | `/bin/sh` | System shell type (for display) |
-| `LANG` | `C` | System locale |
+If you prefer not to use Docker, you can compile and run the binary directly.
 
-## Data Format
+### Build
 
-WebSocket streaming provides complete real-time system information including CPU, memory, GPU, network, SSH, and processes. Refer to the `Response` struct definition in the source code for detailed format specification.
+```bash
+# Enable static compilation for compatibility
+export CGO_ENABLED=0
+go build -ldflags="-s -w" -trimpath -o web-monitor-go .
 
-## Troubleshooting
+# Optional: Compress binary with upx
+upx --lzma --best web-monitor-go
+```
 
-| Issue | Solution |
-|-------|----------|
-| Cannot access web UI | Check firewall settings and ensure port is open; verify application is running |
-| GPU shows Unknown | Device may not be supported or driver incompatible; check `/sys/class/drm/` directory |
-| SSH connection stats empty | Requires root privileges to read `/var/log/auth.log`; confirm SSH service is running |
-| Some metrics show 0 or Unknown | Certain metrics may unavailable in container environments; mount appropriate system directories |
+### Run
 
-## Deployment Recommendations
+```bash
+# Defaults to port 8000
+./web-monitor-go
 
-### Secure Deployment (Cloudflare Tunnel)
+# Specify a custom port
+PORT=8080 ./web-monitor-go
+```
 
-Since this service contains sensitive system information, **it is strongly recommended not to expose the port directly to the public internet**. It's recommended to use Cloudflare Tunnel with Access for secure access.
+Note: When running directly on the host, the app executes commands directly and does not require the `/hostfs` mechanism.
 
-See the security deployment section in [User Manual (MANUAL.md)](MANUAL.md) for details.
+## 📝 Data Persistence
 
-## License
+All persistent data (user database, logs) is stored in the `/data` directory. In the Docker deployment, this is mapped to the `web-monitor-data` volume.
 
-[Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](LICENSE)
+## 🖥️ Compatibility
 
-This project is licensed under Creative Commons Attribution-NonCommercial 4.0 International. You are free to share and adapt this work, but not for commercial purposes, and you must give appropriate credit.
+*   **OS**: Linux (Ubuntu, Debian, CentOS, Alpine recommended)
+*   **Arch**: AMD64, ARM64
+*   **Browser**: Chrome, Firefox, Edge, Safari (Modern browsers)
 
-## Documentation
+## 📄 License
 
-For detailed configuration instructions, feature guides, and deployment recommendations, please refer to [User Manual (MANUAL.md)](MANUAL.md).
+CC BY-NC 4.0
