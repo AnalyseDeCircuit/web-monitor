@@ -24,6 +24,8 @@ import (
 	stdnet "net"
 
 	"github.com/gorilla/websocket"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
@@ -77,6 +79,40 @@ var (
 	opLogs       []OperationLog
 	opLogs_mu    sync.RWMutex
 	loginLimiter = rate.NewLimiter(1, 5) // 每秒1个，最多5个突发请求
+
+	// Prometheus Metrics
+	promCpuUsage = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "system_cpu_usage_percent",
+		Help: "Total CPU usage percentage",
+	})
+	promMemUsage = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "system_memory_usage_percent",
+		Help: "Used memory percentage",
+	})
+	promMemTotal = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "system_memory_total_bytes",
+		Help: "Total memory in bytes",
+	})
+	promMemUsed = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "system_memory_used_bytes",
+		Help: "Used memory in bytes",
+	})
+	promDiskUsage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "system_disk_usage_percent",
+		Help: "Disk usage percentage by mount point",
+	}, []string{"mountpoint"})
+	promNetSent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "system_network_sent_bytes_total",
+		Help: "Total bytes sent",
+	})
+	promNetRecv = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "system_network_recv_bytes_total",
+		Help: "Total bytes received",
+	})
+	promTemp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "system_temperature_celsius",
+		Help: "Hardware temperature in Celsius",
+	}, []string{"sensor"})
 )
 
 // 记录操作日志
@@ -3016,9 +3052,70 @@ func powerProfileHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
+func initPrometheus() {
+	prometheus.MustRegister(promCpuUsage)
+	prometheus.MustRegister(promMemUsage)
+	prometheus.MustRegister(promMemTotal)
+	prometheus.MustRegister(promMemUsed)
+	prometheus.MustRegister(promDiskUsage)
+	prometheus.MustRegister(promNetSent)
+	prometheus.MustRegister(promNetRecv)
+	prometheus.MustRegister(promTemp)
+}
+
+func updatePrometheusMetrics() {
+	for {
+		// CPU
+		percent, err := cpu.Percent(0, false)
+		if err == nil && len(percent) > 0 {
+			promCpuUsage.Set(percent[0])
+		}
+
+		// Memory
+		v, err := mem.VirtualMemory()
+		if err == nil {
+			promMemUsage.Set(v.UsedPercent)
+			promMemTotal.Set(float64(v.Total))
+			promMemUsed.Set(float64(v.Used))
+		}
+
+		// Disk
+		parts, err := disk.Partitions(false)
+		if err == nil {
+			for _, part := range parts {
+				usage, err := disk.Usage(part.Mountpoint)
+				if err == nil {
+					promDiskUsage.WithLabelValues(part.Mountpoint).Set(usage.UsedPercent)
+				}
+			}
+		}
+
+		// Network
+		netStats, err := net.IOCounters(false)
+		if err == nil && len(netStats) > 0 {
+			promNetSent.Set(float64(netStats[0].BytesSent))
+			promNetRecv.Set(float64(netStats[0].BytesRecv))
+		}
+
+		// Temperature
+		temps, err := host.SensorsTemperatures()
+		if err == nil {
+			for _, t := range temps {
+				promTemp.WithLabelValues(t.SensorKey).Set(t.Temperature)
+			}
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Starting web-monitor server...")
+
+	// Prometheus Init
+	initPrometheus()
+	go updatePrometheusMetrics()
 
 	// 初始化用户数据库
 	log.Println("Initializing user database...")
@@ -3034,6 +3131,7 @@ func main() {
 	http.HandleFunc("/api/login", securityHeadersMiddleware(loginHandler))
 	http.HandleFunc("/api/logout", securityHeadersMiddleware(logoutHandler))
 	http.HandleFunc("/login", securityHeadersMiddleware(loginPageHandler))
+	http.Handle("/metrics", promhttp.Handler())
 
 	// 受保护的路由（需要认证）
 	http.HandleFunc("/ws/stats", authMiddleware(wsHandler))

@@ -13,6 +13,7 @@
 *   **网络工具**：内置 Ping, Traceroute, Dig, Curl 等网络诊断工具。
 *   **SSH 监控**：监控 SSH 连接数、活跃会话、登录历史及失败记录。
 *   **安全审计**：内置用户角色系统 (Admin/User)，记录关键操作日志。
+*   **Prometheus 集成**：暴露 `/metrics` 接口，支持 Prometheus/Grafana 采集。
 
 ## 🚀 快速部署 (Docker Compose)
 

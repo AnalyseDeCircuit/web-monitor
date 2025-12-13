@@ -13,6 +13,7 @@ A lightweight, high-performance Linux server monitoring and management dashboard
 *   **Network Tools**: Built-in Ping, Traceroute, Dig, Curl diagnostics.
 *   **SSH Monitoring**: Monitor SSH connections, active sessions, login history, and failed attempts.
 *   **Security Auditing**: Built-in Role-Based Access Control (Admin/User), logging critical operations.
+*   **Prometheus Integration**: Exposes `/metrics` endpoint for Prometheus/Grafana integration.
 
 ## 🚀 Quick Start (Docker Compose)
 

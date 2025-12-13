@@ -1,5 +1,5 @@
 # Build stage (offline-friendly, uses vendored deps)
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 WORKDIR /app
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 ENV CGO_ENABLED=0 GO111MODULE=on GOOS=linux GOARCH=amd64
