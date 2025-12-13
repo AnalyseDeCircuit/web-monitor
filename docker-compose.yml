@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: web-monitor-go:offline
+    image: web-monitor-go:latest
     container_name: web-monitor-go
     privileged: true
     network_mode: host
@@ -22,6 +22,15 @@ services:
       - /etc/group:/etc/group:ro
       - web-monitor-data:/data
     restart: unless-stopped
+    # 内存和CPU优化
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
 
 volumes:
   web-monitor-data:
