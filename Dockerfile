@@ -1,14 +1,12 @@
 # Build stage (offline-friendly, uses vendored deps)
 FROM golang:1.21-alpine AS builder
 WORKDIR /app
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add --no-cache upx
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 ENV CGO_ENABLED=0 GO111MODULE=on GOOS=linux GOARCH=amd64
 COPY go.mod ./
 COPY vendor ./vendor
 COPY . .
-RUN go build -mod=vendor -ldflags="-s -w" -trimpath -o server . && \
-    upx --lzma -q --best server || true
+RUN go build -mod=vendor -ldflags="-s -w" -trimpath -o server .
 
 # Runtime stage
 FROM alpine:latest
