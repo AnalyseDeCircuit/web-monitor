@@ -32,6 +32,7 @@ import (
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/time/rate"
 )
 
 // --- Structs matching JSON response ---
@@ -53,9 +54,10 @@ type UserDatabase struct {
 
 // Session 信息
 type SessionInfo struct {
-	Username string
-	Role     string
-	Token    string
+	Username  string
+	Role      string
+	Token     string
+	ExpiresAt time.Time
 }
 
 // 操作日志
@@ -68,12 +70,13 @@ type OperationLog struct {
 }
 
 var (
-	sessions    = make(map[string]SessionInfo)
-	sessions_mu sync.RWMutex
-	userDB      *UserDatabase
-	userDB_mu   sync.RWMutex
-	opLogs      []OperationLog
-	opLogs_mu   sync.RWMutex
+	sessions     = make(map[string]SessionInfo)
+	sessions_mu  sync.RWMutex
+	userDB       *UserDatabase
+	userDB_mu    sync.RWMutex
+	opLogs       []OperationLog
+	opLogs_mu    sync.RWMutex
+	loginLimiter = rate.NewLimiter(1, 5) // 每秒1个，最多5个突发请求
 )
 
 // 记录操作日志
@@ -1395,24 +1398,36 @@ func getSSHStats() SSHStats {
 			parts := strings.Fields(line)
 			if len(parts) >= 5 {
 				user := parts[0]
-				ip := parts[len(parts)-1]
-				if strings.HasPrefix(ip, "(") && strings.HasSuffix(ip, ")") {
-					ip = ip[1 : len(ip)-1]
-					// Filter out local X11 or tmux if they don't look like IPs
-					if stdnet.ParseIP(ip) != nil {
-						startedStr := parts[2] + " " + parts[3]
-						// Try to parse time and convert to ISO 8601 (UTC)
-						// who output format: YYYY-MM-DD HH:MM
-						if t, err := time.ParseInLocation("2006-01-02 15:04", startedStr, time.Local); err == nil {
-							startedStr = t.UTC().Format(time.RFC3339)
-						}
+				startedStr := parts[2] + " " + parts[3]
 
-						stats.Sessions = append(stats.Sessions, map[string]string{
-							"user":    user,
-							"ip":      ip,
-							"started": startedStr,
-						})
+				// Try to parse time and convert to ISO 8601 (UTC)
+				// who output format: YYYY-MM-DD HH:MM
+				if t, err := time.ParseInLocation("2006-01-02 15:04", startedStr, time.Local); err == nil {
+					startedStr = t.UTC().Format(time.RFC3339)
+				}
+
+				// Extract IP from all fields with parentheses and deduplicate
+				ipsFound := make(map[string]bool)
+				var ip string
+				for _, part := range parts {
+					if strings.HasPrefix(part, "(") && strings.HasSuffix(part, ")") {
+						candidate := part[1 : len(part)-1]
+						// Filter out local X11 or tmux if they don't look like IPs
+						if stdnet.ParseIP(candidate) != nil && !ipsFound[candidate] {
+							ipsFound[candidate] = true
+							ip = candidate // Keep the first valid IP
+							break          // Only take first valid IP, ignore duplicates
+						}
 					}
+				}
+
+				// Only add if we found a valid IP
+				if ip != "" {
+					stats.Sessions = append(stats.Sessions, map[string]string{
+						"user":    user,
+						"ip":      ip,
+						"started": startedStr,
+					})
 				}
 			}
 		}
@@ -2041,6 +2056,14 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 速率限制检查
+	if !loginLimiter.Allow() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Too many login attempts. Please try again later."})
+		return
+	}
+
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
@@ -2063,9 +2086,10 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	sessions_mu.Lock()
 	sessions[tokenStr] = SessionInfo{
-		Username: user.Username,
-		Role:     user.Role,
-		Token:    tokenStr,
+		Username:  user.Username,
+		Role:      user.Role,
+		Token:     tokenStr,
+		ExpiresAt: time.Now().Add(24 * time.Hour), // Token 24小时后过期
 	}
 	sessions_mu.Unlock()
 
@@ -2112,8 +2136,18 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 // 认证检查函数
 func isAuthenticated(r *http.Request) bool {
-	_, err := getSessionInfo(r)
-	return err == nil
+	session, err := getSessionInfo(r)
+	if err != nil {
+		return false
+	}
+	// 检查Token是否过期
+	if session.ExpiresAt.Before(time.Now()) {
+		sessions_mu.Lock()
+		delete(sessions, session.Token)
+		sessions_mu.Unlock()
+		return false
+	}
+	return true
 }
 
 // 获取 Session 信息
@@ -2153,7 +2187,20 @@ func getCurrentRole(r *http.Request) string {
 		return ""
 	}
 	return session.Role
-} // 认证中间件
+} // 安全HTTP头中间件
+func securityHeadersMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		next(w, r)
+	}
+}
+
+// 认证中间件
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !isAuthenticated(r) {
@@ -2871,9 +2918,9 @@ func main() {
 	loadOpLogs()
 
 	// 公开路由（不需要认证）
-	http.HandleFunc("/api/login", loginHandler)
-	http.HandleFunc("/api/logout", logoutHandler)
-	http.HandleFunc("/login", loginPageHandler)
+	http.HandleFunc("/api/login", securityHeadersMiddleware(loginHandler))
+	http.HandleFunc("/api/logout", securityHeadersMiddleware(logoutHandler))
+	http.HandleFunc("/login", securityHeadersMiddleware(loginPageHandler))
 
 	// 受保护的路由（需要认证）
 	http.HandleFunc("/ws/stats", authMiddleware(wsHandler))
@@ -2927,7 +2974,7 @@ func main() {
 
 	// 主页和其他静态文件
 	// 重定向 / 到 index.html，由前端检查认证
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/", securityHeadersMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
@@ -2938,7 +2985,7 @@ func main() {
 			return
 		}
 		http.ServeFile(w, r, "./templates/index.html")
-	})
+	}))
 
 	// 提供其他静态文件（CSS、JS等）
 	fs := http.FileServer(http.Dir("./templates"))

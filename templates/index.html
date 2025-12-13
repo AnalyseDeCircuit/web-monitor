@@ -73,9 +73,9 @@
         }
 
         .sidebar-toggle {
-            position: absolute;
-            top: 20px;
-            right: 15px;
+            position: relative;
+            top: auto;
+            right: auto;
             background: none;
             border: none;
             color: var(--text-main);
@@ -87,10 +87,12 @@
             justify-content: center;
             transition: all 0.2s;
             z-index: 100;
+            margin-left: auto;
+            margin-bottom: 15px;
         }
 
         .sidebar.collapsed .sidebar-toggle {
-            right: 8px;
+            right: auto;
         }
 
         .sidebar-toggle:hover {
@@ -156,6 +158,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            flex: 1;
         }
 
         .nav-item {
@@ -870,12 +873,14 @@
     <div class="app-container">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
-            <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">
-                <i class="fas fa-chevron-left"></i>
-            </button>
-            <div class="sidebar-title">
-                <i class="fas fa-bolt" style="color: var(--accent-cpu);"></i>
-                <span>MONITOR</span>
+            <div style="display: flex; align-items: center; margin-bottom: 30px;">
+                <div class="sidebar-title">
+                    <i class="fas fa-bolt" style="color: var(--accent-cpu);"></i>
+                    <span>MONITOR</span>
+                </div>
+                <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
             </div>
             <div class="nav-item active" onclick="switchPage('general')">
                 <i class="fas fa-home" title="General Dashboard"></i>
