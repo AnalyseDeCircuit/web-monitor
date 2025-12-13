@@ -1,0 +1,93 @@
+{
+  "name": "Web Monitor",
+  "short_name": "WebMon",
+  "description": "Real-time system monitoring dashboard for servers and workstations",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1a1a1a",
+  "theme_color": "#00a8ff",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%231a1a1a' width='192' height='192'/><circle cx='96' cy='96' r='70' fill='%2300a8ff'/><path d='M70 80h52v32H70z' fill='%231a1a1a'/><path d='M65 120h62v8H65z' fill='%2300a8ff' opacity='0.6'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect fill='%231a1a1a' width='512' height='512'/><circle cx='256' cy='256' r='180' fill='%2300a8ff'/><path d='M200 220h112v85H200z' fill='%231a1a1a'/><path d='M190 320h132v20H190z' fill='%2300a8ff' opacity='0.6'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity"],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%231a1a1a' width='540' height='720'/><rect fill='%232a2a2a' width='540' height='100'/><text x='20' y='60' font-size='24' fill='%2300a8ff' font-family='monospace'>Web Monitor</text></svg>",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1280 720'><rect fill='%231a1a1a' width='1280' height='720'/><rect fill='%232a2a2a' width='250' height='720'/><text x='300' y='60' font-size='32' fill='%2300a8ff' font-family='monospace'>Web Monitor</text></svg>",
+      "sizes": "1280x720",
+      "type": "image/svg+xml",
+      "form_factor": "wide"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "System Status",
+      "short_name": "Status",
+      "description": "View system status and performance metrics",
+      "url": "/?page=general",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%231a1a1a' width='192' height='192'/><circle cx='96' cy='96' r='60' fill='%2300a8ff'/></svg>",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Network Status",
+      "short_name": "Network",
+      "description": "View network connections and statistics",
+      "url": "/?page=net-traffic",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%231a1a1a' width='192' height='192'/><g fill='%2300a8ff'><circle cx='60' cy='60' r='15'/><circle cx='132' cy='132' r='15'/><path d='M75 75 l42 42' stroke='%2300a8ff' stroke-width='8' fill='none'/></g></svg>",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Processes",
+      "short_name": "Process",
+      "description": "View running processes",
+      "url": "/?page=processes",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%231a1a1a' width='192' height='192'/><g fill='%2300a8ff'><rect x='40' y='40' width='112' height='112' rx='4'/></g></svg>",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "prefer_related_applications": false,
+  "related_applications": []
+}

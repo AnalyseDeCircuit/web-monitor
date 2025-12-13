@@ -2,7 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#121212">
+    <meta name="description" content="Advanced System Monitor - Real-time CPU, Memory, GPU, Network, Docker, and SSH monitoring">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="System Monitor">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23121212' width='192' height='192'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='%23ff4757' text-anchor='middle' dominant-baseline='central'>M</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23121212' width='192' height='192'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='%23ff4757' text-anchor='middle' dominant-baseline='central'>M</text></svg>">
     <title>System Monitor</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -88,6 +96,38 @@
         .sidebar-toggle:hover {
             color: var(--accent-cpu);
             transform: scale(1.1);
+        }
+
+        /* Mobile Menu Hamburger Button */
+        .mobile-menu-btn {
+            display: none;
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1000;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 1.3rem;
+            padding: 8px 12px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mobile-menu-btn:hover {
+            background: rgba(255,255,255,0.15);
+            color: var(--accent-cpu);
+        }
+
+        .mobile-menu-btn.active {
+            background: var(--accent-cpu);
+            color: white;
         }
 
         .net-tab {
@@ -583,6 +623,232 @@
         .vram-bar-bg { width: 100%; height: 8px; background: #333; border-radius: 4px; margin-top: 5px; overflow: hidden; }
         .vram-bar-fill { height: 100%; background: var(--accent-mem); width: 0%; transition: width 0.5s; }
 
+        /* === RESPONSIVE DESIGN === */
+        
+        /* Tablet (768px and below) */
+        @media (max-width: 768px) {
+            .app-container {
+                flex-direction: column;
+            }
+            
+            .mobile-menu-btn {
+                display: flex !important;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: auto;
+                max-height: 0;
+                overflow: hidden;
+                position: absolute;
+                top: 60px;
+                left: 0;
+                right: 0;
+                z-index: 999;
+                border-right: none;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
+                padding: 10px 0;
+                flex-direction: column;
+                flex-wrap: nowrap;
+                transition: max-height 0.3s ease;
+            }
+            
+            .sidebar.mobile-open {
+                max-height: calc(100vh - 60px);
+                overflow-y: auto;
+            }
+            
+            .sidebar-title {
+                display: none;
+            }
+            
+            .sidebar-toggle {
+                display: none;
+            }
+            
+            .main-content {
+                flex: 1;
+                width: 100%;
+                padding-top: 60px;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 10px;
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 1.2rem;
+                margin: 0;
+            }
+            
+            .grid-container {
+                grid-template-columns: 1fr;
+                gap: 10px;
+                padding: 10px;
+            }
+            
+            .card {
+                padding: 15px;
+            }
+            
+            .network-stats {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .fastfetch-container {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .ascii-logo {
+                display: none;
+            }
+        }
+        
+        /* Mobile (480px and below) */
+        @media (max-width: 480px) {
+            :root {
+                font-size: 14px;
+            }
+            
+            body {
+                padding-top: 0;
+            }
+            
+            .header {
+                padding: 8px;
+            }
+            
+            .header h1 {
+                font-size: 1rem;
+            }
+            
+            .header select {
+                font-size: 0.75rem;
+                padding: 4px !important;
+            }
+            
+            .grid-container {
+                grid-template-columns: 1fr;
+                gap: 8px;
+                padding: 8px;
+            }
+            
+            .card {
+                padding: 12px;
+                margin-bottom: 0;
+            }
+            
+            .card-title {
+                font-size: 1rem;
+            }
+            
+            .network-stats {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            
+            .stat-group {
+                margin-bottom: 10px;
+            }
+            
+            .stat-label {
+                font-size: 0.85rem;
+            }
+            
+            .progress-bg {
+                height: 6px;
+            }
+            
+            .nav-item {
+                padding: 10px;
+                margin-bottom: 2px;
+                font-size: 0.9rem;
+            }
+            
+            .nav-item span {
+                display: none;
+            }
+            
+            .nav-item.active span {
+                display: inline;
+            }
+            
+            .sidebar {
+                flex-direction: column;
+                align-items: center;
+                max-height: 0;
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+            
+            .sidebar.mobile-open {
+                max-height: calc(100vh - 60px);
+            }
+            
+            .net-tab {
+                padding: 6px 12px;
+                font-size: 0.8rem;
+            }
+            
+            table {
+                font-size: 0.8rem;
+            }
+            
+            table td, table th {
+                padding: 5px !important;
+            }
+            
+            .process-item {
+                padding: 8px;
+            }
+            
+            .sensor-item {
+                padding: 6px;
+            }
+            
+            .chart-container {
+                height: 150px;
+            }
+            
+            button {
+                font-size: 0.85rem;
+                padding: 6px 12px;
+            }
+            
+            input[type="text"],
+            input[type="password"],
+            input[type="email"],
+            select {
+                font-size: 16px;
+                padding: 10px !important;
+            }
+            
+            /* Touch-friendly buttons */
+            button, .nav-item {
+                min-height: 44px;
+                min-width: 44px;
+            }
+        }
+        
+        /* Small landscape orientation */
+        @media (max-height: 500px) and (orientation: landscape) {
+            .grid-container {
+                gap: 8px;
+            }
+            
+            .card {
+                padding: 10px;
+            }
+            
+            .chart-container {
+                height: 150px;
+            }
+        }
+        
         @media (max-width: 600px) {
             .fastfetch-container {
                 flex-direction: column;
@@ -596,6 +862,11 @@
     </style>
 </head>
 <body>
+    <!-- Mobile Menu Button -->
+    <button class="mobile-menu-btn" id="mobile-menu-btn" onclick="toggleMobileMenu()" title="Toggle Menu">
+        <i class="fas fa-bars"></i>
+    </button>
+    
     <div class="app-container">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
@@ -1607,6 +1878,26 @@
 </div> <!-- End app-container -->
 
     <script>
+        // === MOBILE MENU TOGGLE ===
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const mobileBtn = document.getElementById('mobile-menu-btn');
+            
+            sidebar.classList.toggle('mobile-open');
+            mobileBtn.classList.toggle('active');
+        }
+
+        // Close mobile menu when a page is selected
+        function closeMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const mobileBtn = document.getElementById('mobile-menu-btn');
+            
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('mobile-open');
+                mobileBtn.classList.remove('active');
+            }
+        }
+
         // 侧边栏切换函数
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -1635,6 +1926,13 @@
                 const toggle = document.getElementById('sidebar-toggle');
                 toggle.innerHTML = '<i class="fas fa-chevron-right"></i>';
             }
+
+            // Close mobile menu on window resize
+            window.addEventListener('resize', () => {
+                if (window.innerWidth > 768) {
+                    closeMobileMenu();
+                }
+            });
         });
 
         function toggleNetworkSubmenu() {
@@ -1652,6 +1950,9 @@
         }
 
         function switchPage(pageId) {
+            // Close mobile menu when switching pages
+            closeMobileMenu();
+            
             // Hide all pages
             document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
             // Show selected page
@@ -4231,6 +4532,102 @@
 
             // 启动 WebSocket 连接
             connectWebSocket();
+
+            // === SERVICE WORKER REGISTRATION ===
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('/sw.js')
+                        .then(registration => {
+                            console.log('Service Worker registered:', registration);
+                            
+                            // Check for updates periodically
+                            setInterval(() => {
+                                registration.update();
+                            }, 60000); // Check every minute
+                        })
+                        .catch(err => {
+                            console.log('Service Worker registration failed:', err);
+                        });
+                });
+
+                // Handle updates
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    console.log('Service Worker controller changed - app updated');
+                    // Show toast notification for update
+                    const msg = document.createElement('div');
+                    msg.style.cssText = `
+                        position: fixed;
+                        bottom: 20px;
+                        right: 20px;
+                        background: #2ed573;
+                        color: #1a1a1a;
+                        padding: 15px 20px;
+                        border-radius: 8px;
+                        font-weight: bold;
+                        z-index: 10000;
+                        animation: slideIn 0.3s ease;
+                    `;
+                    msg.textContent = '✓ App updated. Refresh to see changes.';
+                    document.body.appendChild(msg);
+                    setTimeout(() => msg.remove(), 5000);
+                });
+            }
+
+            // === PWA INSTALL PROMPT ===
+            let deferredPrompt;
+            
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                
+                // Show install button
+                const installBtn = document.createElement('button');
+                installBtn.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    left: 20px;
+                    background: #00a8ff;
+                    color: #1a1a1a;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    border: none;
+                    font-weight: bold;
+                    cursor: pointer;
+                    z-index: 9999;
+                    font-size: 14px;
+                    transition: all 0.3s ease;
+                `;
+                installBtn.innerHTML = '📱 Install App';
+                installBtn.onmouseover = () => {
+                    installBtn.style.transform = 'scale(1.05)';
+                    installBtn.style.boxShadow = '0 0 15px rgba(0, 168, 255, 0.5)';
+                };
+                installBtn.onmouseout = () => {
+                    installBtn.style.transform = 'scale(1)';
+                    installBtn.style.boxShadow = 'none';
+                };
+                
+                installBtn.addEventListener('click', async () => {
+                    if (deferredPrompt) {
+                        deferredPrompt.prompt();
+                        const { outcome } = await deferredPrompt.userChoice;
+                        console.log(`User response: ${outcome}`);
+                        deferredPrompt = null;
+                        installBtn.remove();
+                    }
+                });
+                
+                // Only show on non-installed scenarios
+                if (!window.matchMedia('(display-mode: standalone)').matches && 
+                    !navigator.standalone) {
+                    document.body.appendChild(installBtn);
+                }
+            });
+
+            window.addEventListener('appinstalled', () => {
+                console.log('PWA was installed');
+                deferredPrompt = null;
+            });
         });
     </script>
 </body>
