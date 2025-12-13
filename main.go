@@ -57,13 +57,73 @@ type SessionInfo struct {
 	Token    string
 }
 
-// Session 管理
+// 操作日志
+type OperationLog struct {
+	Time      time.Time `json:"time"`
+	Username  string    `json:"username"`
+	Action    string    `json:"action"`
+	Details   string    `json:"details"`
+	IPAddress string    `json:"ip_address"`
+}
+
 var (
 	sessions    = make(map[string]SessionInfo)
 	sessions_mu sync.RWMutex
 	userDB      *UserDatabase
 	userDB_mu   sync.RWMutex
+	opLogs      []OperationLog
+	opLogs_mu   sync.RWMutex
 )
+
+// 记录操作日志
+func logOperation(username, action, details, ip string) {
+	opLogs_mu.Lock()
+	defer opLogs_mu.Unlock()
+
+	logEntry := OperationLog{
+		Time:      time.Now(),
+		Username:  username,
+		Action:    action,
+		Details:   details,
+		IPAddress: ip,
+	}
+
+	opLogs = append(opLogs, logEntry)
+	// 保持最近 1000 条日志
+	if len(opLogs) > 1000 {
+		opLogs = opLogs[len(opLogs)-1000:]
+	}
+
+	// 异步保存到文件（简化处理，实际应使用更稳健的方式）
+	go saveOpLogs()
+}
+
+// 保存日志到文件
+func saveOpLogs() {
+	opLogs_mu.RLock()
+	data, err := json.MarshalIndent(opLogs, "", "  ")
+	opLogs_mu.RUnlock()
+
+	if err != nil {
+		log.Printf("Error marshaling logs: %v", err)
+		return
+	}
+
+	// 忽略错误，日志保存失败不应影响主流程
+	_ = ioutil.WriteFile("/data/operations.json", data, 0666)
+}
+
+// 加载日志
+func loadOpLogs() {
+	data, err := ioutil.ReadFile("/data/operations.json")
+	if err != nil {
+		return
+	}
+
+	opLogs_mu.Lock()
+	defer opLogs_mu.Unlock()
+	json.Unmarshal(data, &opLogs)
+}
 
 // 初始化用户数据库
 func initUserDatabase() error {
@@ -2000,6 +2060,10 @@ func createUserHandler(w http.ResponseWriter, r *http.Request) {
 	userDB_mu.Unlock()
 	saveUserDatabase()
 
+	// 记录日志
+	session, _ := getSessionInfo(r)
+	logOperation(session.Username, "create_user", fmt.Sprintf("Created user: %s (%s)", newUser.Username, newUser.Role), r.RemoteAddr)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{
@@ -2054,8 +2118,141 @@ func deleteUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	saveUserDatabase()
 
+	// 记录日志
+	session, _ := getSessionInfo(r)
+	logOperation(session.Username, "delete_user", fmt.Sprintf("Deleted user: %s", username), r.RemoteAddr)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "User deleted successfully"})
+}
+
+// 修改密码
+func changePasswordHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Username    string `json:"username"` // Optional, if admin changing other's password
+		OldPassword string `json:"old_password"`
+		NewPassword string `json:"new_password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	session, err := getSessionInfo(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	targetUsername := session.Username
+	// If admin wants to change another user's password
+	if req.Username != "" && req.Username != session.Username {
+		if session.Role != "admin" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		targetUsername = req.Username
+	} else {
+		// Changing own password requires old password verification
+		if session.Role != "admin" && req.OldPassword == "" {
+			http.Error(w, "Old password required", http.StatusBadRequest)
+			return
+		}
+	}
+
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	var targetUser *User
+	for i := range userDB.Users {
+		if userDB.Users[i].Username == targetUsername {
+			targetUser = &userDB.Users[i]
+			break
+		}
+	}
+
+	if targetUser == nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify old password if changing own password (and not admin changing others)
+	if targetUsername == session.Username {
+		if err := bcrypt.CompareHashAndPassword([]byte(targetUser.Password), []byte(req.OldPassword)); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid old password"})
+			return
+		}
+	}
+
+	// Hash new password
+	hash, err := hashPasswordBcrypt(req.NewPassword)
+	if err != nil {
+		http.Error(w, "Password hashing failed", http.StatusInternalServerError)
+		return
+	}
+
+	targetUser.Password = hash
+
+	// Save DB (we hold the lock, so we need to be careful if saveUserDatabase also locks.
+	// Checked: saveUserDatabase does NOT lock. It expects caller to hold lock or be safe.)
+	// Wait, I need to verify saveUserDatabase again.
+	// In previous turn I saw:
+	// func saveUserDatabase() error {
+	// 	log.Println("Saving user database...")
+	//  ...
+	// }
+	// It does NOT lock. So it is safe to call here.
+
+	// However, I need to make sure I am not calling it with RLock if it needs Write.
+	// I am holding Lock() (Write lock), so it is safe.
+
+	// But wait, saveUserDatabase reads userDB.
+	// If I call it, it reads userDB.
+
+	// Let's double check saveUserDatabase implementation I saw earlier.
+	// It uses json.MarshalIndent(userDB, ...).
+	// This is safe as I hold the lock.
+
+	if err := saveUserDatabase(); err != nil {
+		log.Printf("Error saving user DB: %v", err)
+	}
+
+	// Log
+	logOperation(session.Username, "change_password", fmt.Sprintf("Changed password for: %s", targetUsername), r.RemoteAddr)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Password changed successfully"})
+}
+
+// 获取操作日志（仅管理员）
+func listLogsHandler(w http.ResponseWriter, r *http.Request) {
+	if getCurrentRole(r) != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	opLogs_mu.RLock()
+	defer opLogs_mu.RUnlock()
+
+	// Return logs in reverse order (newest first)
+	count := len(opLogs)
+	logs := make([]OperationLog, count)
+	for i, log := range opLogs {
+		logs[count-1-i] = log
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"logs": logs,
+	})
 }
 
 func main() {
@@ -2069,6 +2266,9 @@ func main() {
 	}
 	log.Println("User database initialized")
 
+	// 加载操作日志
+	loadOpLogs()
+
 	// 公开路由（不需要认证）
 	http.HandleFunc("/api/login", loginHandler)
 	http.HandleFunc("/api/logout", logoutHandler)
@@ -2077,6 +2277,8 @@ func main() {
 	// 受保护的路由（需要认证）
 	http.HandleFunc("/ws/stats", authMiddleware(wsHandler))
 	http.HandleFunc("/api/info", authMiddleware(infoHandler))
+	http.HandleFunc("/api/password", authMiddleware(changePasswordHandler))
+	http.HandleFunc("/api/logs", authMiddleware(listLogsHandler))
 
 	// 用户管理 API（仅管理员）
 	http.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {

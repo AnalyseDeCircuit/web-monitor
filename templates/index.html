@@ -621,6 +621,22 @@
                 <i class="fas fa-tv" title="GPU Monitor"></i>
                 <span>GPU Monitor</span>
             </div>
+            
+            <!-- Admin Only -->
+            <div class="nav-item" id="nav-users" onclick="switchPage('users')" style="display: none;">
+                <i class="fas fa-users" title="User Management"></i>
+                <span>Users</span>
+            </div>
+            <div class="nav-item" id="nav-logs" onclick="switchPage('logs')" style="display: none;">
+                <i class="fas fa-history" title="Operation Logs"></i>
+                <span>Logs</span>
+            </div>
+            
+            <!-- All Users -->
+            <div class="nav-item" onclick="switchPage('profile')">
+                <i class="fas fa-user-cog" title="Profile"></i>
+                <span>Profile</span>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -1279,6 +1295,129 @@
         </div>
     </div>
 
+    <!-- User Management Page -->
+    <div id="page-users" class="page">
+        <div class="grid-container">
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">
+                    <span>User Management</span>
+                    <button onclick="showAddUserModal()" style="background: var(--accent-mem); border: none; color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
+                        <i class="fas fa-plus"></i> Add User
+                    </button>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; color: var(--text-main);">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
+                                <th style="padding: 10px;">Username</th>
+                                <th style="padding: 10px;">Role</th>
+                                <th style="padding: 10px;">Created At</th>
+                                <th style="padding: 10px;">Last Login</th>
+                                <th style="padding: 10px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <!-- Users injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Operation Logs Page -->
+    <div id="page-logs" class="page">
+        <div class="grid-container">
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Operation Logs</div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; color: var(--text-main);">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
+                                <th style="padding: 10px;">Time</th>
+                                <th style="padding: 10px;">User</th>
+                                <th style="padding: 10px;">Action</th>
+                                <th style="padding: 10px;">Details</th>
+                                <th style="padding: 10px;">IP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-table-body">
+                            <!-- Logs injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile Page -->
+    <div id="page-profile" class="page">
+        <div class="grid-container" style="display: flex; justify-content: center;">
+            <div class="card" style="width: 100%; max-width: 600px;">
+                <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <div style="width: 80px; height: 80px; background: rgba(255,255,255,0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: var(--accent-cpu);">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 1.5rem; font-weight: bold; margin-bottom: 5px;" id="profile-username">-</div>
+                        <div style="color: var(--text-dim); background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 15px; display: inline-block; font-size: 0.85rem;">
+                            <i class="fas fa-shield-alt" style="margin-right: 5px;"></i> <span id="profile-role">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-title"><i class="fas fa-key" style="margin-right: 10px;"></i> Change Password</div>
+                <form id="change-password-form" onsubmit="handleChangePassword(event)">
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; color: var(--text-dim); font-size: 0.9rem;">Current Password</label>
+                        <div style="position: relative;">
+                            <i class="fas fa-lock" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim);"></i>
+                            <input type="password" id="cp-old" required style="width: 100%; padding: 12px 12px 12px 35px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 6px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 25px;">
+                        <label style="display: block; margin-bottom: 8px; color: var(--text-dim); font-size: 0.9rem;">New Password</label>
+                        <div style="position: relative;">
+                            <i class="fas fa-lock" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim);"></i>
+                            <input type="password" id="cp-new" required style="width: 100%; padding: 12px 12px 12px 35px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 6px; font-family: inherit; box-sizing: border-box; transition: border-color 0.2s;">
+                        </div>
+                    </div>
+                    <button type="submit" style="width: 100%; padding: 12px; background: linear-gradient(45deg, var(--accent-cpu), #ff6b81); border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: opacity 0.2s;">
+                        Update Password
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add User Modal -->
+    <div id="add-user-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
+        <div class="card" style="width: 400px; background: #2d2d2d;">
+            <div class="card-title">
+                <span>Add New User</span>
+                <i class="fas fa-times" onclick="document.getElementById('add-user-modal').style.display='none'" style="cursor: pointer;"></i>
+            </div>
+            <form onsubmit="handleAddUser(event)">
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Username</label>
+                    <input type="text" id="new-username" required style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Password</label>
+                    <input type="password" id="new-password" required style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Role</label>
+                    <select id="new-role" style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" style="width: 100%; padding: 10px; background: var(--accent-mem); border: none; color: white; border-radius: 4px; cursor: pointer;">Create User</button>
+            </form>
+        </div>
+    </div>
+
     </div> <!-- End main-content -->
 </div> <!-- End app-container -->
 
@@ -1303,6 +1442,7 @@
 
         // 页面加载时恢复侧边栏状态
         window.addEventListener('DOMContentLoaded', function() {
+            checkRole();
             const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
             if (isCollapsed) {
                 const sidebar = document.getElementById('sidebar');
@@ -1336,7 +1476,10 @@
                 'storage': 'Storage Manager',
                 'ssh': 'SSH Monitor',
                 'processes': 'Process Manager',
-                'gpu': 'GPU Monitor'
+                'gpu': 'GPU Monitor',
+                'users': 'User Management',
+                'logs': 'Operation Logs',
+                'profile': 'My Profile'
             };
             if (titles[pageId]) {
                 document.getElementById('page-title').innerText = titles[pageId];
@@ -1345,6 +1488,155 @@
             // Initialize GPU charts if switching to GPU page
             if (pageId === 'gpu' && lastData && lastData.gpu) {
                 requestAnimationFrame(() => renderGPUs(lastData.gpu));
+            }
+
+            // Load data for specific pages
+            if (pageId === 'users') loadUsers();
+            if (pageId === 'logs') loadLogs();
+            if (pageId === 'profile') loadProfile();
+        }
+
+        // User Management Functions
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users');
+                if (response.ok) {
+                    const data = await response.json();
+                    const tbody = document.getElementById('users-table-body');
+                    tbody.innerHTML = '';
+                    data.users.forEach(user => {
+                        const tr = document.createElement('tr');
+                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        tr.innerHTML = `
+                            <td style="padding: 10px;">${user.username}</td>
+                            <td style="padding: 10px;"><span style="background: ${user.role === 'admin' ? 'var(--accent-cpu)' : 'var(--accent-net)'}; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">${user.role}</span></td>
+                            <td style="padding: 10px;">${new Date(user.created_at).toLocaleString()}</td>
+                            <td style="padding: 10px;">${user.last_login ? new Date(user.last_login).toLocaleString() : '-'}</td>
+                            <td style="padding: 10px;">
+                                ${user.username !== 'admin' ? `<button onclick="handleDeleteUser('${user.username}')" style="background: var(--accent-cpu); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Delete</button>` : ''}
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load users', err);
+            }
+        }
+
+        function showAddUserModal() {
+            document.getElementById('add-user-modal').style.display = 'flex';
+        }
+
+        async function handleAddUser(e) {
+            e.preventDefault();
+            const username = document.getElementById('new-username').value;
+            const password = document.getElementById('new-password').value;
+            const role = document.getElementById('new-role').value;
+
+            try {
+                const response = await fetch('/api/users', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username, password, role})
+                });
+                if (response.ok) {
+                    document.getElementById('add-user-modal').style.display = 'none';
+                    document.getElementById('new-username').value = '';
+                    document.getElementById('new-password').value = '';
+                    loadUsers();
+                    alert('User created successfully');
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + data.error);
+                }
+            } catch (err) {
+                alert('Failed to create user');
+            }
+        }
+
+        async function handleDeleteUser(username) {
+            if (!confirm(`Are you sure you want to delete user ${username}?`)) return;
+            
+            try {
+                const response = await fetch(`/api/users?username=${username}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    loadUsers();
+                } else {
+                    alert('Failed to delete user');
+                }
+            } catch (err) {
+                alert('Error deleting user');
+            }
+        }
+
+        // Logs Functions
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                if (response.ok) {
+                    const data = await response.json();
+                    const tbody = document.getElementById('logs-table-body');
+                    tbody.innerHTML = '';
+                    data.logs.forEach(log => {
+                        const tr = document.createElement('tr');
+                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        tr.innerHTML = `
+                            <td style="padding: 10px; font-size: 0.9rem;">${new Date(log.time).toLocaleString()}</td>
+                            <td style="padding: 10px;">${log.username}</td>
+                            <td style="padding: 10px;">${log.action}</td>
+                            <td style="padding: 10px; color: var(--text-dim);">${log.details}</td>
+                            <td style="padding: 10px; font-size: 0.9rem;">${log.ip_address}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load logs', err);
+            }
+        }
+
+        // Profile Functions
+        function loadProfile() {
+            const username = localStorage.getItem('username') || '-';
+            const role = localStorage.getItem('role') || '-';
+            
+            document.getElementById('profile-username').innerText = username;
+            document.getElementById('profile-role').innerText = role;
+        }
+
+        async function handleChangePassword(e) {
+            e.preventDefault();
+            const oldPassword = document.getElementById('cp-old').value;
+            const newPassword = document.getElementById('cp-new').value;
+            
+            try {
+                const response = await fetch('/api/password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({old_password: oldPassword, new_password: newPassword})
+                });
+                
+                if (response.ok) {
+                    alert('Password changed successfully');
+                    document.getElementById('change-password-form').reset();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error || 'Failed to change password'));
+                }
+            } catch (err) {
+                alert('Error changing password');
+            }
+        }
+        
+        // Check Role on Load
+        function checkRole() {
+            const role = localStorage.getItem('role');
+            if (role === 'admin') {
+                document.getElementById('nav-users').style.display = 'flex';
+                document.getElementById('nav-logs').style.display = 'flex';
             }
         }
 
@@ -3193,7 +3485,7 @@
             const sidebar = document.querySelector('.sidebar');
             if (sidebar) {
                 const logoutBtn = document.createElement('button');
-                logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> <span>登出</span>';
+                logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> <span>Log out</span>';
                 logoutBtn.className = 'nav-item';
                 logoutBtn.style.marginTop = 'auto';
                 logoutBtn.style.borderTop = '1px solid rgba(255,255,255,0.1)';

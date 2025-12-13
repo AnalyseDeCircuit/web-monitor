@@ -1,6 +1,8 @@
 # Binaries
 /web-monitor-go
 web-monitor-go
+/web-monitor
+/web-monitor-test
 bin/
 build/
 dist/

@@ -295,6 +295,8 @@
                     const data = await response.json();
                     // 保存 Token 到 localStorage
                     localStorage.setItem('auth_token', data.token);
+                    localStorage.setItem('username', data.username);
+                    localStorage.setItem('role', data.role);
                     // 同时保存 Token 到 Cookie（后端验证使用）
                     document.cookie = `auth_token=${data.token}; path=/; max-age=86400`;
                     success.style.display = 'block';
