@@ -90,6 +90,24 @@
             transform: scale(1.1);
         }
 
+        .net-tab {
+            background: rgba(255,255,255,0.05);
+            border: none;
+            color: var(--text-dim);
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .net-tab.active {
+            background: var(--accent-net);
+            color: white;
+        }
+        .net-tab:hover:not(.active) {
+            background: rgba(255,255,255,0.1);
+            color: var(--text-main);
+        }
+
         .sidebar-title {
             font-size: 1.2rem;
             font-weight: bold;
@@ -98,7 +116,6 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-right: 25px;
         }
 
         .nav-item {
@@ -601,17 +618,31 @@
                 <i class="fas fa-memory" title="Memory"></i>
                 <span>Memory</span>
             </div>
-            <div class="nav-item" onclick="switchPage('network')">
+            
+            <!-- Network Group -->
+            <div class="nav-item" onclick="toggleNetworkSubmenu()">
                 <i class="fas fa-network-wired" title="Network"></i>
                 <span>Network</span>
+                <i class="fas fa-chevron-down" style="margin-left: auto; font-size: 0.8rem;" id="net-submenu-icon"></i>
             </div>
+            <div id="network-submenu" style="display: none; flex-direction: column; padding-left: 20px; background: rgba(0,0,0,0.2);">
+                <div class="nav-item" onclick="switchPage('net-traffic')" style="font-size: 0.9rem;">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Traffic</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('net-diag')" style="font-size: 0.9rem;">
+                    <i class="fas fa-tools"></i>
+                    <span>Diagnostics</span>
+                </div>
+                <div class="nav-item" onclick="switchPage('ssh')" style="font-size: 0.9rem;">
+                    <i class="fas fa-lock"></i>
+                    <span>SSH</span>
+                </div>
+            </div>
+
             <div class="nav-item" onclick="switchPage('storage')">
                 <i class="fas fa-hdd" title="Storage"></i>
                 <span>Storage</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('ssh')">
-                <i class="fas fa-lock" title="SSH"></i>
-                <span>SSH</span>
             </div>
             <div class="nav-item" onclick="switchPage('processes')">
                 <i class="fas fa-tasks" title="Processes"></i>
@@ -629,6 +660,10 @@
             <div class="nav-item" onclick="switchPage('services')">
                 <i class="fas fa-cogs" title="System Services"></i>
                 <span>Services</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('cron')">
+                <i class="fas fa-clock" title="Cron Jobs"></i>
+                <span>Cron Jobs</span>
             </div>
             
             <div style="margin-top: auto;"></div>
@@ -991,7 +1026,7 @@
             </div>
         </div>
     </div>
-    <div id="page-network" class="page">
+    <div id="page-net-traffic" class="page">
         <div class="grid-container">
             <!-- Global Network Stats -->
             <div class="card" style="grid-column: 1 / -1;">
@@ -1315,13 +1350,16 @@
                     <span>Docker Containers</span>
                     <button onclick="loadDockerContainers()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
                 </div>
+                <div style="margin-bottom: 10px; display: flex; gap: 10px;">
+                    <input type="text" id="docker-container-search" placeholder="Search containers..." onkeyup="renderDockerContainers()" style="padding: 5px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white;">
+                </div>
                 <div style="overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
                         <thead>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
-                                <th style="padding: 10px;">Name</th>
+                                <th style="padding: 10px; cursor: pointer;" onclick="setDockerContainerSort('name')">Name <i class="fas fa-sort"></i></th>
                                 <th style="padding: 10px;">Image</th>
-                                <th style="padding: 10px;">State</th>
+                                <th style="padding: 10px; cursor: pointer;" onclick="setDockerContainerSort('state')">State <i class="fas fa-sort"></i></th>
                                 <th style="padding: 10px;">Status</th>
                                 <th style="padding: 10px;">Ports</th>
                                 <th style="padding: 10px;">Actions</th>
@@ -1338,14 +1376,17 @@
                     <span>Docker Images</span>
                     <button onclick="loadDockerImages()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
                 </div>
+                <div style="margin-bottom: 10px; display: flex; gap: 10px;">
+                    <input type="text" id="docker-image-search" placeholder="Search images..." onkeyup="renderDockerImages()" style="padding: 5px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white;">
+                </div>
                 <div style="overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
                         <thead>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
-                                <th style="padding: 10px;">ID</th>
+                                <th style="padding: 10px; cursor: pointer;" onclick="setDockerImageSort('id')">ID <i class="fas fa-sort"></i></th>
                                 <th style="padding: 10px;">Tags</th>
-                                <th style="padding: 10px;">Size</th>
-                                <th style="padding: 10px;">Created</th>
+                                <th style="padding: 10px; cursor: pointer;" onclick="setDockerImageSort('size')">Size <i class="fas fa-sort"></i></th>
+                                <th style="padding: 10px; cursor: pointer;" onclick="setDockerImageSort('created')">Created <i class="fas fa-sort"></i></th>
                             </tr>
                         </thead>
                         <tbody id="docker-images-body"></tbody>
@@ -1363,13 +1404,16 @@
                     <span>System Services</span>
                     <button onclick="loadServices()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
                 </div>
+                <div style="margin-bottom: 10px; display: flex; gap: 10px;">
+                    <input type="text" id="service-search" placeholder="Search services..." onkeyup="renderServices()" style="padding: 5px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white;">
+                </div>
                 <div style="overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
                         <thead>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
-                                <th style="padding: 10px;">Unit</th>
+                                <th style="padding: 10px; cursor: pointer;" onclick="setServiceSort('unit')">Unit <i class="fas fa-sort"></i></th>
                                 <th style="padding: 10px;">Load</th>
-                                <th style="padding: 10px;">Active</th>
+                                <th style="padding: 10px; cursor: pointer;" onclick="setServiceSort('active')">Active <i class="fas fa-sort"></i></th>
                                 <th style="padding: 10px;">Sub</th>
                                 <th style="padding: 10px;">Description</th>
                                 <th style="padding: 10px;">Actions</th>
@@ -1378,6 +1422,61 @@
                         <tbody id="services-body"></tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cron Jobs Page -->
+    <div id="page-cron" class="page">
+        <div class="grid-container">
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">
+                    <span>Cron Jobs (Root)</span>
+                    <div>
+                        <button id="btn-add-cron" onclick="addCronJob()" style="background: var(--accent-mem); border: none; color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-right: 10px; display: none;"><i class="fas fa-plus"></i> Add Job</button>
+                        <button id="btn-save-cron" onclick="saveCronJobs()" style="background: var(--accent-net); border: none; color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer; display: none;"><i class="fas fa-save"></i> Save Changes</button>
+                        <button onclick="loadCronJobs()" style="background: none; border: none; color: var(--text-dim); cursor: pointer; margin-left: 10px;"><i class="fas fa-sync-alt"></i></button>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
+                                <th style="padding: 10px; width: 20%;">Schedule</th>
+                                <th style="padding: 10px; width: 70%;">Command</th>
+                                <th style="padding: 10px; width: 10%;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cron-body"></tbody>
+                    </table>
+                </div>
+                <div style="margin-top: 10px; color: var(--text-dim); font-size: 0.8rem;">
+                    <i class="fas fa-info-circle"></i> Schedule format: Minute Hour Day Month Weekday (e.g., "*/5 * * * *" for every 5 mins)
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Network Tools Page -->
+    <div id="page-net-diag" class="page">
+        <div class="grid-container">
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">
+                    <span>Network Diagnostics</span>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <button class="net-tab active" onclick="switchNetTab('ping')">Ping</button>
+                    <button class="net-tab" onclick="switchNetTab('trace')">Trace</button>
+                    <button class="net-tab" onclick="switchNetTab('dig')">Dig (DNS)</button>
+                    <button class="net-tab" onclick="switchNetTab('curl')">Curl (HTTP)</button>
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <input type="text" id="net-target" placeholder="Enter hostname or IP (e.g., google.com)" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                    <button id="btn-run-net" onclick="runNetworkTest()" style="padding: 10px 20px; background: var(--accent-net); border: none; color: white; border-radius: 4px; cursor: pointer;">Run Test</button>
+                </div>
+
+                <div style="background: #000; padding: 15px; border-radius: 4px; font-family: monospace; min-height: 200px; white-space: pre-wrap; color: #0f0;" id="net-output">Waiting for input...</div>
             </div>
         </div>
     </div>
@@ -1539,6 +1638,20 @@
             }
         });
 
+        function toggleNetworkSubmenu() {
+            const submenu = document.getElementById('network-submenu');
+            const icon = document.getElementById('net-submenu-icon');
+            if (submenu.style.display === 'none') {
+                submenu.style.display = 'flex';
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+            } else {
+                submenu.style.display = 'none';
+                icon.classList.remove('fa-chevron-up');
+                icon.classList.add('fa-chevron-down');
+            }
+        }
+
         function switchPage(pageId) {
             // Hide all pages
             document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
@@ -1552,6 +1665,13 @@
             const navItem = document.querySelector(`.nav-item[onclick*="'${pageId}'"]`);
             if (navItem) {
                 navItem.classList.add('active');
+                // If it's a submenu item, keep parent active too (optional, but good for UX)
+                // For now, just ensure the submenu is open if we are navigating to a child
+                if (['net-traffic', 'net-diag', 'ssh'].includes(pageId)) {
+                    document.getElementById('network-submenu').style.display = 'flex';
+                    document.getElementById('net-submenu-icon').classList.remove('fa-chevron-down');
+                    document.getElementById('net-submenu-icon').classList.add('fa-chevron-up');
+                }
             }
             
             // Update title
@@ -1559,13 +1679,15 @@
                 'general': 'General Dashboard',
                 'cpu': 'CPU Details',
                 'memory': 'Memory Analysis',
-                'network': 'Network Traffic',
+                'net-traffic': 'Network Traffic',
+                'net-diag': 'Network Diagnostics',
                 'storage': 'Storage Manager',
                 'ssh': 'SSH Monitor',
                 'processes': 'Process Manager',
                 'gpu': 'GPU Monitor',
                 'docker': 'Docker Management',
                 'services': 'System Services',
+                'cron': 'Cron Job Manager',
                 'users': 'User Management',
                 'logs': 'Operation Logs',
                 'profile': 'My Profile'
@@ -1578,14 +1700,30 @@
             if (pageId === 'gpu' && lastData && lastData.gpu) {
                 requestAnimationFrame(() => renderGPUs(lastData.gpu));
             }
+            
+            // Initialize Network Traffic charts if switching to Traffic page
+            if (pageId === 'net-traffic') {
+                // Ensure charts are resized/rendered if needed
+                // (Chart.js usually handles this, but good to know)
+            }
 
             // Load data for specific pages
             if (pageId === 'docker') { loadDockerContainers(); loadDockerImages(); }
             if (pageId === 'services') loadServices();
+            if (pageId === 'cron') loadCronJobs();
             if (pageId === 'users') loadUsers();
             if (pageId === 'logs') loadLogs();
             if (pageId === 'profile') loadProfile();
         }
+
+        // Global data storage for filtering/sorting
+        let allDockerContainers = [];
+        let allDockerImages = [];
+        let allServices = [];
+
+        let dockerContainerSort = { column: 'name', direction: 'asc' };
+        let dockerImageSort = { column: 'created', direction: 'desc' };
+        let serviceSort = { column: 'unit', direction: 'asc' };
 
         // Docker Functions
         async function loadDockerContainers() {
@@ -1593,48 +1731,92 @@
                 const response = await fetch('/api/docker/containers');
                 if (response.ok) {
                     const data = await response.json();
-                    const tbody = document.getElementById('docker-containers-body');
-                    tbody.innerHTML = '';
-                    if (!data.containers) {
-                         tbody.innerHTML = '<tr><td colspan="6" style="padding: 10px; text-align: center; color: var(--text-dim);">No containers found</td></tr>';
-                         return;
-                    }
-                    data.containers.forEach(c => {
-                        const name = c.Names ? c.Names[0].replace('/', '') : c.Id.substring(0, 12);
-                        const ports = c.Ports ? c.Ports.map(p => `${p.PrivatePort}->${p.PublicPort}/${p.Type}`).join(', ') : '';
-                        const stateColor = c.State === 'running' ? 'var(--accent-mem)' : 'var(--text-dim)';
-                        
-                        // Check role for actions
-                        const role = localStorage.getItem('role');
-                        let actionsHtml = '';
-                        if (role === 'admin') {
-                            actionsHtml = c.State === 'running' ? 
-                                `<button onclick="handleDockerAction('${c.Id}', 'stop')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Stop</button>
-                                 <button onclick="handleDockerAction('${c.Id}', 'restart')" style="background: var(--accent-net); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Restart</button>` : 
-                                `<button onclick="handleDockerAction('${c.Id}', 'start')" style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Start</button>
-                                 <button onclick="handleDockerAction('${c.Id}', 'remove')" style="background: var(--text-dim); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Remove</button>`;
-                        } else {
-                            actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
-                        }
-
-                        const tr = document.createElement('tr');
-                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
-                        tr.innerHTML = `
-                            <td style="padding: 10px; font-weight: bold;">${name}</td>
-                            <td style="padding: 10px; color: var(--text-dim);">${c.Image}</td>
-                            <td style="padding: 10px;"><span style="color: ${stateColor}">${c.State}</span></td>
-                            <td style="padding: 10px; font-size: 0.85rem;">${c.Status}</td>
-                            <td style="padding: 10px; font-size: 0.85rem;">${ports}</td>
-                            <td style="padding: 10px;">
-                                ${actionsHtml}
-                            </td>
-                        `;
-                        tbody.appendChild(tr);
-                    });
+                    allDockerContainers = data.containers || [];
+                    renderDockerContainers();
                 }
             } catch (err) {
                 console.error('Failed to load containers', err);
             }
+        }
+
+        function renderDockerContainers() {
+            const tbody = document.getElementById('docker-containers-body');
+            tbody.innerHTML = '';
+            
+            const searchTerm = document.getElementById('docker-container-search').value.toLowerCase();
+            
+            let filtered = allDockerContainers.filter(c => {
+                const name = c.Names ? c.Names[0].replace('/', '') : c.Id.substring(0, 12);
+                return name.toLowerCase().includes(searchTerm) || 
+                       (c.Image && c.Image.toLowerCase().includes(searchTerm)) ||
+                       (c.State && c.State.toLowerCase().includes(searchTerm));
+            });
+
+            // Sort
+            filtered.sort((a, b) => {
+                let valA, valB;
+                if (dockerContainerSort.column === 'name') {
+                    valA = a.Names ? a.Names[0].replace('/', '') : a.Id;
+                    valB = b.Names ? b.Names[0].replace('/', '') : b.Id;
+                } else if (dockerContainerSort.column === 'state') {
+                    valA = a.State;
+                    valB = b.State;
+                } else {
+                    return 0;
+                }
+                
+                if (valA < valB) return dockerContainerSort.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return dockerContainerSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="padding: 10px; text-align: center; color: var(--text-dim);">No containers found</td></tr>';
+                return;
+            }
+
+            const role = localStorage.getItem('role');
+
+            filtered.forEach(c => {
+                const name = c.Names ? c.Names[0].replace('/', '') : c.Id.substring(0, 12);
+                const ports = c.Ports ? c.Ports.map(p => `${p.PrivatePort}->${p.PublicPort}/${p.Type}`).join(', ') : '';
+                const stateColor = c.State === 'running' ? 'var(--accent-mem)' : 'var(--text-dim)';
+                
+                let actionsHtml = '';
+                if (role === 'admin') {
+                    actionsHtml = c.State === 'running' ? 
+                        `<button onclick="handleDockerAction('${c.Id}', 'stop')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Stop</button>
+                         <button onclick="handleDockerAction('${c.Id}', 'restart')" style="background: var(--accent-net); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Restart</button>` : 
+                        `<button onclick="handleDockerAction('${c.Id}', 'start')" style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Start</button>
+                         <button onclick="handleDockerAction('${c.Id}', 'remove')" style="background: var(--text-dim); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Remove</button>`;
+                } else {
+                    actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
+                }
+
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                tr.innerHTML = `
+                    <td style="padding: 10px; font-weight: bold;">${name}</td>
+                    <td style="padding: 10px; color: var(--text-dim);">${c.Image}</td>
+                    <td style="padding: 10px;"><span style="color: ${stateColor}">${c.State}</span></td>
+                    <td style="padding: 10px; font-size: 0.85rem;">${c.Status}</td>
+                    <td style="padding: 10px; font-size: 0.85rem;">${ports}</td>
+                    <td style="padding: 10px;">
+                        ${actionsHtml}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function setDockerContainerSort(column) {
+            if (dockerContainerSort.column === column) {
+                dockerContainerSort.direction = dockerContainerSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                dockerContainerSort.column = column;
+                dockerContainerSort.direction = 'asc';
+            }
+            renderDockerContainers();
         }
 
         async function loadDockerImages() {
@@ -1642,32 +1824,79 @@
                 const response = await fetch('/api/docker/images');
                 if (response.ok) {
                     const data = await response.json();
-                    const tbody = document.getElementById('docker-images-body');
-                    tbody.innerHTML = '';
-                    if (!data.images) {
-                         tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-dim);">No images found</td></tr>';
-                         return;
-                    }
-                    data.images.forEach(img => {
-                        const id = img.Id.substring(7, 19); // sha256:xxxxxxxx...
-                        const size = (img.Size / 1024 / 1024).toFixed(2) + ' MB';
-                        const created = new Date(img.Created * 1000).toLocaleDateString();
-                        const tags = img.RepoTags ? img.RepoTags.join(', ') : '<none>';
-                        
-                        const tr = document.createElement('tr');
-                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
-                        tr.innerHTML = `
-                            <td style="padding: 10px; font-family: monospace;">${id}</td>
-                            <td style="padding: 10px;">${tags}</td>
-                            <td style="padding: 10px;">${size}</td>
-                            <td style="padding: 10px;">${created}</td>
-                        `;
-                        tbody.appendChild(tr);
-                    });
+                    allDockerImages = data.images || [];
+                    renderDockerImages();
                 }
             } catch (err) {
                 console.error('Failed to load images', err);
             }
+        }
+
+        function renderDockerImages() {
+            const tbody = document.getElementById('docker-images-body');
+            tbody.innerHTML = '';
+            
+            const searchTerm = document.getElementById('docker-image-search').value.toLowerCase();
+            
+            let filtered = allDockerImages.filter(img => {
+                const id = img.Id.substring(7, 19);
+                return id.toLowerCase().includes(searchTerm) ||
+                       (img.RepoTags && img.RepoTags.some(t => t.toLowerCase().includes(searchTerm)));
+            });
+
+            // Sort
+            filtered.sort((a, b) => {
+                let valA, valB;
+                if (dockerImageSort.column === 'id') {
+                    valA = a.Id;
+                    valB = b.Id;
+                } else if (dockerImageSort.column === 'size') {
+                    valA = a.Size;
+                    valB = b.Size;
+                } else if (dockerImageSort.column === 'created') {
+                    valA = a.Created;
+                    valB = b.Created;
+                } else {
+                    return 0;
+                }
+                
+                if (valA < valB) return dockerImageSort.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return dockerImageSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-dim);">No images found</td></tr>';
+                return;
+            }
+
+            filtered.forEach(img => {
+                const id = img.Id.substring(7, 19); // sha256:xxxxxxxx...
+                const size = (img.Size / 1024 / 1024).toFixed(2) + ' MB';
+                const created = new Date(img.Created * 1000).toLocaleDateString();
+                const tags = img.RepoTags ? img.RepoTags.join(', ') : '<none>';
+                
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                tr.innerHTML = `
+                    <td style="padding: 10px; font-family: monospace;">${id}</td>
+                    <td style="padding: 10px;">${tags}</td>
+                    <td style="padding: 10px;">${size}</td>
+                    <td style="padding: 10px;">${created}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function setDockerImageSort(column) {
+            if (dockerImageSort.column === column) {
+                dockerImageSort.direction = dockerImageSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                dockerImageSort.column = column;
+                dockerImageSort.direction = 'asc'; // Default to asc, but for size/created desc might be better initially? Logic keeps it simple.
+                if (column === 'size' || column === 'created') dockerImageSort.direction = 'desc';
+            }
+            renderDockerImages();
         }
 
         async function handleDockerAction(id, action) {
@@ -1698,52 +1927,93 @@
                 const response = await fetch('/api/systemd/services');
                 if (!response.ok) throw new Error('Failed to fetch services');
                 const services = await response.json();
+                allServices = services || [];
+                renderServices();
+            } catch (err) {
+                console.error('Failed to load services', err);
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px; color: #ff4757;">Failed to load services</td></tr>';
+            }
+        }
 
-                tbody.innerHTML = '';
-                if (!services || services.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px;">No services found</td></tr>';
-                    return;
+        function renderServices() {
+            const tbody = document.getElementById('services-body');
+            tbody.innerHTML = '';
+            
+            const searchTerm = document.getElementById('service-search').value.toLowerCase();
+            
+            let filtered = allServices.filter(svc => {
+                return svc.unit.toLowerCase().includes(searchTerm) ||
+                       (svc.description && svc.description.toLowerCase().includes(searchTerm));
+            });
+
+            // Sort
+            filtered.sort((a, b) => {
+                let valA, valB;
+                if (serviceSort.column === 'unit') {
+                    valA = a.unit;
+                    valB = b.unit;
+                } else if (serviceSort.column === 'active') {
+                    valA = a.active;
+                    valB = b.active;
+                } else {
+                    return 0;
+                }
+                
+                if (valA < valB) return serviceSort.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return serviceSort.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px;">No services found</td></tr>';
+                return;
+            }
+
+            const role = localStorage.getItem('role');
+
+            filtered.forEach(svc => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                
+                // Determine status color
+                let statusColor = '#888';
+                if (svc.active === 'active') statusColor = '#2ed573';
+                else if (svc.active === 'failed') statusColor = '#ff4757';
+
+                // Actions
+                let actionsHtml = '';
+                if (role === 'admin') {
+                    const btnStyle = "border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px; font-size: 0.8rem;";
+                    if (svc.active === 'active') {
+                        actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'stop')" style="${btnStyle} background: #ff6b6b;">Stop</button>`;
+                        actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'restart')" style="${btnStyle} background: var(--accent-net);">Restart</button>`;
+                    } else {
+                        actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'start')" style="${btnStyle} background: var(--accent-mem);">Start</button>`;
+                    }
+                } else {
+                    actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
                 }
 
-                const role = localStorage.getItem('role');
+                tr.innerHTML = `
+                    <td style="padding: 10px; font-weight: bold;">${svc.unit}</td>
+                    <td style="padding: 10px;">${svc.load}</td>
+                    <td style="padding: 10px;"><span style="color: ${statusColor}">${svc.active}</span></td>
+                    <td style="padding: 10px;">${svc.sub}</td>
+                    <td style="padding: 10px; color: var(--text-dim); font-size: 0.85rem;">${svc.description}</td>
+                    <td style="padding: 10px;">${actionsHtml}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
 
-                services.forEach(svc => {
-                    const tr = document.createElement('tr');
-                    tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
-                    
-                    // Determine status color
-                    let statusColor = '#888';
-                    if (svc.active === 'active') statusColor = '#2ed573';
-                    else if (svc.active === 'failed') statusColor = '#ff4757';
-
-                    // Actions
-                    let actionsHtml = '';
-                    if (role === 'admin') {
-                        const btnStyle = "border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px; font-size: 0.8rem;";
-                        if (svc.active === 'active') {
-                            actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'stop')" style="${btnStyle} background: #ff6b6b;">Stop</button>`;
-                            actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'restart')" style="${btnStyle} background: var(--accent-net);">Restart</button>`;
-                        } else {
-                            actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'start')" style="${btnStyle} background: var(--accent-mem);">Start</button>`;
-                        }
-                    } else {
-                        actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
-                    }
-
-                    tr.innerHTML = `
-                        <td style="padding: 10px; font-weight: bold;">${svc.unit}</td>
-                        <td style="padding: 10px;">${svc.load}</td>
-                        <td style="padding: 10px;"><span style="color: ${statusColor}">${svc.active}</span></td>
-                        <td style="padding: 10px;">${svc.sub}</td>
-                        <td style="padding: 10px; color: var(--text-dim); font-size: 0.85rem;">${svc.description}</td>
-                        <td style="padding: 10px;">${actionsHtml}</td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            } catch (error) {
-                console.error('Error loading services:', error);
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: #ff4757; padding: 20px;">Error: ${error.message}</td></tr>`;
+        function setServiceSort(column) {
+            if (serviceSort.column === column) {
+                serviceSort.direction = serviceSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                serviceSort.column = column;
+                serviceSort.direction = 'asc';
             }
+            renderServices();
         }
 
         async function handleServiceAction(unit, action) {
@@ -1766,6 +2036,160 @@
                 console.error('Error performing action:', error);
                 // If JSON parse failed, it might be text
                 alert(`Failed to ${action} service: ${error.message || error}`);
+            }
+        }
+
+        // Cron Job Functions
+        let currentCronJobs = [];
+
+        async function loadCronJobs() {
+            const tbody = document.getElementById('cron-body');
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding: 20px;">Loading...</td></tr>';
+            
+            try {
+                const response = await fetch('/api/cron');
+                if (!response.ok) throw new Error('Failed to fetch cron jobs');
+                currentCronJobs = await response.json();
+                
+                renderCronJobs();
+                
+                // Show/Hide buttons based on role
+                const role = localStorage.getItem('role');
+                if (role === 'admin') {
+                    document.getElementById('btn-add-cron').style.display = 'inline-block';
+                    document.getElementById('btn-save-cron').style.display = 'inline-block';
+                } else {
+                    document.getElementById('btn-add-cron').style.display = 'none';
+                    document.getElementById('btn-save-cron').style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error loading cron jobs:', error);
+                tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color: #ff4757; padding: 20px;">Error: ${error.message}</td></tr>`;
+            }
+        }
+
+        function renderCronJobs() {
+            const tbody = document.getElementById('cron-body');
+            tbody.innerHTML = '';
+            
+            if (!currentCronJobs || currentCronJobs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding: 20px; color: var(--text-dim);">No cron jobs found</td></tr>';
+                return;
+            }
+
+            const role = localStorage.getItem('role');
+            
+            currentCronJobs.forEach((job, index) => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                
+                let actionsHtml = '';
+                if (role === 'admin') {
+                    actionsHtml = `<button onclick="deleteCronJob(${index})" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Delete</button>`;
+                } else {
+                    actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
+                }
+
+                // Editable fields for admin
+                const scheduleHtml = role === 'admin' 
+                    ? `<input type="text" value="${job.schedule}" onchange="updateCronJob(${index}, 'schedule', this.value)" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px; width: 100%; font-family: monospace;">`
+                    : `<span style="font-family: monospace;">${job.schedule}</span>`;
+                
+                const commandHtml = role === 'admin'
+                    ? `<input type="text" value="${job.command}" onchange="updateCronJob(${index}, 'command', this.value)" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px; width: 100%; font-family: monospace;">`
+                    : `<span style="font-family: monospace;">${job.command}</span>`;
+
+                tr.innerHTML = `
+                    <td style="padding: 10px;">${scheduleHtml}</td>
+                    <td style="padding: 10px;">${commandHtml}</td>
+                    <td style="padding: 10px;">${actionsHtml}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function addCronJob() {
+            currentCronJobs.push({ schedule: '* * * * *', command: 'echo "New Job"' });
+            renderCronJobs();
+        }
+
+        function deleteCronJob(index) {
+            if (confirm('Delete this job?')) {
+                currentCronJobs.splice(index, 1);
+                renderCronJobs();
+            }
+        }
+
+        function updateCronJob(index, field, value) {
+            currentCronJobs[index][field] = value;
+        }
+
+        async function saveCronJobs() {
+            if (!confirm('Save changes to crontab? This will overwrite the current crontab.')) return;
+            
+            try {
+                const response = await fetch('/api/cron', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(currentCronJobs)
+                });
+                
+                if (response.ok) {
+                    alert('Crontab saved successfully!');
+                    loadCronJobs();
+                } else {
+                    const data = await response.json();
+                    alert('Error saving crontab: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Failed to save crontab: ' + error.message);
+            }
+        }
+
+        // Network Tools Functions
+        let currentNetTool = 'ping';
+
+        function switchNetTab(tool) {
+            currentNetTool = tool;
+            document.querySelectorAll('.net-tab').forEach(el => el.classList.remove('active'));
+            document.querySelector(`.net-tab[onclick*="'${tool}'"]`).classList.add('active');
+            
+            const output = document.getElementById('net-output');
+            output.innerText = `Ready to run ${tool.toUpperCase()}...`;
+        }
+
+        async function runNetworkTest() {
+            const target = document.getElementById('net-target').value.trim();
+            if (!target) {
+                alert('Please enter a target hostname or IP');
+                return;
+            }
+
+            const output = document.getElementById('net-output');
+            output.innerText = `Running ${currentNetTool} on ${target}...\n`;
+            
+            const btn = document.getElementById('btn-run-net');
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+
+            try {
+                const response = await fetch('/api/network/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tool: currentNetTool, target: target })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    output.innerText += '\n' + data.output;
+                } else {
+                    output.innerText += '\nError: ' + (data.error || 'Request failed');
+                }
+            } catch (error) {
+                output.innerText += '\nNetwork Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+                btn.style.opacity = '1';
             }
         }
 
@@ -3223,7 +3647,7 @@
                 lastTime = Date.now();
 
                 // Network Page Interfaces
-                const isNetPage = document.getElementById('page-network').classList.contains('active');
+                const isNetPage = document.getElementById('page-net-traffic').classList.contains('active');
                 if (isNetPage) {
                     // TCP Connection States
                     if (data.network.connection_states) {

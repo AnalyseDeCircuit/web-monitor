@@ -1083,12 +1083,19 @@ func getConnectionStates() map[string]int {
 		"LAST_ACK": 0, "LISTEN": 0, "CLOSING": 0,
 	}
 
+	// Try gopsutil first
 	conns, err := net.Connections("tcp")
-	if err == nil {
+	if err == nil && len(conns) > 0 {
 		for _, c := range conns {
 			if _, ok := states[c.Status]; ok {
 				states[c.Status]++
 			}
+		}
+	} else {
+		// Fallback: Parse /proc/net/tcp directly
+		states = parseNetTCP("/proc/net/tcp")
+		if len(states) == 0 || (states["LISTEN"]+states["ESTABLISHED"] == 0) {
+			states = parseNetTCP("/hostfs/proc/net/tcp")
 		}
 	}
 
@@ -1097,11 +1104,132 @@ func getConnectionStates() map[string]int {
 	return states
 }
 
+func parseNetTCP(path string) map[string]int {
+	states := map[string]int{
+		"ESTABLISHED": 0, "SYN_SENT": 0, "SYN_RECV": 0, "FIN_WAIT1": 0,
+		"FIN_WAIT2": 0, "TIME_WAIT": 0, "CLOSE": 0, "CLOSE_WAIT": 0,
+		"LAST_ACK": 0, "LISTEN": 0, "CLOSING": 0,
+	}
+
+	// TCP state numbers in /proc/net/tcp
+	stateMap := map[string]string{
+		"01": "ESTABLISHED",
+		"02": "SYN_SENT",
+		"03": "SYN_RECV",
+		"04": "FIN_WAIT1",
+		"05": "FIN_WAIT2",
+		"06": "TIME_WAIT",
+		"07": "CLOSE",
+		"08": "CLOSE_WAIT",
+		"09": "LAST_ACK",
+		"0A": "LISTEN",
+		"0B": "CLOSING",
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return states
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+		if lineCount == 1 { // Skip header
+			continue
+		}
+
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 4 {
+			continue
+		}
+
+		stateHex := fields[3]
+		if stateName, ok := stateMap[strings.ToUpper(stateHex)]; ok {
+			states[stateName]++
+		}
+	}
+
+	return states
+}
+
+func getSSHConnectionCount() int {
+	// Try using gopsutil first
+	conns, err := net.Connections("tcp")
+	if err == nil && len(conns) > 0 {
+		count := 0
+		for _, c := range conns {
+			if c.Laddr.Port == 22 && c.Status == "ESTABLISHED" {
+				count++
+			}
+		}
+		if count > 0 {
+			return count
+		}
+	}
+
+	// Fallback: Parse /proc/net/tcp directly
+	for _, path := range []string{"/proc/net/tcp", "/hostfs/proc/net/tcp"} {
+		if count := countSSHConnectionsFromProc(path); count > 0 {
+			return count
+		}
+	}
+
+	return 0
+}
+
+func countSSHConnectionsFromProc(path string) int {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer file.Close()
+
+	count := 0
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+
+	for scanner.Scan() {
+		lineCount++
+		if lineCount == 1 { // Skip header
+			continue
+		}
+
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 4 {
+			continue
+		}
+
+		// Get local port (field 1: local address in format IP:PORT in hex)
+		localAddr := fields[1]
+		parts := strings.Split(localAddr, ":")
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Parse port from hex
+		portHex := parts[len(parts)-1]
+		port, err := strconv.ParseInt(portHex, 16, 32)
+		if err != nil || port != 22 {
+			continue
+		}
+
+		// Check if state is ESTABLISHED (01)
+		state := fields[3]
+		if state == "01" {
+			count++
+		}
+	}
+
+	return count
+}
+
 func getListeningPorts() []ListeningPort {
 	portsMap := make(map[int]map[string]string) // port -> protocol -> process
 
 	conns, err := net.Connections("all")
-	if err == nil {
+	if err == nil && len(conns) > 0 {
 		for _, c := range conns {
 			if c.Status == "LISTEN" {
 				port := int(c.Laddr.Port)
@@ -1122,6 +1250,16 @@ func getListeningPorts() []ListeningPort {
 				}
 				portsMap[port][strings.ToLower(proto)] = procName
 			}
+		}
+	} else {
+		// Fallback: Parse /proc/net/tcp and /proc/net/udp
+		parseListeningPorts("/proc/net/tcp", portsMap, "TCP")
+		parseListeningPorts("/proc/net/udp", portsMap, "UDP")
+
+		// If still empty, try /hostfs
+		if len(portsMap) == 0 {
+			parseListeningPorts("/hostfs/proc/net/tcp", portsMap, "TCP")
+			parseListeningPorts("/hostfs/proc/net/udp", portsMap, "UDP")
 		}
 	}
 
@@ -1152,6 +1290,56 @@ func getListeningPorts() []ListeningPort {
 	return result
 }
 
+func parseListeningPorts(path string, portsMap map[int]map[string]string, proto string) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+		if lineCount == 1 { // Skip header
+			continue
+		}
+
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 4 {
+			continue
+		}
+
+		// Parse local address (format: 127.0.0.1:8080 -> hex:hex)
+		localAddr := fields[1]
+		parts := strings.Split(localAddr, ":")
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Parse port (hex format)
+		portHex := parts[len(parts)-1]
+		port, err := strconv.ParseInt(portHex, 16, 32)
+		if err != nil {
+			continue
+		}
+
+		// Check state (field 3 is state, should be 0A for LISTEN)
+		state := fields[3]
+		if state != "0A" { // Only LISTEN ports
+			continue
+		}
+
+		portNum := int(port)
+		if _, ok := portsMap[portNum]; !ok {
+			portsMap[portNum] = make(map[string]string)
+		}
+
+		// Try to find process name (field 9 is inode, but we'll just use a generic name)
+		portsMap[portNum][strings.ToLower(proto)] = "System"
+	}
+}
+
 func getSSHStats() SSHStats {
 	sshStatsLock.Lock()
 	defer sshStatsLock.Unlock()
@@ -1170,16 +1358,34 @@ func getSSHStats() SSHStats {
 		HistorySize:  0,
 	}
 
-	// 1. Check SSH port status
-	conns, _ := net.Connections("tcp")
-	for _, c := range conns {
-		if c.Laddr.Port == 22 {
-			if c.Status == "LISTEN" {
-				stats.Status = "Running"
-			} else if c.Status == "ESTABLISHED" {
-				stats.Connections++
+	// 1. Check SSH port status and connections
+	conns, err := net.Connections("tcp")
+	if err == nil && len(conns) > 0 {
+		for _, c := range conns {
+			if c.Laddr.Port == 22 {
+				if c.Status == "LISTEN" {
+					stats.Status = "Running"
+				} else if c.Status == "ESTABLISHED" {
+					stats.Connections++
+				}
 			}
 		}
+	}
+
+	// Check SSH status and fallback for connections
+	if stats.Status != "Running" {
+		// Fallback: Check /proc/net/tcp for port 22
+		for _, path := range []string{"/proc/net/tcp", "/hostfs/proc/net/tcp"} {
+			if tcpStates := parseNetTCP(path); tcpStates["LISTEN"] > 0 {
+				stats.Status = "Running"
+				break
+			}
+		}
+	}
+
+	// Get SSH connection count with fallback
+	if stats.Connections == 0 {
+		stats.Connections = getSSHConnectionCount()
 	}
 
 	// Use `who` for sessions
@@ -2495,6 +2701,161 @@ func serviceActionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
+// --- Cron Job Management ---
+
+type CronJob struct {
+	ID       string `json:"id"` // Just an index for frontend
+	Schedule string `json:"schedule"`
+	Command  string `json:"command"`
+}
+
+func listCronHandler(w http.ResponseWriter, r *http.Request) {
+	cmd := exec.Command("chroot", "/hostfs", "crontab", "-l")
+	output, err := cmd.Output()
+
+	// If no crontab exists, it returns exit code 1, which is fine, just return empty list
+	if err != nil {
+		// Check if it's just "no crontab for root"
+		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]CronJob{})
+			return
+		}
+		// Real error
+		http.Error(w, "Failed to list cron jobs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var jobs []CronJob
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	id := 0
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Simple parsing: first 5 fields are schedule, rest is command
+		parts := strings.Fields(line)
+		if len(parts) >= 6 {
+			schedule := strings.Join(parts[:5], " ")
+			command := strings.Join(parts[5:], " ")
+			jobs = append(jobs, CronJob{
+				ID:       strconv.Itoa(id),
+				Schedule: schedule,
+				Command:  command,
+			})
+			id++
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(jobs)
+}
+
+func saveCronHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check Admin Role
+	sess, err := getSessionInfo(r)
+	if err != nil || sess.Role != "admin" {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		return
+	}
+
+	var jobs []CronJob
+	if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Reconstruct crontab file content
+	var sb strings.Builder
+	sb.WriteString("# Generated by Web Monitor\n")
+	for _, job := range jobs {
+		sb.WriteString(fmt.Sprintf("%s %s\n", job.Schedule, job.Command))
+	}
+
+	// Write to crontab via stdin
+	cmd := exec.Command("chroot", "/hostfs", "crontab", "-")
+	cmd.Stdin = strings.NewReader(sb.String())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save crontab: %s, Output: %s", err.Error(), string(output)), http.StatusInternalServerError)
+		return
+	}
+
+	logOperation(sess.Username, "cron_update", "Updated crontab", r.RemoteAddr)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// --- Network Diagnostics ---
+
+func networkTestHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check Admin Role
+	sess, err := getSessionInfo(r)
+	if err != nil || sess.Role != "admin" {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Tool   string `json:"tool"`
+		Target string `json:"target"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate Target (Simple check to prevent command injection)
+	// Allow alphanumeric, dots, dashes, colons (IPv6)
+	validTarget := true
+	for _, r := range req.Target {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == ':' || r == '_') {
+			validTarget = false
+			break
+		}
+	}
+	if !validTarget || req.Target == "" {
+		http.Error(w, "Invalid target", http.StatusBadRequest)
+		return
+	}
+
+	var cmd *exec.Cmd
+	switch req.Tool {
+	case "ping":
+		cmd = exec.Command("chroot", "/hostfs", "ping", "-c", "4", req.Target)
+	case "trace":
+		// Try tracepath first, then traceroute
+		cmd = exec.Command("chroot", "/hostfs", "tracepath", req.Target)
+	case "dig":
+		cmd = exec.Command("chroot", "/hostfs", "dig", req.Target, "+short")
+	case "curl":
+		cmd = exec.Command("chroot", "/hostfs", "curl", "-I", "-m", "5", req.Target)
+	default:
+		http.Error(w, "Invalid tool", http.StatusBadRequest)
+		return
+	}
+
+	output, err := cmd.CombinedOutput()
+	result := string(output)
+	if err != nil {
+		result += fmt.Sprintf("\nError: %s", err.Error())
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"output": result})
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Starting web-monitor server...")
@@ -2528,6 +2889,24 @@ func main() {
 	// Systemd API
 	http.HandleFunc("/api/systemd/services", authMiddleware(listServicesHandler))
 	http.HandleFunc("/api/systemd/action", authMiddleware(serviceActionHandler))
+
+	// Cron API
+	http.HandleFunc("/api/cron", func(w http.ResponseWriter, r *http.Request) {
+		if !isAuthenticated(r) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method == "GET" {
+			listCronHandler(w, r)
+		} else if r.Method == "POST" {
+			saveCronHandler(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Network API
+	http.HandleFunc("/api/network/test", authMiddleware(networkTestHandler))
 
 	// 用户管理 API（仅管理员）
 	http.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
