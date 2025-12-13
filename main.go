@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -2255,6 +2256,148 @@ func listLogsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// --- Docker Integration ---
+
+type DockerContainer struct {
+	Id     string   `json:"Id"`
+	Names  []string `json:"Names"`
+	Image  string   `json:"Image"`
+	State  string   `json:"State"`
+	Status string   `json:"Status"`
+	Ports  []struct {
+		PrivatePort int    `json:"PrivatePort"`
+		PublicPort  int    `json:"PublicPort"`
+		Type        string `json:"Type"`
+	} `json:"Ports"`
+}
+
+type DockerImage struct {
+	Id       string   `json:"Id"`
+	RepoTags []string `json:"RepoTags"`
+	Size     int64    `json:"Size"`
+	Created  int64    `json:"Created"`
+}
+
+func dockerRequest(method, path string) (*http.Response, error) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (stdnet.Conn, error) {
+				return stdnet.Dial("unix", "/var/run/docker.sock")
+			},
+		},
+	}
+	req, err := http.NewRequest(method, "http://docker"+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	return client.Do(req)
+}
+
+func listContainersHandler(w http.ResponseWriter, r *http.Request) {
+	resp, err := dockerRequest("GET", "/containers/json?all=1")
+	if err != nil {
+		http.Error(w, "Failed to connect to Docker", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		http.Error(w, "Docker API error", resp.StatusCode)
+		return
+	}
+
+	var containers []DockerContainer
+	if err := json.NewDecoder(resp.Body).Decode(&containers); err != nil {
+		http.Error(w, "Failed to decode Docker response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"containers": containers})
+}
+
+func listImagesHandler(w http.ResponseWriter, r *http.Request) {
+	resp, err := dockerRequest("GET", "/images/json")
+	if err != nil {
+		http.Error(w, "Failed to connect to Docker", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		http.Error(w, "Docker API error", resp.StatusCode)
+		return
+	}
+
+	var images []DockerImage
+	if err := json.NewDecoder(resp.Body).Decode(&images); err != nil {
+		http.Error(w, "Failed to decode Docker response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"images": images})
+}
+
+func dockerActionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check for admin role
+	session, err := getSessionInfo(r)
+	if err != nil || session.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Id     string `json:"id"`
+		Action string `json:"action"` // start, stop, restart, remove
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	var path string
+	method := "POST"
+	switch req.Action {
+	case "start":
+		path = fmt.Sprintf("/containers/%s/start", req.Id)
+	case "stop":
+		path = fmt.Sprintf("/containers/%s/stop", req.Id)
+	case "restart":
+		path = fmt.Sprintf("/containers/%s/restart", req.Id)
+	case "remove":
+		path = fmt.Sprintf("/containers/%s", req.Id)
+		method = "DELETE"
+	default:
+		http.Error(w, "Invalid action", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := dockerRequest(method, path)
+	if err != nil {
+		http.Error(w, "Failed to connect to Docker", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := ioutil.ReadAll(resp.Body)
+		http.Error(w, fmt.Sprintf("Docker error: %s", string(body)), resp.StatusCode)
+		return
+	}
+
+	// Log the action
+	logOperation(session.Username, "docker_action", fmt.Sprintf("%s container %s", req.Action, req.Id), r.RemoteAddr)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Action successful"})
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Starting web-monitor server...")
@@ -2279,6 +2422,11 @@ func main() {
 	http.HandleFunc("/api/info", authMiddleware(infoHandler))
 	http.HandleFunc("/api/password", authMiddleware(changePasswordHandler))
 	http.HandleFunc("/api/logs", authMiddleware(listLogsHandler))
+
+	// Docker API
+	http.HandleFunc("/api/docker/containers", authMiddleware(listContainersHandler))
+	http.HandleFunc("/api/docker/images", authMiddleware(listImagesHandler))
+	http.HandleFunc("/api/docker/action", authMiddleware(dockerActionHandler))
 
 	// 用户管理 API（仅管理员）
 	http.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {

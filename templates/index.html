@@ -621,7 +621,14 @@
                 <i class="fas fa-tv" title="GPU Monitor"></i>
                 <span>GPU Monitor</span>
             </div>
+
+            <div class="nav-item" onclick="switchPage('docker')">
+                <i class="fab fa-docker" title="Docker Management"></i>
+                <span>Docker</span>
+            </div>
             
+            <div style="margin-top: auto;"></div>
+
             <!-- Admin Only -->
             <div class="nav-item" id="nav-users" onclick="switchPage('users')" style="display: none;">
                 <i class="fas fa-users" title="User Management"></i>
@@ -1295,6 +1302,55 @@
         </div>
     </div>
 
+    <!-- Docker Page -->
+    <div id="page-docker" class="page">
+        <div class="grid-container">
+            <!-- Containers -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">
+                    <span>Docker Containers</span>
+                    <button onclick="loadDockerContainers()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
+                                <th style="padding: 10px;">Name</th>
+                                <th style="padding: 10px;">Image</th>
+                                <th style="padding: 10px;">State</th>
+                                <th style="padding: 10px;">Status</th>
+                                <th style="padding: 10px;">Ports</th>
+                                <th style="padding: 10px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="docker-containers-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Images -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">
+                    <span>Docker Images</span>
+                    <button onclick="loadDockerImages()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
+                                <th style="padding: 10px;">ID</th>
+                                <th style="padding: 10px;">Tags</th>
+                                <th style="padding: 10px;">Size</th>
+                                <th style="padding: 10px;">Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="docker-images-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- User Management Page -->
     <div id="page-users" class="page">
         <div class="grid-container">
@@ -1477,6 +1533,7 @@
                 'ssh': 'SSH Monitor',
                 'processes': 'Process Manager',
                 'gpu': 'GPU Monitor',
+                'docker': 'Docker Management',
                 'users': 'User Management',
                 'logs': 'Operation Logs',
                 'profile': 'My Profile'
@@ -1491,9 +1548,112 @@
             }
 
             // Load data for specific pages
+            if (pageId === 'docker') { loadDockerContainers(); loadDockerImages(); }
             if (pageId === 'users') loadUsers();
             if (pageId === 'logs') loadLogs();
             if (pageId === 'profile') loadProfile();
+        }
+
+        // Docker Functions
+        async function loadDockerContainers() {
+            try {
+                const response = await fetch('/api/docker/containers');
+                if (response.ok) {
+                    const data = await response.json();
+                    const tbody = document.getElementById('docker-containers-body');
+                    tbody.innerHTML = '';
+                    if (!data.containers) {
+                         tbody.innerHTML = '<tr><td colspan="6" style="padding: 10px; text-align: center; color: var(--text-dim);">No containers found</td></tr>';
+                         return;
+                    }
+                    data.containers.forEach(c => {
+                        const name = c.Names ? c.Names[0].replace('/', '') : c.Id.substring(0, 12);
+                        const ports = c.Ports ? c.Ports.map(p => `${p.PrivatePort}->${p.PublicPort}/${p.Type}`).join(', ') : '';
+                        const stateColor = c.State === 'running' ? 'var(--accent-mem)' : 'var(--text-dim)';
+                        
+                        // Check role for actions
+                        const role = localStorage.getItem('role');
+                        let actionsHtml = '';
+                        if (role === 'admin') {
+                            actionsHtml = c.State === 'running' ? 
+                                `<button onclick="handleDockerAction('${c.Id}', 'stop')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Stop</button>
+                                 <button onclick="handleDockerAction('${c.Id}', 'restart')" style="background: var(--accent-net); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Restart</button>` : 
+                                `<button onclick="handleDockerAction('${c.Id}', 'start')" style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Start</button>
+                                 <button onclick="handleDockerAction('${c.Id}', 'remove')" style="background: var(--text-dim); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Remove</button>`;
+                        } else {
+                            actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
+                        }
+
+                        const tr = document.createElement('tr');
+                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        tr.innerHTML = `
+                            <td style="padding: 10px; font-weight: bold;">${name}</td>
+                            <td style="padding: 10px; color: var(--text-dim);">${c.Image}</td>
+                            <td style="padding: 10px;"><span style="color: ${stateColor}">${c.State}</span></td>
+                            <td style="padding: 10px; font-size: 0.85rem;">${c.Status}</td>
+                            <td style="padding: 10px; font-size: 0.85rem;">${ports}</td>
+                            <td style="padding: 10px;">
+                                ${actionsHtml}
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load containers', err);
+            }
+        }
+
+        async function loadDockerImages() {
+            try {
+                const response = await fetch('/api/docker/images');
+                if (response.ok) {
+                    const data = await response.json();
+                    const tbody = document.getElementById('docker-images-body');
+                    tbody.innerHTML = '';
+                    if (!data.images) {
+                         tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-dim);">No images found</td></tr>';
+                         return;
+                    }
+                    data.images.forEach(img => {
+                        const id = img.Id.substring(7, 19); // sha256:xxxxxxxx...
+                        const size = (img.Size / 1024 / 1024).toFixed(2) + ' MB';
+                        const created = new Date(img.Created * 1000).toLocaleDateString();
+                        const tags = img.RepoTags ? img.RepoTags.join(', ') : '<none>';
+                        
+                        const tr = document.createElement('tr');
+                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        tr.innerHTML = `
+                            <td style="padding: 10px; font-family: monospace;">${id}</td>
+                            <td style="padding: 10px;">${tags}</td>
+                            <td style="padding: 10px;">${size}</td>
+                            <td style="padding: 10px;">${created}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load images', err);
+            }
+        }
+
+        async function handleDockerAction(id, action) {
+            if (!confirm(`Are you sure you want to ${action} this container?`)) return;
+            try {
+                const response = await fetch('/api/docker/action', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id, action})
+                });
+                if (response.ok) {
+                    loadDockerContainers();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error || 'Action failed'));
+                }
+            } catch (err) {
+                alert('Failed to perform action');
+            }
         }
 
         // User Management Functions
@@ -2760,7 +2920,9 @@
 
             // Top Processes (General Page Widget)
             if (isGeneralPage && data.processes) {
-                updateList('processes-container', data.processes,
+                // Limit to top 10 processes
+                const topProcesses = data.processes.slice(0, 10);
+                updateList('processes-container', topProcesses,
                     (proc) => {
                         const div = document.createElement('div');
                         div.style.display = 'flex';
@@ -3487,7 +3649,7 @@
                 const logoutBtn = document.createElement('button');
                 logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> <span>Log out</span>';
                 logoutBtn.className = 'nav-item';
-                logoutBtn.style.marginTop = 'auto';
+                logoutBtn.style.marginTop = '10px';
                 logoutBtn.style.borderTop = '1px solid rgba(255,255,255,0.1)';
                 logoutBtn.style.paddingTop = '20px';
                 logoutBtn.style.cursor = 'pointer';

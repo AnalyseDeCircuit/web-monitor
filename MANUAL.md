@@ -71,27 +71,7 @@ go build -o web-monitor main.go
 ./web-monitor
 ```
 
-### 1.3 Linux 系统包安装
-
-**构建 DEB 包**（Ubuntu/Debian）：
-```bash
-./package_deb.sh
-sudo dpkg -i web-monitor-go_*.deb
-```
-
-**启动服务**：
-```bash
-sudo systemctl start web-monitor-go
-sudo systemctl enable web-monitor-go  # 开机自启
-
-# 查看状态
-sudo systemctl status web-monitor-go
-
-# 查看日志
-sudo journalctl -u web-monitor-go -f
-```
-
-### 1.4 环境变量配置
+### 1.3 环境变量配置
 
 | 变量名 | 默认值 | 说明 | 示例 |
 | :--- | :--- | :--- | :--- |
@@ -533,7 +513,7 @@ deploy:
 
 ---
 
-**最后更新**：2024年12月
+**最后更新**：2025年12月
 
 ## 许可证
 

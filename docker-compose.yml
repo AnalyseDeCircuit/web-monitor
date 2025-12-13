@@ -10,6 +10,7 @@ services:
     network_mode: host
     environment:
       - PORT=38080
+      - LANG
     volumes:
       - /:/hostfs:ro
       - /sys:/sys:ro
