@@ -423,6 +423,13 @@ type ProcessInfo struct {
 	Children      []ProcessInfo `json:"children,omitempty"`
 }
 
+// Power Profile
+type PowerProfileInfo struct {
+	Current   string   `json:"current"`
+	Available []string `json:"available"`
+	Error     string   `json:"error,omitempty"`
+}
+
 // --- Global Caches ---
 
 var (
@@ -1607,6 +1614,75 @@ func getSSHStats() SSHStats {
 	sshStatsCache = stats
 	lastSSHTime = time.Now()
 	return stats
+}
+
+func getPowerProfile() PowerProfileInfo {
+	// Try powerprofilesctl first (via chroot)
+	cmd := exec.Command("chroot", "/hostfs", "powerprofilesctl", "list")
+	out, err := cmd.Output()
+	if err == nil {
+		output := string(out)
+		info := PowerProfileInfo{Available: []string{}}
+		lines := strings.Split(output, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasSuffix(line, ":") {
+				name := strings.TrimSuffix(line, ":")
+				isCurrent := false
+				if strings.HasPrefix(name, "* ") {
+					name = strings.TrimPrefix(name, "* ")
+					isCurrent = true
+				}
+				name = strings.TrimSpace(name)
+				info.Available = append(info.Available, name)
+				if isCurrent {
+					info.Current = name
+				}
+			}
+		}
+		if info.Current != "" {
+			return info
+		}
+	}
+
+	// Fallback to sysfs
+	if content, err := ioutil.ReadFile("/sys/firmware/acpi/platform_profile"); err == nil {
+		current := strings.TrimSpace(string(content))
+		choices := []string{}
+		if choicesContent, err := ioutil.ReadFile("/sys/firmware/acpi/platform_profile_choices"); err == nil {
+			choices = strings.Fields(string(choicesContent))
+		}
+		return PowerProfileInfo{
+			Current:   current,
+			Available: choices,
+		}
+	}
+
+	return PowerProfileInfo{Error: "Not supported"}
+}
+
+func setPowerProfile(profile string) error {
+	// Validate
+	info := getPowerProfile()
+	valid := false
+	for _, p := range info.Available {
+		if p == profile {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid profile")
+	}
+
+	// Try powerprofilesctl
+	cmd := exec.Command("chroot", "/hostfs", "powerprofilesctl", "set", profile)
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	// Fallback to sysfs
+	return ioutil.WriteFile("/sys/firmware/acpi/platform_profile", []byte(profile), 0644)
 }
 
 func collectStats() Response {
@@ -2903,6 +2979,43 @@ func networkTestHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"output": result})
 }
 
+func powerProfileHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		info := getPowerProfile()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(info)
+		return
+	} else if r.Method == "POST" {
+		// Check Admin
+		sess, err := getSessionInfo(r)
+		if err != nil || sess.Role != "admin" {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		var req struct {
+			Profile string `json:"profile"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		if err := setPowerProfile(req.Profile); err != nil {
+			http.Error(w, "Failed to set profile: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Log
+		logOperation(sess.Username, "power_profile", "Set power profile to "+req.Profile, r.RemoteAddr)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Starting web-monitor server...")
@@ -2954,6 +3067,9 @@ func main() {
 
 	// Network API
 	http.HandleFunc("/api/network/test", authMiddleware(networkTestHandler))
+
+	// Power Profile API
+	http.HandleFunc("/api/power/profile", authMiddleware(powerProfileHandler))
 
 	// 用户管理 API（仅管理员）
 	http.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {

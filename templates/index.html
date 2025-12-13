@@ -990,6 +990,14 @@
             </div>
         </div>
 
+        <!-- Power Profile Card -->
+        <div class="card" id="power-profile-card" style="display: none; grid-column: 1 / -1;">
+            <div class="card-title">Power Profile</div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;" id="power-profile-controls">
+                <!-- Buttons will be injected here -->
+            </div>
+        </div>
+
         <!-- CPU Card -->
         <div class="card">
             <div class="card-title">
@@ -2672,6 +2680,89 @@
                 document.getElementById('nav-users').style.display = 'flex';
                 document.getElementById('nav-logs').style.display = 'flex';
             }
+            loadPowerProfile();
+        }
+
+        function loadPowerProfile() {
+            fetch('/api/power/profile', {
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error || !data.available || data.available.length === 0) {
+                    return; // Not supported
+                }
+
+                const card = document.getElementById('power-profile-card');
+                const container = document.getElementById('power-profile-controls');
+                card.style.display = 'block';
+                container.innerHTML = '';
+
+                const role = localStorage.getItem('role');
+                const isAdmin = role === 'admin';
+
+                data.available.forEach(profile => {
+                    const btn = document.createElement('button');
+                    btn.innerText = profile;
+                    btn.style.padding = '8px 16px';
+                    btn.style.borderRadius = '4px';
+                    btn.style.border = '1px solid rgba(255,255,255,0.2)';
+                    btn.style.cursor = isAdmin ? 'pointer' : 'default';
+                    btn.style.textTransform = 'capitalize';
+                    btn.style.fontWeight = 'bold';
+                    btn.style.transition = 'all 0.2s';
+
+                    if (profile === data.current) {
+                        btn.style.background = 'var(--accent-cpu)';
+                        btn.style.color = 'white';
+                        btn.style.borderColor = 'var(--accent-cpu)';
+                    } else {
+                        btn.style.background = 'rgba(255,255,255,0.05)';
+                        btn.style.color = 'var(--text-dim)';
+                    }
+
+                    if (isAdmin) {
+                        btn.onclick = () => setPowerProfile(profile);
+                        btn.onmouseover = () => {
+                            if (profile !== data.current) {
+                                btn.style.background = 'rgba(255,255,255,0.1)';
+                                btn.style.color = 'var(--text-main)';
+                            }
+                        };
+                        btn.onmouseout = () => {
+                            if (profile !== data.current) {
+                                btn.style.background = 'rgba(255,255,255,0.05)';
+                                btn.style.color = 'var(--text-dim)';
+                            }
+                        };
+                    } else {
+                        btn.disabled = true;
+                        btn.style.opacity = profile === data.current ? '1' : '0.5';
+                    }
+
+                    container.appendChild(btn);
+                });
+            })
+            .catch(err => console.error('Failed to load power profile:', err));
+        }
+
+        function setPowerProfile(profile) {
+            fetch('/api/power/profile', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getAuthToken()}`
+                },
+                body: JSON.stringify({ profile: profile })
+            })
+            .then(res => {
+                if (res.ok) {
+                    loadPowerProfile(); // Refresh UI
+                } else {
+                    alert('Failed to set power profile');
+                }
+            })
+            .catch(err => console.error('Error setting profile:', err));
         }
 
         // Fetch static info once

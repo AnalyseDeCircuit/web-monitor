@@ -14,7 +14,7 @@ services:
       - LANG
     volumes:
       - /:/hostfs
-      - /sys:/sys:ro
+      - /sys:/sys
       - /proc:/proc
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/run/utmp:/var/run/utmp:ro
