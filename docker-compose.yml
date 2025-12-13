@@ -18,4 +18,9 @@ services:
       - /var/run/utmp:/var/run/utmp:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
+      - web-monitor-data:/data
     restart: unless-stopped
+
+volumes:
+  web-monitor-data:
+    driver: local

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -28,9 +30,162 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // --- Structs matching JSON response ---
+
+// 用户结构体
+type User struct {
+	ID        string     `json:"id"`
+	Username  string     `json:"username"`
+	Password  string     `json:"password"` // bcrypt hash
+	Role      string     `json:"role"`     // "admin" 或 "user"
+	CreatedAt time.Time  `json:"created_at"`
+	LastLogin *time.Time `json:"last_login"`
+}
+
+// 用户数据库
+type UserDatabase struct {
+	Users []User `json:"users"`
+}
+
+// Session 信息
+type SessionInfo struct {
+	Username string
+	Role     string
+	Token    string
+}
+
+// Session 管理
+var (
+	sessions    = make(map[string]SessionInfo)
+	sessions_mu sync.RWMutex
+	userDB      *UserDatabase
+	userDB_mu   sync.RWMutex
+)
+
+// 初始化用户数据库
+func initUserDatabase() error {
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	// 确保 /data 目录存在
+	log.Println("Ensuring /data directory exists...")
+	if err := os.MkdirAll("/data", 0777); err != nil {
+		log.Printf("Error creating /data directory: %v\n", err)
+	}
+
+	usersFilePath := "/data/users.json"
+	log.Printf("Reading users from %s...\n", usersFilePath)
+
+	data, err := ioutil.ReadFile(usersFilePath)
+	if err != nil {
+		log.Printf("Users file not found, creating default: %v\n", err)
+		// 创建默认用户数据库
+		now := time.Now()
+		userDB = &UserDatabase{
+			Users: []User{
+				{
+					ID:        "admin",
+					Username:  "admin",
+					Password:  "$2a$10$Spuxl0kXOXW2hFb//8Ylj.Nrr./Qpa2Ba0JA0eKprr0NoNHaMJwUC", // bcrypt hash of "admin123"
+					Role:      "admin",
+					CreatedAt: now,
+					LastLogin: nil,
+				},
+			},
+		}
+
+		// 保存前先解锁
+		log.Println("Marshaling user data...")
+		jsonData, err := json.MarshalIndent(userDB, "", "  ")
+		if err != nil {
+			log.Printf("Error marshaling users: %v\n", err)
+			return err
+		}
+
+		log.Println("Writing to file...")
+		if err := ioutil.WriteFile(usersFilePath, jsonData, 0666); err != nil {
+			log.Printf("Error writing users file: %v\n", err)
+			return err
+		}
+		log.Println("User database created successfully")
+		return nil
+	}
+
+	log.Println("Parsing users from file...")
+	userDB = &UserDatabase{}
+	if err := json.Unmarshal(data, userDB); err != nil {
+		log.Printf("Error parsing users: %v\n", err)
+		return err
+	}
+	log.Printf("Loaded %d users\n", len(userDB.Users))
+	return nil
+}
+
+// 保存用户数据库
+func saveUserDatabase() error {
+	log.Println("Saving user database...")
+	data, err := json.MarshalIndent(userDB, "", "  ")
+	if err != nil {
+		log.Printf("Error marshaling users: %v\n", err)
+		return err
+	}
+
+	usersFilePath := "/data/users.json"
+	log.Printf("Writing to %s...\n", usersFilePath)
+	if err := ioutil.WriteFile(usersFilePath, data, 0666); err != nil {
+		log.Printf("Error writing users file: %v\n", err)
+		return err
+	}
+	log.Println("User database saved successfully")
+	return nil
+}
+
+// 验证用户
+func validateUser(username, password string) *User {
+	userDB_mu.RLock()
+	defer userDB_mu.RUnlock()
+
+	log.Printf("Validating user: %s", username)
+
+	for i, user := range userDB.Users {
+		if user.Username == username {
+			log.Printf("Found user: %s, checking password...", username)
+			// 使用 bcrypt 验证密码
+			if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err == nil {
+				log.Printf("Password valid for user: %s", username)
+				return &userDB.Users[i]
+			} else {
+				log.Printf("Password invalid for user: %s, error: %v", username, err)
+			}
+			return nil
+		}
+	}
+	log.Printf("User not found: %s", username)
+	return nil
+}
+
+// 生成密码哈希
+func hashPasswordBcrypt(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(hash), err
+}
+
+// 登录请求结构体
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// 登录响应结构体
+type LoginResponse struct {
+	Token    string `json:"token"`
+	Message  string `json:"message"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
+}
 
 type Response struct {
 	CPU       CPUInfo               `json:"cpu"`
@@ -1612,11 +1767,354 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// 登录处理
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// 验证用户
+	user := validateUser(req.Username, req.Password)
+	if user == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid credentials"})
+		return
+	}
+
+	// 生成 Session Token
+	sessionToken := fmt.Sprintf("%s_%d", req.Username, time.Now().UnixNano())
+	hash := sha256.Sum256([]byte(sessionToken))
+	tokenStr := hex.EncodeToString(hash[:])
+
+	sessions_mu.Lock()
+	sessions[tokenStr] = SessionInfo{
+		Username: user.Username,
+		Role:     user.Role,
+		Token:    tokenStr,
+	}
+	sessions_mu.Unlock()
+
+	// 更新最后登录时间
+	userDB_mu.Lock()
+	for i, u := range userDB.Users {
+		if u.ID == user.ID {
+			now := time.Now()
+			userDB.Users[i].LastLogin = &now
+			break
+		}
+	}
+	userDB_mu.Unlock()
+	saveUserDatabase()
+
+	// 返回 Token
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(LoginResponse{
+		Token:    tokenStr,
+		Message:  "Login successful",
+		Username: user.Username,
+		Role:     user.Role,
+	})
+}
+
+// 登出处理
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	token := r.Header.Get("Authorization")
+	if token != "" {
+		token = strings.TrimPrefix(token, "Bearer ")
+		sessions_mu.Lock()
+		delete(sessions, token)
+		sessions_mu.Unlock()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Logged out"})
+}
+
+// 认证检查函数
+func isAuthenticated(r *http.Request) bool {
+	_, err := getSessionInfo(r)
+	return err == nil
+}
+
+// 获取 Session 信息
+func getSessionInfo(r *http.Request) (*SessionInfo, error) {
+	token := r.Header.Get("Authorization")
+	if token == "" {
+		// 尝试从 Cookie 读取
+		cookie, err := r.Cookie("auth_token")
+		if err != nil {
+			// 尝试从查询参数读取（WebSocket 使用）
+			token = r.URL.Query().Get("token")
+			if token == "" {
+				return nil, fmt.Errorf("no token found")
+			}
+		} else {
+			token = cookie.Value
+		}
+	} else {
+		// 移除 "Bearer " 前缀
+		token = strings.TrimPrefix(token, "Bearer ")
+	}
+
+	sessions_mu.RLock()
+	session, exists := sessions[token]
+	sessions_mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("invalid token")
+	}
+	return &session, nil
+}
+
+// 获取当前用户角色
+func getCurrentRole(r *http.Request) string {
+	session, err := getSessionInfo(r)
+	if err != nil {
+		return ""
+	}
+	return session.Role
+} // 认证中间件
+func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !isAuthenticated(r) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// 登录页面处理
+func loginPageHandler(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "./templates/login.html")
+}
+
+// 用户管理 API - 列出所有用户（仅管理员）
+func listUsersHandler(w http.ResponseWriter, r *http.Request) {
+	if getCurrentRole(r) != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userDB_mu.RLock()
+	users := make([]map[string]interface{}, len(userDB.Users))
+	for i, u := range userDB.Users {
+		users[i] = map[string]interface{}{
+			"id":         u.ID,
+			"username":   u.Username,
+			"role":       u.Role,
+			"created_at": u.CreatedAt,
+			"last_login": u.LastLogin,
+		}
+	}
+	userDB_mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"users": users,
+	})
+}
+
+// 创建用户（仅管理员）
+func createUserHandler(w http.ResponseWriter, r *http.Request) {
+	if getCurrentRole(r) != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// 验证输入
+	if req.Username == "" || req.Password == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Username and password are required"})
+		return
+	}
+
+	if req.Role != "admin" && req.Role != "user" {
+		req.Role = "user"
+	}
+
+	// 生成密码哈希
+	hash, err := hashPasswordBcrypt(req.Password)
+	if err != nil {
+		http.Error(w, "Password hashing failed", http.StatusInternalServerError)
+		return
+	}
+
+	// 检查用户是否存在
+	userDB_mu.Lock()
+	for _, u := range userDB.Users {
+		if u.Username == req.Username {
+			userDB_mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "User already exists"})
+			return
+		}
+	}
+
+	// 添加新用户
+	newUser := User{
+		ID:        fmt.Sprintf("user_%d", len(userDB.Users)),
+		Username:  req.Username,
+		Password:  hash,
+		Role:      req.Role,
+		CreatedAt: time.Now(),
+		LastLogin: nil,
+	}
+	userDB.Users = append(userDB.Users, newUser)
+	userDB_mu.Unlock()
+	saveUserDatabase()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message":  "User created successfully",
+		"username": newUser.Username,
+	})
+}
+
+// 删除用户（仅管理员）
+func deleteUserHandler(w http.ResponseWriter, r *http.Request) {
+	if getCurrentRole(r) != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	if r.Method != "DELETE" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		http.Error(w, "Username required", http.StatusBadRequest)
+		return
+	}
+
+	// 防止删除管理员
+	if username == "admin" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Cannot delete admin user"})
+		return
+	}
+
+	userDB_mu.Lock()
+	found := false
+	for i, u := range userDB.Users {
+		if u.Username == username {
+			userDB.Users = append(userDB.Users[:i], userDB.Users[i+1:]...)
+			found = true
+			break
+		}
+	}
+	userDB_mu.Unlock()
+
+	if !found {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "User not found"})
+		return
+	}
+
+	saveUserDatabase()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "User deleted successfully"})
+}
+
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Println("Starting web-monitor server...")
+
+	// 初始化用户数据库
+	log.Println("Initializing user database...")
+	if err := initUserDatabase(); err != nil {
+		log.Printf("Warning: Failed to initialize user database: %v\n", err)
+	}
+	log.Println("User database initialized")
+
+	// 公开路由（不需要认证）
+	http.HandleFunc("/api/login", loginHandler)
+	http.HandleFunc("/api/logout", logoutHandler)
+	http.HandleFunc("/login", loginPageHandler)
+
+	// 受保护的路由（需要认证）
+	http.HandleFunc("/ws/stats", authMiddleware(wsHandler))
+	http.HandleFunc("/api/info", authMiddleware(infoHandler))
+
+	// 用户管理 API（仅管理员）
+	http.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
+		if !isAuthenticated(r) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method == "GET" {
+			listUsersHandler(w, r)
+		} else if r.Method == "POST" {
+			createUserHandler(w, r)
+		} else if r.Method == "DELETE" {
+			deleteUserHandler(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// 主页和其他静态文件
+	// 重定向 / 到 index.html，由前端检查认证
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		// 检查是否已认证，否则重定向到登录页
+		if !isAuthenticated(r) {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		http.ServeFile(w, r, "./templates/index.html")
+	})
+
+	// 提供其他静态文件（CSS、JS等）
 	fs := http.FileServer(http.Dir("./templates"))
-	http.Handle("/", fs)
-	http.HandleFunc("/ws/stats", wsHandler)
-	http.HandleFunc("/api/info", infoHandler)
+	http.Handle("/assets/", fs)
+	http.Handle("/css/", fs)
+	http.Handle("/js/", fs)
 
 	port := os.Getenv("PORT")
 	if port == "" {

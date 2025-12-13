@@ -17,4 +17,4 @@ WORKDIR /app
 COPY --from=builder /app/server .
 COPY templates/ ./templates/
 EXPOSE 8000
-CMD ["./server"]
+CMD ["sh", "-c", "./server 2>&1"]

@@ -1934,31 +1934,46 @@
                 reconnectTimer = null;
             }
 
+            // 检查认证 token
+            const token = getAuthToken();
+            if (!token) {
+                console.warn('No auth token, redirecting to login');
+                window.location.href = '/login';
+                return;
+            }
+
             const interval = document.getElementById('interval-select').value;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}`;
+            // 通过查询参数传递 Token
+            const wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}&token=${encodeURIComponent(token)}`;
             
             websocket = new WebSocket(wsUrl);
             const statusDot = document.getElementById('status-dot');
 
             websocket.onopen = function() {
+                console.log('WebSocket connected');
                 statusDot.classList.add('connected');
             };
 
             websocket.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                renderStats(data);
+                try {
+                    const data = JSON.parse(event.data);
+                    renderStats(data);
+                } catch (e) {
+                    console.error('Error processing message:', e);
+                }
             };
 
             websocket.onclose = function() {
+                console.log('WebSocket closed');
                 statusDot.classList.remove('connected');
-                // Try to reconnect in 1 second
-                reconnectTimer = setTimeout(connectWebSocket, 1000);
+                // Try to reconnect in 3 seconds
+                reconnectTimer = setTimeout(connectWebSocket, 3000);
             };
 
             websocket.onerror = function(err) {
+                console.error('WebSocket error:', err);
                 statusDot.classList.remove('connected');
-                console.error('Socket encountered error: ', err.message, 'Closing socket');
                 websocket.close();
             };
         }
@@ -3116,8 +3131,84 @@
         }
     }
 
-        // Start WebSocket connection
-        connectWebSocket();
+        // 检查认证
+        function checkAuthentication() {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+            return token;
+        }
+
+        // 获取认证 Token
+        function getAuthToken() {
+            return localStorage.getItem('auth_token');
+        }
+
+        // 登出函数
+        async function logout() {
+            const token = getAuthToken();
+            if (token) {
+                try {
+                    await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                } catch (err) {
+                    console.error('Logout error:', err);
+                }
+            }
+            // 清除本地存储
+            localStorage.removeItem('auth_token');
+            // 跳转到登录页
+            window.location.href = '/login';
+        }
+
+        // 拦截 fetch 请求添加认证头
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const token = getAuthToken();
+            let options = args[1] || {};
+            if (!options.headers) {
+                options.headers = {};
+            }
+            // 为 API 请求添加 Authorization header
+            if (token && (args[0].includes('/api/') || args[0].includes('/ws/'))) {
+                options.headers['Authorization'] = `Bearer ${token}`;
+            }
+            args[1] = options;
+            return originalFetch.apply(window, args);
+        };
+
+        // 添加登出按钮到侧边栏
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检查认证
+            const token = checkAuthentication();
+            if (!token) return;
+
+            // 在侧边栏底部添加登出按钮
+            const sidebar = document.querySelector('.sidebar');
+            if (sidebar) {
+                const logoutBtn = document.createElement('button');
+                logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> <span>登出</span>';
+                logoutBtn.className = 'nav-item';
+                logoutBtn.style.marginTop = 'auto';
+                logoutBtn.style.borderTop = '1px solid rgba(255,255,255,0.1)';
+                logoutBtn.style.paddingTop = '20px';
+                logoutBtn.style.cursor = 'pointer';
+                logoutBtn.onclick = (e) => {
+                    e.preventDefault();
+                    logout();
+                };
+                sidebar.appendChild(logoutBtn);
+            }
+
+            // 启动 WebSocket 连接
+            connectWebSocket();
+        });
     </script>
 </body>
 </html>
