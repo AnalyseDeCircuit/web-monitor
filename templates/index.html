@@ -626,6 +626,10 @@
                 <i class="fab fa-docker" title="Docker Management"></i>
                 <span>Docker</span>
             </div>
+            <div class="nav-item" onclick="switchPage('services')">
+                <i class="fas fa-cogs" title="System Services"></i>
+                <span>Services</span>
+            </div>
             
             <div style="margin-top: auto;"></div>
 
@@ -1351,6 +1355,33 @@
         </div>
     </div>
 
+    <!-- Services Page -->
+    <div id="page-services" class="page">
+        <div class="grid-container">
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">
+                    <span>System Services</span>
+                    <button onclick="loadServices()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
+                                <th style="padding: 10px;">Unit</th>
+                                <th style="padding: 10px;">Load</th>
+                                <th style="padding: 10px;">Active</th>
+                                <th style="padding: 10px;">Sub</th>
+                                <th style="padding: 10px;">Description</th>
+                                <th style="padding: 10px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="services-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- User Management Page -->
     <div id="page-users" class="page">
         <div class="grid-container">
@@ -1534,6 +1565,7 @@
                 'processes': 'Process Manager',
                 'gpu': 'GPU Monitor',
                 'docker': 'Docker Management',
+                'services': 'System Services',
                 'users': 'User Management',
                 'logs': 'Operation Logs',
                 'profile': 'My Profile'
@@ -1549,6 +1581,7 @@
 
             // Load data for specific pages
             if (pageId === 'docker') { loadDockerContainers(); loadDockerImages(); }
+            if (pageId === 'services') loadServices();
             if (pageId === 'users') loadUsers();
             if (pageId === 'logs') loadLogs();
             if (pageId === 'profile') loadProfile();
@@ -1653,6 +1686,86 @@
                 }
             } catch (err) {
                 alert('Failed to perform action');
+            }
+        }
+
+        // Systemd Service Functions
+        async function loadServices() {
+            const tbody = document.getElementById('services-body');
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px;">Loading...</td></tr>';
+
+            try {
+                const response = await fetch('/api/systemd/services');
+                if (!response.ok) throw new Error('Failed to fetch services');
+                const services = await response.json();
+
+                tbody.innerHTML = '';
+                if (!services || services.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px;">No services found</td></tr>';
+                    return;
+                }
+
+                const role = localStorage.getItem('role');
+
+                services.forEach(svc => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                    
+                    // Determine status color
+                    let statusColor = '#888';
+                    if (svc.active === 'active') statusColor = '#2ed573';
+                    else if (svc.active === 'failed') statusColor = '#ff4757';
+
+                    // Actions
+                    let actionsHtml = '';
+                    if (role === 'admin') {
+                        const btnStyle = "border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px; font-size: 0.8rem;";
+                        if (svc.active === 'active') {
+                            actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'stop')" style="${btnStyle} background: #ff6b6b;">Stop</button>`;
+                            actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'restart')" style="${btnStyle} background: var(--accent-net);">Restart</button>`;
+                        } else {
+                            actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'start')" style="${btnStyle} background: var(--accent-mem);">Start</button>`;
+                        }
+                    } else {
+                        actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
+                    }
+
+                    tr.innerHTML = `
+                        <td style="padding: 10px; font-weight: bold;">${svc.unit}</td>
+                        <td style="padding: 10px;">${svc.load}</td>
+                        <td style="padding: 10px;"><span style="color: ${statusColor}">${svc.active}</span></td>
+                        <td style="padding: 10px;">${svc.sub}</td>
+                        <td style="padding: 10px; color: var(--text-dim); font-size: 0.85rem;">${svc.description}</td>
+                        <td style="padding: 10px;">${actionsHtml}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error('Error loading services:', error);
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: #ff4757; padding: 20px;">Error: ${error.message}</td></tr>`;
+            }
+        }
+
+        async function handleServiceAction(unit, action) {
+            if (!confirm(`Are you sure you want to ${action} service ${unit}?`)) return;
+
+            try {
+                const response = await fetch('/api/systemd/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ unit, action })
+                });
+
+                if (!response.ok) {
+                    const data = await response.json(); // Try to parse JSON error
+                    throw new Error(data.error || 'Action failed');
+                }
+
+                loadServices();
+            } catch (error) {
+                console.error('Error performing action:', error);
+                // If JSON parse failed, it might be text
+                alert(`Failed to ${action} service: ${error.message || error}`);
             }
         }
 

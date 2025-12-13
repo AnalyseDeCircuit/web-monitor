@@ -8,11 +8,12 @@ services:
     container_name: web-monitor-go
     privileged: true
     network_mode: host
+    pid: host
     environment:
       - PORT=38080
       - LANG
     volumes:
-      - /:/hostfs:ro
+      - /:/hostfs
       - /sys:/sys:ro
       - /proc:/proc
       - /var/run/docker.sock:/var/run/docker.sock:ro

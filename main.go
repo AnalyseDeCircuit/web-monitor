@@ -2398,6 +2398,103 @@ func dockerActionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Action successful"})
 }
 
+// --- Systemd Service Management ---
+
+type ServiceInfo struct {
+	Unit        string `json:"unit"`
+	Load        string `json:"load"`
+	Active      string `json:"active"`
+	Sub         string `json:"sub"`
+	Description string `json:"description"`
+}
+
+func listServices() ([]ServiceInfo, error) {
+	// Use chroot to execute systemctl on the host
+	cmd := exec.Command("chroot", "/hostfs", "systemctl", "list-units", "--type=service", "--all", "--no-pager", "--no-legend")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var services []ServiceInfo
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 4 {
+			svc := ServiceInfo{
+				Unit:        parts[0],
+				Load:        parts[1],
+				Active:      parts[2],
+				Sub:         parts[3],
+				Description: strings.Join(parts[4:], " "),
+			}
+			services = append(services, svc)
+		}
+	}
+	return services, nil
+}
+
+func listServicesHandler(w http.ResponseWriter, r *http.Request) {
+	services, err := listServices()
+	if err != nil {
+		http.Error(w, "Failed to list services: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(services)
+}
+
+func serviceActionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check Admin Role
+	sess, err := getSessionInfo(r)
+	if err != nil || sess.Role != "admin" {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Unit   string `json:"unit"`
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	allowedActions := map[string]bool{
+		"start":   true,
+		"stop":    true,
+		"restart": true,
+		"enable":  true,
+		"disable": true,
+	}
+	if !allowedActions[req.Action] {
+		http.Error(w, "Invalid action", http.StatusBadRequest)
+		return
+	}
+
+	// Execute action via chroot
+	cmd := exec.Command("chroot", "/hostfs", "systemctl", req.Action, req.Unit)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Action failed: %s, Output: %s", err.Error(), string(out)), http.StatusInternalServerError)
+		return
+	}
+
+	logOperation(sess.Username, "systemd_action", fmt.Sprintf("%s %s", req.Action, req.Unit), r.RemoteAddr)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Starting web-monitor server...")
@@ -2427,6 +2524,10 @@ func main() {
 	http.HandleFunc("/api/docker/containers", authMiddleware(listContainersHandler))
 	http.HandleFunc("/api/docker/images", authMiddleware(listImagesHandler))
 	http.HandleFunc("/api/docker/action", authMiddleware(dockerActionHandler))
+
+	// Systemd API
+	http.HandleFunc("/api/systemd/services", authMiddleware(listServicesHandler))
+	http.HandleFunc("/api/systemd/action", authMiddleware(serviceActionHandler))
 
 	// 用户管理 API（仅管理员）
 	http.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
