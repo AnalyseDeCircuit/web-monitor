@@ -130,3 +130,23 @@ func ValidatePasswordHandler(w http.ResponseWriter, r *http.Request) {
 		"valid": isValid,
 	})
 }
+
+// UsersHandler 处理用户管理请求
+func UsersHandler(w http.ResponseWriter, r *http.Request) {
+	// 简单实现：返回所有用户
+	users := auth.GetAllUsers()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"users": users,
+	})
+}
+
+// LogsHandler 处理操作日志请求
+func LogsHandler(w http.ResponseWriter, r *http.Request) {
+	// 返回操作日志
+	logs := logs.GetLogs()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"logs": logs,
+	})
+}

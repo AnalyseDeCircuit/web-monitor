@@ -29,6 +29,32 @@ func SetupRouter() *Router {
 	router.mux.HandleFunc("/api/password", ChangePasswordHandler)
 	router.mux.HandleFunc("/api/validate-password", ValidatePasswordHandler)
 
+	// 用户管理路由
+	router.mux.HandleFunc("/api/users", UsersHandler)
+	router.mux.HandleFunc("/api/logs", LogsHandler)
+
+	// 监控数据路由
+	router.mux.HandleFunc("/api/system/info", SystemInfoHandler)
+	router.mux.HandleFunc("/api/docker/containers", DockerContainersHandler)
+	router.mux.HandleFunc("/api/systemd/services", SystemdServicesHandler)
+	router.mux.HandleFunc("/api/network/info", NetworkInfoHandler)
+	router.mux.HandleFunc("/api/power/info", PowerInfoHandler)
+	router.mux.HandleFunc("/api/cache/info", CacheInfoHandler)
+	router.mux.HandleFunc("/api/health", HealthCheckHandler)
+	router.mux.HandleFunc("/api/metrics", PrometheusMetricsHandler)
+
+	// 网络诊断路由
+	router.mux.HandleFunc("/api/network/diagnostics", NetworkDiagnosticsHandler)
+
+	// 电源操作路由
+	router.mux.HandleFunc("/api/power/action", PowerActionHandler)
+	router.mux.HandleFunc("/api/power/shutdown-status", ShutdownStatusHandler)
+
+	// Cron任务路由
+	router.mux.HandleFunc("/api/cron/jobs", CronJobsHandler)
+	router.mux.HandleFunc("/api/cron/action", CronActionHandler)
+	router.mux.HandleFunc("/api/cron/logs", CronLogsHandler)
+
 	// WebSocket路由
 	router.mux.HandleFunc("/ws/stats", websocket.HandleWebSocket)
 

@@ -17,7 +17,7 @@ var (
 )
 
 // ListServices 列出所有Systemd服务
-func ListServices() ([]types.SystemdService, error) {
+func ListServices() ([]types.ServiceInfo, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
@@ -27,7 +27,7 @@ func ListServices() ([]types.SystemdService, error) {
 		return nil, fmt.Errorf("failed to list services: %v", err)
 	}
 
-	var services []types.SystemdService
+	var services []types.ServiceInfo
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -36,12 +36,12 @@ func ListServices() ([]types.SystemdService, error) {
 			continue
 		}
 
-		service := types.SystemdService{
-			Name:        fields[0],
-			LoadState:   fields[1],
-			ActiveState: fields[2],
-			SubState:    fields[3],
-			Description: strings.Join(fields[4:], " "),
+		service := types.ServiceInfo{
+			Unit:        fields[0],
+			Load:        fields[1],
+			Active:      fields[2],
+			Sub:         fields[3],
+			Description: fields[4],
 		}
 		services = append(services, service)
 	}

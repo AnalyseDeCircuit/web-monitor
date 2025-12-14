@@ -6,7 +6,7 @@ ENV CGO_ENABLED=0 GO111MODULE=on GOOS=linux GOARCH=amd64
 COPY go.mod ./
 COPY vendor ./vendor
 COPY . .
-RUN go build -mod=vendor -ldflags="-s -w" -trimpath -o server .
+RUN go build -mod=vendor -ldflags="-s -w" -trimpath -o server ./cmd/server
 
 # Runtime stage
 FROM alpine:latest

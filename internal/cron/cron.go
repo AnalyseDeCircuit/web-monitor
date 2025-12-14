@@ -96,10 +96,8 @@ func parseCronLine(line, user string, lineNum int) *types.CronJob {
 
 	return &types.CronJob{
 		ID:       fmt.Sprintf("%s-%d", user, lineNum),
-		User:     user,
 		Schedule: schedule,
 		Command:  command,
-		Enabled:  true,
 	}
 }
 

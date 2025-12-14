@@ -34,8 +34,8 @@ func ShutdownSystem(delayMinutes int, reason string) (*types.PowerActionResult, 
 	output, err := cmd.CombinedOutput()
 	result := &types.PowerActionResult{
 		Action:    "shutdown",
-		Timestamp: time.Now(),
-		Delay:     delayMinutes,
+		Timestamp: time.Now().Format(time.RFC3339),
+		Delay:     fmt.Sprintf("%d", delayMinutes),
 		Reason:    reason,
 		Output:    string(output),
 	}
@@ -69,8 +69,8 @@ func RebootSystem(delayMinutes int, reason string) (*types.PowerActionResult, er
 	output, err := cmd.CombinedOutput()
 	result := &types.PowerActionResult{
 		Action:    "reboot",
-		Timestamp: time.Now(),
-		Delay:     delayMinutes,
+		Timestamp: time.Now().Format(time.RFC3339),
+		Delay:     fmt.Sprintf("%d", delayMinutes),
 		Reason:    reason,
 		Output:    string(output),
 	}
@@ -94,7 +94,7 @@ func CancelShutdown() (*types.PowerActionResult, error) {
 	output, err := cmd.CombinedOutput()
 	result := &types.PowerActionResult{
 		Action:    "cancel",
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 		Output:    string(output),
 	}
 
@@ -119,7 +119,7 @@ func GetShutdownStatus() (*types.ShutdownStatus, error) {
 	outputStr := string(output)
 
 	status := &types.ShutdownStatus{
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
 	if strings.Contains(outputStr, "shutdown scheduled") || strings.Contains(outputStr, "Shutdown scheduled") {
@@ -181,7 +181,7 @@ func SuspendSystem() (*types.PowerActionResult, error) {
 	output, err := cmd.CombinedOutput()
 	result := &types.PowerActionResult{
 		Action:    "suspend",
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 		Output:    string(output),
 	}
 
@@ -204,7 +204,7 @@ func HibernateSystem() (*types.PowerActionResult, error) {
 	output, err := cmd.CombinedOutput()
 	result := &types.PowerActionResult{
 		Action:    "hibernate",
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 		Output:    string(output),
 	}
 
@@ -224,7 +224,7 @@ func GetPowerInfo() (*types.PowerInfo, error) {
 	defer powerMutex.Unlock()
 
 	info := &types.PowerInfo{
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
 	// 获取电池信息
@@ -274,9 +274,13 @@ func getBatteryInfo() (*types.BatteryInfo, error) {
 
 	status := strings.TrimSpace(string(output))
 
+	percentage := 0.0
+	fmt.Sscanf(capacity, "%f", &percentage)
+
 	return &types.BatteryInfo{
-		Capacity: capacity,
-		Status:   status,
+		Capacity:   percentage,
+		Percentage: percentage,
+		Status:     status,
 	}, nil
 }
 

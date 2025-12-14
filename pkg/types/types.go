@@ -70,6 +70,20 @@ type AlertConfig struct {
 
 // --- 监控数据响应类型 ---
 
+// SystemMetrics 系统指标（用于缓存）
+type SystemMetrics struct {
+	CPUPercent    float64   `json:"cpu_percent"`
+	MemoryPercent float64   `json:"memory_percent"`
+	MemoryTotal   uint64    `json:"memory_total"`
+	MemoryUsed    uint64    `json:"memory_used"`
+	MemoryFree    uint64    `json:"memory_free"`
+	DiskPercent   float64   `json:"disk_percent"`
+	DiskTotal     uint64    `json:"disk_total"`
+	DiskUsed      uint64    `json:"disk_used"`
+	DiskFree      uint64    `json:"disk_free"`
+	Timestamp     time.Time `json:"timestamp"`
+}
+
 // Response 完整的监控数据响应
 type Response struct {
 	CPU       CPUInfo               `json:"cpu"`
@@ -258,13 +272,6 @@ type ProcessInfo struct {
 	Children      []ProcessInfo `json:"children,omitempty"`
 }
 
-// PowerProfileInfo 电源配置信息
-type PowerProfileInfo struct {
-	Current   string   `json:"current"`
-	Available []string `json:"available"`
-	Error     string   `json:"error,omitempty"`
-}
-
 // --- Docker相关类型 ---
 
 // DockerContainer Docker容器信息
@@ -307,6 +314,137 @@ type CronJob struct {
 	ID       string `json:"id"` // Just an index for frontend
 	Schedule string `json:"schedule"`
 	Command  string `json:"command"`
+}
+
+// --- 网络诊断相关类型 ---
+
+// PingResult Ping测试结果
+type PingResult struct {
+	Target             string  `json:"target"`
+	Success            bool    `json:"success"`
+	Latency            float64 `json:"latency"`     // ms
+	PacketLoss         float64 `json:"packet_loss"` // %
+	Error              string  `json:"error,omitempty"`
+	Timestamp          string  `json:"timestamp,omitempty"`
+	Output             string  `json:"output,omitempty"`
+	PacketsTransmitted int     `json:"packets_transmitted,omitempty"`
+	PacketsReceived    int     `json:"packets_received,omitempty"`
+	MinRTT             float64 `json:"min_rtt,omitempty"`
+	AvgRTT             float64 `json:"avg_rtt,omitempty"`
+	MaxRTT             float64 `json:"max_rtt,omitempty"`
+	MdevRTT            float64 `json:"mdev_rtt,omitempty"`
+}
+
+// TracerouteResult 路由追踪结果
+type TracerouteResult struct {
+	Target    string `json:"target"`
+	Success   bool   `json:"success"`
+	Timestamp string `json:"timestamp,omitempty"`
+	Output    string `json:"output,omitempty"`
+	Hops      []struct {
+		IP       string  `json:"ip"`
+		Hostname string  `json:"hostname"`
+		Latency  float64 `json:"latency"` // ms
+	} `json:"hops"`
+	Error string `json:"error,omitempty"`
+}
+
+// PortScanResult 端口扫描结果
+type PortScanResult struct {
+	Target      string       `json:"target"`
+	Timestamp   string       `json:"timestamp,omitempty"`
+	Ports       []PortStatus `json:"ports"`
+	OpenPorts   int          `json:"open_ports,omitempty"`
+	ClosedPorts int          `json:"closed_ports,omitempty"`
+	Success     bool         `json:"success"`
+	Error       string       `json:"error,omitempty"`
+}
+
+// PortStatus 端口状态
+type PortStatus struct {
+	Port      int    `json:"port"`
+	Protocol  string `json:"protocol"`
+	Status    string `json:"status"` // open, closed, filtered
+	Service   string `json:"service,omitempty"`
+	Open      bool   `json:"open"`
+	Error     string `json:"error,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+// DNSResult DNS查询结果
+type DNSResult struct {
+	Domain    string   `json:"domain"`
+	Hostname  string   `json:"hostname,omitempty"`
+	Type      string   `json:"type"`
+	Records   []string `json:"records"`
+	Timestamp string   `json:"timestamp,omitempty"`
+	Success   bool     `json:"success"`
+	Error     string   `json:"error,omitempty"`
+}
+
+// NetworkInterface 网络接口信息
+type NetworkInterface struct {
+	Name         string   `json:"name"`
+	IP           string   `json:"ip"`
+	MAC          string   `json:"mac"`
+	Speed        float64  `json:"speed"` // Mbps
+	IsUp         bool     `json:"is_up"`
+	MTU          int      `json:"mtu"`
+	Addresses    []string `json:"addresses,omitempty"`
+	Flags        []string `json:"flags,omitempty"`
+	HardwareAddr string   `json:"hardware_addr,omitempty"`
+}
+
+// --- 电源管理相关类型 ---
+
+// PowerActionResult 电源操作结果
+type PowerActionResult struct {
+	Action    string `json:"action"`
+	Success   bool   `json:"success"`
+	Message   string `json:"message"`
+	Error     string `json:"error,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
+	Delay     string `json:"delay,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	Output    string `json:"output,omitempty"`
+}
+
+// ShutdownStatus 关机状态
+type ShutdownStatus struct {
+	Scheduled     bool   `json:"scheduled"`
+	Time          string `json:"time,omitempty"`
+	Message       string `json:"message,omitempty"`
+	Timestamp     string `json:"timestamp,omitempty"`
+	ScheduledTime string `json:"scheduled_time,omitempty"`
+	Uptime        string `json:"uptime,omitempty"`
+}
+
+// PowerInfo 电源信息
+type PowerInfo struct {
+	Profile           string       `json:"profile"`
+	Battery           *BatteryInfo `json:"battery,omitempty"`
+	ACStatus          string       `json:"ac_status"`
+	Timestamp         string       `json:"timestamp,omitempty"`
+	ACPower           bool         `json:"ac_power,omitempty"`
+	Uptime            string       `json:"uptime,omitempty"`
+	ShutdownScheduled bool         `json:"shutdown_scheduled,omitempty"`
+	ScheduledTime     string       `json:"scheduled_time,omitempty"`
+}
+
+// BatteryInfo 电池信息
+type BatteryInfo struct {
+	Present       bool    `json:"present"`
+	Percentage    float64 `json:"percentage"`
+	Status        string  `json:"status"`
+	TimeRemaining string  `json:"time_remaining,omitempty"`
+	Capacity      float64 `json:"capacity,omitempty"`
+}
+
+// PowerProfileInfo 电源配置信息
+type PowerProfileInfo struct {
+	Current   string   `json:"current"`
+	Available []string `json:"available"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // --- JWT工具类型 ---

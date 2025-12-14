@@ -30,7 +30,7 @@ func PingTarget(target string, count int) (*types.PingResult, error) {
 	output, err := cmd.CombinedOutput()
 	result := &types.PingResult{
 		Target:    target,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 		Output:    string(output),
 	}
 
@@ -59,11 +59,11 @@ func parsePingOutput(result *types.PingResult) {
 				switch field {
 				case "packets":
 					if i > 0 {
-						result.PacketsTransmitted = parseField(fields[i-1])
+						result.PacketsTransmitted = int(parseField(fields[i-1]))
 					}
 				case "received,":
 					if i > 0 {
-						result.PacketsReceived = parseField(fields[i-1])
+						result.PacketsReceived = int(parseField(fields[i-1]))
 					}
 				case "packet":
 					if i > 0 && fields[i-1] == "loss" {
@@ -112,7 +112,7 @@ func TracerouteTarget(target string, maxHops int) (*types.TracerouteResult, erro
 	output, err := cmd.CombinedOutput()
 	result := &types.TracerouteResult{
 		Target:    target,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 		Output:    string(output),
 	}
 
@@ -130,7 +130,11 @@ func TracerouteTarget(target string, maxHops int) (*types.TracerouteResult, erro
 // parseTracerouteOutput 解析Traceroute输出
 func parseTracerouteOutput(result *types.TracerouteResult) {
 	lines := strings.Split(result.Output, "\n")
-	var hops []types.TracerouteHop
+	var hops []struct {
+		IP       string  `json:"ip"`
+		Hostname string  `json:"hostname"`
+		Latency  float64 `json:"latency"`
+	}
 
 	for _, line := range lines[1:] { // 跳过第一行标题
 		line = strings.TrimSpace(line)
@@ -143,15 +147,17 @@ func parseTracerouteOutput(result *types.TracerouteResult) {
 			continue
 		}
 
-		hop := types.TracerouteHop{
-			HopNumber: parseField(fields[0]),
+		var hop struct {
+			IP       string  `json:"ip"`
+			Hostname string  `json:"hostname"`
+			Latency  float64 `json:"latency"`
 		}
 
 		// 解析IP地址和主机名
 		for i := 1; i < len(fields); i++ {
 			field := fields[i]
 			if net.ParseIP(field) != nil {
-				hop.IPAddress = field
+				hop.IP = field
 			} else if strings.Contains(field, "(") && strings.Contains(field, ")") {
 				// 格式: hostname (IP)
 				hop.Hostname = strings.TrimSuffix(strings.TrimPrefix(field, "("), ")")
@@ -178,7 +184,7 @@ func parseTracerouteOutput(result *types.TracerouteResult) {
 func PortScan(target string, ports []int, timeout time.Duration) (*types.PortScanResult, error) {
 	result := &types.PortScanResult{
 		Target:    target,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 		Ports:     make([]types.PortStatus, 0, len(ports)),
 	}
 
@@ -244,16 +250,17 @@ func scanPort(target string, port int, timeout time.Duration) types.PortStatus {
 		conn.Close()
 	}
 
-	status.Timestamp = time.Now()
+	status.Timestamp = time.Now().Format(time.RFC3339)
 	return status
 }
 
 // DNSLookup DNS查询
 func DNSLookup(hostname string, recordType string) (*types.DNSResult, error) {
 	result := &types.DNSResult{
+		Domain:    hostname,
 		Hostname:  hostname,
 		Type:      recordType,
-		Timestamp: time.Now(),
+		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
 	var records []string
@@ -347,7 +354,7 @@ func GetNetworkInterfaces() ([]types.NetworkInterface, error) {
 		}
 
 		// 获取接口标志
-		ni.Flags = iface.Flags.String()
+		ni.Flags = []string{iface.Flags.String()}
 
 		// 获取硬件地址
 		ni.HardwareAddr = iface.HardwareAddr.String()

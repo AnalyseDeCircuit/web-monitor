@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -29,13 +30,14 @@ func InitUserDatabase() error {
 	userDB_mu.Lock()
 	defer userDB_mu.Unlock()
 
-	// 确保 /data 目录存在
-	log.Println("Ensuring /data directory exists...")
-	if err := os.MkdirAll("/data", 0777); err != nil {
-		log.Printf("Error creating /data directory: %v\n", err)
+	// 确保 ./data 目录存在
+	dataDir := "./data"
+	log.Printf("Ensuring %s directory exists...\n", dataDir)
+	if err := os.MkdirAll(dataDir, 0777); err != nil {
+		log.Printf("Error creating %s directory: %v\n", dataDir, err)
 	}
 
-	usersFilePath := "/data/users.json"
+	usersFilePath := filepath.Join(dataDir, "users.json")
 	log.Printf("Reading users from %s...\n", usersFilePath)
 
 	data, err := ioutil.ReadFile(usersFilePath)
@@ -92,7 +94,9 @@ func SaveUserDatabase() error {
 		return err
 	}
 
-	usersFilePath := "/data/users.json"
+	// 使用与InitUserDatabase相同的路径
+	dataDir := "./data"
+	usersFilePath := filepath.Join(dataDir, "users.json")
 	log.Printf("Writing to %s...\n", usersFilePath)
 	if err := ioutil.WriteFile(usersFilePath, data, 0666); err != nil {
 		log.Printf("Error writing users file: %v\n", err)
