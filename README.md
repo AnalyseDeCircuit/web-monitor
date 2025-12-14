@@ -5,17 +5,17 @@
 ## ✨ 功能特性
 
 *   **实时监控**：CPU、内存、磁盘 I/O、网络流量、GPU (NVIDIA/AMD/Intel)、温度传感器。
-*   **进程管理**：查看系统 Top 进程，支持按资源占用排序。
-*   **Docker 管理**：查看容器/镜像列表，支持启动、停止、重启、删除容器。
+*   **进程管理**：查看系统 Top 进程，支持按 CPU、内存、IO 排序，查看进程详情。
+*   **Docker 管理**：查看容器/镜像列表，支持启动、停止、重启、删除容器，查看容器日志和统计信息。
 *   **系统管理**：
     *   **Systemd 服务**：查看服务状态，支持启动、停止、重启、启用、禁用服务。
     *   **Cron 任务**：查看和编辑计划任务。
-*   **网络工具**：内置 Ping, Traceroute, Dig, Curl 等网络诊断工具。
 *   **SSH 监控**：监控 SSH 连接数、活跃会话、登录历史及失败记录。
 *   **安全审计**：内置用户角色系统 (Admin/User)，记录关键操作日志。
 *   **Prometheus 集成**：暴露 `/metrics` 接口，支持 Prometheus/Grafana 采集。
 *   **告警配置**：支持 CPU、内存、磁盘使用率阈值告警，可配置 Webhook。
 *   **电源管理**：查看和调整系统电源性能模式（需硬件支持）。
+*   **GPU 监控**：支持 NVIDIA、AMD、Intel GPU 的温度、使用率、显存监控。
 
 ## 🚀 快速部署 (Docker Compose)
 
@@ -40,9 +40,10 @@ docker-compose up -d
 *   `network_mode: host`: 推荐开启，以便准确监控宿主机网络流量。
 *   `pid: host`: 必须开启，以便获取宿主机进程列表。
 *   `volumes`:
-    *   `/:/hostfs`: **核心配置**。程序通过 `chroot /hostfs` 来管理宿主机的 Systemd 和 Cron。
+    *   `/:/hostfs`: **核心配置**。程序通过 `chroot /hostfs` 来管理宿主机的 Systemd、Cron 和系统信息。
     *   `/var/run/docker.sock`: 用于 Docker 管理功能。
-    *   `/proc`, `/sys`: 用于采集硬件信息。
+    *   `/proc`, `/sys`: 用于采集硬件信息和 GPU 监控。
+    *   GPU 设备（如 `/dev/nvidia*`）: 如需 GPU 监控，需挂载相应设备。
 
 ## 🛠️ 手动编译与运行
 
@@ -53,7 +54,7 @@ docker-compose up -d
 ```bash
 # 开启静态编译以兼容不同 Linux 发行版
 export CGO_ENABLED=0
-go build -ldflags="-s -w" -trimpath -o web-monitor-go .
+go build -ldflags="-s -w" -trimpath -o web-monitor-go ./cmd/server/main.go
 
 # 可选：使用 upx 压缩体积
 upx --lzma --best web-monitor-go
@@ -105,6 +106,9 @@ Web Monitor 通过 Prometheus 暴露丰富的系统指标，包括：
 *   `system_network_sent_bytes_total`: 网络发送总字节数
 *   `system_network_recv_bytes_total`: 网络接收总字节数
 *   `system_temperature_celsius`: 硬件温度（按传感器）
+*   `gpu_usage_percent`: GPU 使用率（按设备）
+*   `gpu_memory_used_bytes`: GPU 显存使用量
+*   `gpu_temperature_celsius`: GPU 温度
 
 可通过 `/metrics` 端点采集数据，与 Prometheus + Grafana 集成。
 
@@ -134,10 +138,16 @@ Web Monitor 通过 Prometheus 暴露丰富的系统指标，包括：
 2.  **Docker 管理页面为空**
     *   检查是否挂载了 `/var/run/docker.sock`。
 
-3.  **温度传感器显示为0**
-    *   确保挂载了 `/sys` 目录且容器有特权权限。
+3.  **GPU 监控显示为不可用**
+    *   确保宿主机有 GPU 硬件且驱动已安装。
+    *   如需在容器内监控 GPU，需挂载 GPU 设备文件（如 `/dev/nvidia0`）和相应库文件。
+    *   检查容器是否有权限访问 GPU 设备。
 
-4.  **忘记管理员密码**
+4.  **温度传感器显示为0**
+    *   确保挂载了 `/sys` 目录且容器有特权权限。
+    *   某些硬件可能需要额外内核模块。
+
+5.  **忘记管理员密码**
     ```bash
     # 进入容器
     docker exec -it web-monitor-go sh
@@ -169,7 +179,7 @@ docker logs -f web-monitor-go
 1. 克隆仓库
 2. 安装 Go 1.21+ 和 Node.js
 3. 运行 `go mod download` 下载依赖
-4. 启动开发服务器：`go run main.go`
+4. 启动开发服务器：`go run ./cmd/server/main.go`
 
 ### 代码规范
 
@@ -193,3 +203,4 @@ CC BY-NC 4.0
 1.  Web Monitor 需要较高权限访问系统信息，请仅在受信任的网络环境中部署。
 2.  生产环境务必修改默认密码并配置 HTTPS。
 3.  定期备份 `/data` 目录中的重要数据。
+4.  GPU 监控功能需要相应硬件和驱动支持，部分功能可能受限于容器环境。

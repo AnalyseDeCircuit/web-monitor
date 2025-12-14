@@ -5,17 +5,17 @@ A lightweight, high-performance Linux server monitoring and management dashboard
 ## ✨ Features
 
 *   **Real-time Monitoring**: CPU, Memory, Disk I/O, Network Traffic, GPU (NVIDIA/AMD/Intel), Temperature Sensors.
-*   **Process Management**: View top system processes, sortable by resource usage.
-*   **Docker Management**: List containers/images, start, stop, restart, and remove containers.
+*   **Process Management**: View top system processes, sortable by CPU, memory, IO usage, view process details.
+*   **Docker Management**: List containers/images, start, stop, restart, remove containers, view container logs and statistics.
 *   **System Management**:
     *   **Systemd Services**: View service status, start, stop, restart, enable, and disable services.
     *   **Cron Jobs**: View and edit scheduled tasks.
-*   **Network Tools**: Built-in Ping, Traceroute, Dig, Curl diagnostics.
 *   **SSH Monitoring**: Monitor SSH connections, active sessions, login history, and failed attempts.
 *   **Security Auditing**: Built-in Role-Based Access Control (Admin/User), logging critical operations.
 *   **Prometheus Integration**: Exposes `/metrics` endpoint for Prometheus/Grafana integration.
 *   **Alert Configuration**: Supports CPU, memory, disk usage threshold alerts with configurable webhooks.
 *   **Power Management**: View and adjust system power performance modes (requires hardware support).
+*   **GPU Monitoring**: Supports NVIDIA, AMD, Intel GPU temperature, usage, and memory monitoring.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -40,9 +40,10 @@ To enable full monitoring and management capabilities, the container requires el
 *   `network_mode: host`: Recommended for accurate host network monitoring.
 *   `pid: host`: Required to view host processes.
 *   `volumes`:
-    *   `/:/hostfs`: **Core Configuration**. The app uses `chroot /hostfs` to manage the host's Systemd and Cron.
+    *   `/:/hostfs`: **Core Configuration**. The app uses `chroot /hostfs` to manage the host's Systemd, Cron, and system information.
     *   `/var/run/docker.sock`: For Docker management features.
-    *   `/proc`, `/sys`: For hardware statistics collection.
+    *   `/proc`, `/sys`: For hardware statistics collection and GPU monitoring.
+    *   GPU devices (e.g., `/dev/nvidia*`): If GPU monitoring is needed, mount the corresponding devices.
 
 ## 🛠️ Manual Build & Run
 
@@ -53,7 +54,7 @@ If you prefer not to use Docker, you can compile and run the binary directly.
 ```bash
 # Enable static compilation for compatibility
 export CGO_ENABLED=0
-go build -ldflags="-s -w" -trimpath -o web-monitor-go .
+go build -ldflags="-s -w" -trimpath -o web-monitor-go ./cmd/server/main.go
 
 # Optional: Compress binary with upx
 upx --lzma --best web-monitor-go
@@ -105,6 +106,9 @@ Web Monitor exposes rich system metrics through Prometheus, including:
 *   `system_network_sent_bytes_total`: Total network bytes sent
 *   `system_network_recv_bytes_total`: Total network bytes received
 *   `system_temperature_celsius`: Hardware temperature (by sensor)
+*   `gpu_usage_percent`: GPU usage percentage (by device)
+*   `gpu_memory_used_bytes`: GPU memory usage
+*   `gpu_temperature_celsius`: GPU temperature
 
 Data can be collected via the `/metrics` endpoint for integration with Prometheus + Grafana.
 
@@ -134,10 +138,16 @@ All persistent data (user database, logs, alert configurations) is stored in the
 2.  **Docker management page is empty**
     *   Check if `/var/run/docker.sock` is mounted.
 
-3.  **Temperature sensors show 0**
-    *   Ensure the `/sys` directory is mounted and the container has privileged permissions.
+3.  **GPU monitoring shows as unavailable**
+    *   Ensure the host has GPU hardware and drivers installed.
+    *   For GPU monitoring inside container, mount GPU device files (e.g., `/dev/nvidia0`) and corresponding library files.
+    *   Check if the container has permission to access GPU devices.
 
-4.  **Forgot administrator password**
+4.  **Temperature sensors show 0**
+    *   Ensure the `/sys` directory is mounted and the container has privileged permissions.
+    *   Some hardware may require additional kernel modules.
+
+5.  **Forgot administrator password**
     ```bash
     # Enter the container
     docker exec -it web-monitor-go sh
@@ -169,7 +179,7 @@ Issues and Pull Requests are welcome to improve Web Monitor.
 1.  Clone the repository
 2.  Install Go 1.21+ and Node.js
 3.  Run `go mod download` to download dependencies
-4.  Start the development server: `go run main.go`
+4.  Start the development server: `go run ./cmd/server/main.go`
 
 ### Code Standards
 
@@ -193,3 +203,4 @@ CC BY-NC 4.0
 1.  Web Monitor requires high privileges to access system information. Deploy only in trusted network environments.
 2.  In production environments, always change the default password and configure HTTPS.
 3.  Regularly back up important data in the `/data` directory.
+4.  GPU monitoring requires corresponding hardware and driver support, some features may be limited in container environments.
