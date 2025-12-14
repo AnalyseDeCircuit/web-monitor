@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -15,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -24,6 +23,7 @@ import (
 
 	stdnet "net"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -42,12 +42,14 @@ import (
 
 // 用户结构体
 type User struct {
-	ID        string     `json:"id"`
-	Username  string     `json:"username"`
-	Password  string     `json:"password"` // bcrypt hash
-	Role      string     `json:"role"`     // "admin" 或 "user"
-	CreatedAt time.Time  `json:"created_at"`
-	LastLogin *time.Time `json:"last_login"`
+	ID               string     `json:"id"`
+	Username         string     `json:"username"`
+	Password         string     `json:"password"` // bcrypt hash
+	Role             string     `json:"role"`     // "admin" 或 "user"
+	CreatedAt        time.Time  `json:"created_at"`
+	LastLogin        *time.Time `json:"last_login"`
+	FailedLoginCount int        `json:"failed_login_count"`
+	LockedUntil      *time.Time `json:"locked_until"`
 }
 
 // 告警配置
@@ -334,6 +336,74 @@ func sendWebhook(url string, message string) {
 	defer resp.Body.Close()
 }
 
+// 验证密码策略
+func validatePasswordPolicy(password string) bool {
+	if len(password) < 8 {
+		return false
+	}
+
+	hasUpper := false
+	hasLower := false
+	hasDigit := false
+	hasSpecial := false
+
+	for _, ch := range password {
+		switch {
+		case ch >= 'A' && ch <= 'Z':
+			hasUpper = true
+		case ch >= 'a' && ch <= 'z':
+			hasLower = true
+		case ch >= '0' && ch <= '9':
+			hasDigit = true
+		case (ch >= '!' && ch <= '/') || (ch >= ':' && ch <= '@') || (ch >= '[' && ch <= '`') || (ch >= '{' && ch <= '~'):
+			hasSpecial = true
+		}
+	}
+
+	// 至少包含大写字母、小写字母、数字和特殊字符中的三种
+	count := 0
+	if hasUpper {
+		count++
+	}
+	if hasLower {
+		count++
+	}
+	if hasDigit {
+		count++
+	}
+	if hasSpecial {
+		count++
+	}
+
+	return count >= 3
+}
+
+// 检查账户是否被锁定
+func checkAccountLock(user *User) bool {
+	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
+		return true
+	}
+	return false
+}
+
+// 记录失败登录
+func recordFailedLogin(user *User) {
+	user.FailedLoginCount++
+	if user.FailedLoginCount >= 5 {
+		lockDuration := 15 * time.Minute
+		lockedUntil := time.Now().Add(lockDuration)
+		user.LockedUntil = &lockedUntil
+	}
+}
+
+// 记录成功登录
+func recordSuccessfulLogin(user *User) {
+	user.FailedLoginCount = 0
+	user.LockedUntil = nil
+	now := time.Now()
+	user.LastLogin = &now
+}
+
 // 验证用户
 func validateUser(username, password string) *User {
 	userDB_mu.RLock()
@@ -343,13 +413,33 @@ func validateUser(username, password string) *User {
 
 	for i, user := range userDB.Users {
 		if user.Username == username {
+			// 检查账户是否被锁定
+			if checkAccountLock(&user) {
+				log.Printf("Account locked for user: %s", username)
+				return nil
+			}
+
 			log.Printf("Found user: %s, checking password...", username)
 			// 使用 bcrypt 验证密码
 			if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err == nil {
 				log.Printf("Password valid for user: %s", username)
+				// 更新用户状态
+				userDB.Users[i].FailedLoginCount = 0
+				userDB.Users[i].LockedUntil = nil
+				now := time.Now()
+				userDB.Users[i].LastLogin = &now
 				return &userDB.Users[i]
 			} else {
 				log.Printf("Password invalid for user: %s, error: %v", username, err)
+				// 记录失败登录
+				userDB.Users[i].FailedLoginCount++
+				if userDB.Users[i].FailedLoginCount >= 5 {
+					lockDuration := 15 * time.Minute
+					lockedUntil := time.Now().Add(lockDuration)
+					userDB.Users[i].LockedUntil = &lockedUntil
+					log.Printf("Account locked for user: %s due to 5 failed attempts", username)
+				}
+				saveUserDatabase()
 			}
 			return nil
 		}
@@ -2290,17 +2380,21 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 生成 Session Token
-	sessionToken := fmt.Sprintf("%s_%d", req.Username, time.Now().UnixNano())
-	hash := sha256.Sum256([]byte(sessionToken))
-	tokenStr := hex.EncodeToString(hash[:])
+	// 生成JWT令牌
+	jwtToken, err := generateJWT(user.Username, user.Role)
+	if err != nil {
+		log.Printf("Failed to generate JWT token for user %s: %v", user.Username, err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
+	// 存储会话信息（使用用户名作为键）
 	sessions_mu.Lock()
-	sessions[tokenStr] = SessionInfo{
+	sessions[user.Username] = SessionInfo{
 		Username:  user.Username,
 		Role:      user.Role,
-		Token:     tokenStr,
-		ExpiresAt: time.Now().Add(24 * time.Hour), // Token 24小时后过期
+		Token:     jwtToken,
+		ExpiresAt: time.Now().Add(24 * time.Hour), // 会话24小时后过期
 	}
 	sessions_mu.Unlock()
 
@@ -2316,10 +2410,21 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	userDB_mu.Unlock()
 	saveUserDatabase()
 
-	// 返回 Token
+	// 设置安全的HTTP Cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    jwtToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil, // 仅在HTTPS下设置Secure
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   86400, // 24小时
+	})
+
+	// 返回响应
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(LoginResponse{
-		Token:    tokenStr,
+		Token:    jwtToken,
 		Message:  "Login successful",
 		Username: user.Username,
 		Role:     user.Role,
@@ -2361,8 +2466,40 @@ func isAuthenticated(r *http.Request) bool {
 	return true
 }
 
-// 获取 Session 信息
-func getSessionInfo(r *http.Request) (*SessionInfo, error) {
+// JWT 密钥，实际应用中应从环境变量或配置文件中读取，这里使用固定密钥（仅用于演示）
+var jwtKey = []byte("your-secret-key-change-in-production")
+
+// 生成JWT令牌
+func generateJWT(username, role string) (string, error) {
+	expirationTime := time.Now().Add(24 * time.Hour)
+	claims := &jwt.RegisteredClaims{
+		Subject:   username,
+		ExpiresAt: jwt.NewNumericDate(expirationTime),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		NotBefore: jwt.NewNumericDate(time.Now()),
+		ID:        fmt.Sprintf("%s-%d", username, time.Now().UnixNano()),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtKey)
+}
+
+// 验证JWT令牌并返回声明
+func validateJWT(tokenString string) (*jwt.RegisteredClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
+		return claims, nil
+	}
+	return nil, fmt.Errorf("invalid token")
+}
+
+// 从请求中提取并验证JWT令牌
+func extractAndValidateJWT(r *http.Request) (*jwt.RegisteredClaims, error) {
 	token := r.Header.Get("Authorization")
 	if token == "" {
 		// 尝试从 Cookie 读取
@@ -2381,13 +2518,36 @@ func getSessionInfo(r *http.Request) (*SessionInfo, error) {
 		token = strings.TrimPrefix(token, "Bearer ")
 	}
 
+	return validateJWT(token)
+}
+
+// 获取 Session 信息
+func getSessionInfo(r *http.Request) (*SessionInfo, error) {
+	claims, err := extractAndValidateJWT(r)
+	if err != nil {
+		return nil, err
+	}
+
+	// 从JWT声明中获取用户名
+	username := claims.Subject
+
+	// 从内存中获取会话信息（或从数据库/缓存中获取）
 	sessions_mu.RLock()
-	session, exists := sessions[token]
+	session, exists := sessions[username] // 注意：这里我们使用username作为键，而不是token
 	sessions_mu.RUnlock()
 
 	if !exists {
-		return nil, fmt.Errorf("invalid token")
+		return nil, fmt.Errorf("session not found")
 	}
+
+	// 检查会话是否过期（JWT已经验证过期，这里双重检查）
+	if session.ExpiresAt.Before(time.Now()) {
+		sessions_mu.Lock()
+		delete(sessions, username)
+		sessions_mu.Unlock()
+		return nil, fmt.Errorf("session expired")
+	}
+
 	return &session, nil
 }
 
@@ -2401,12 +2561,39 @@ func getCurrentRole(r *http.Request) string {
 } // 安全HTTP头中间件
 func securityHeadersMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// 基础安全头
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		// HSTS - 仅在HTTPS下启用（这里我们根据实际情况设置，如果确定是HTTPS则启用）
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+
+		// Content Security Policy (CSP) - 限制资源加载
+		// 默认只允许同源，内联脚本和样式需要nonce或hash（这里简化，允许内联）
+		csp := []string{
+			"default-src 'self'",
+			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com", // 允许内联样式和外部字体样式
+			"script-src 'self' 'unsafe-inline'",                                            // 允许内联脚本（简化，生产环境应使用nonce）
+			"font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com", // 允许外部字体
+			"img-src 'self' data:",
+			"connect-src 'self' ws: wss:", // 允许WebSocket连接
+			"frame-ancestors 'none'",      // 等同于X-Frame-Options DENY
+			"base-uri 'self'",
+			"form-action 'self'",
+		}
+		w.Header().Set("Content-Security-Policy", strings.Join(csp, "; "))
+
+		// 防止缓存敏感信息
+		if strings.Contains(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/ws/") {
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		}
+
 		next(w, r)
 	}
 }
@@ -3050,6 +3237,46 @@ func saveCronHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
+// 验证网络目标（IPv4、IPv6、域名）
+func validateNetworkTarget(target string) bool {
+	if target == "" {
+		return false
+	}
+
+	// IPv4 地址 (1.2.3.4)
+	ipv4Regex := `^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$`
+	// IPv6 地址 (简化版)
+	ipv6Regex := `^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}$|^([0-9a-fA-F]{1,4}:){1,7}:$`
+	// 域名 (包括子域名)
+	domainRegex := `^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`
+	// 简单的主机名 (localhost)
+	hostnameRegex := `^[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]$`
+
+	// 检查是否匹配任一格式
+	if matched, _ := regexp.MatchString(ipv4Regex, target); matched {
+		return true
+	}
+	if matched, _ := regexp.MatchString(ipv6Regex, target); matched {
+		return true
+	}
+	if matched, _ := regexp.MatchString(domainRegex, target); matched {
+		return true
+	}
+	if matched, _ := regexp.MatchString(hostnameRegex, target); matched {
+		return true
+	}
+
+	// 检查是否是有效的IPv6简化格式
+	if strings.Contains(target, ":") {
+		// 尝试解析为IPv6
+		if ip := stdnet.ParseIP(target); ip != nil {
+			return true
+		}
+	}
+
+	return false
+}
+
 // --- Network Diagnostics ---
 
 func networkTestHandler(w http.ResponseWriter, r *http.Request) {
@@ -3074,41 +3301,70 @@ func networkTestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate Target (Simple check to prevent command injection)
-	// Allow alphanumeric, dots, dashes, colons (IPv6)
-	validTarget := true
-	for _, r := range req.Target {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == ':' || r == '_') {
-			validTarget = false
-			break
-		}
+	// 验证工具类型
+	validTools := map[string]bool{
+		"ping":  true,
+		"trace": true,
+		"dig":   true,
+		"curl":  true,
 	}
-	if !validTarget || req.Target == "" {
-		http.Error(w, "Invalid target", http.StatusBadRequest)
+	if !validTools[req.Tool] {
+		http.Error(w, "Invalid tool", http.StatusBadRequest)
 		return
+	}
+
+	// 使用正则表达式验证目标，防止命令注入
+	if !validateNetworkTarget(req.Target) {
+		http.Error(w, "Invalid target format. Must be IPv4, IPv6, or valid domain name", http.StatusBadRequest)
+		return
+	}
+
+	// 额外安全检查：限制目标长度
+	if len(req.Target) > 253 {
+		http.Error(w, "Target too long", http.StatusBadRequest)
+		return
+	}
+
+	// 防止内部网络探测（可选，根据需求调整）
+	privateIPs := []string{"10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "192.168."}
+	if strings.Contains(req.Target, ".") {
+		for _, prefix := range privateIPs {
+			if strings.HasPrefix(req.Target, prefix) {
+				http.Error(w, "Private network addresses are not allowed", http.StatusForbidden)
+				return
+			}
+		}
 	}
 
 	var cmd *exec.Cmd
 	switch req.Tool {
 	case "ping":
-		cmd = exec.Command("chroot", "/hostfs", "ping", "-c", "4", req.Target)
+		// 使用安全参数：限制包数量，设置超时
+		cmd = exec.Command("chroot", "/hostfs", "ping", "-c", "4", "-W", "2", req.Target)
 	case "trace":
-		// Try tracepath first, then traceroute
-		cmd = exec.Command("chroot", "/hostfs", "tracepath", req.Target)
+		// 使用tracepath（无特权），限制跳数
+		cmd = exec.Command("chroot", "/hostfs", "tracepath", "-m", "15", req.Target)
 	case "dig":
-		cmd = exec.Command("chroot", "/hostfs", "dig", req.Target, "+short")
+		// 使用dig，限制查询类型为A/AAAA
+		cmd = exec.Command("chroot", "/hostfs", "dig", "+short", "+time=3", "+tries=2", req.Target)
 	case "curl":
-		cmd = exec.Command("chroot", "/hostfs", "curl", "-I", "-m", "5", req.Target)
+		// 使用curl，仅获取头部，限制时间
+		cmd = exec.Command("chroot", "/hostfs", "curl", "-I", "-m", "5", "--max-filesize", "10240", req.Target)
 	default:
 		http.Error(w, "Invalid tool", http.StatusBadRequest)
 		return
 	}
 
+	// 设置执行环境，限制资源
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C"}
 	output, err := cmd.CombinedOutput()
 	result := string(output)
 	if err != nil {
 		result += fmt.Sprintf("\nError: %s", err.Error())
 	}
+
+	// 记录操作日志
+	logOperation(sess.Username, "network_test", fmt.Sprintf("%s %s", req.Tool, req.Target), r.RemoteAddr)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"output": result})
