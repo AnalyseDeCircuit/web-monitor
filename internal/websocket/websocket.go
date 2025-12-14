@@ -161,6 +161,17 @@ func collectStats() types.Response {
 				Free:       utils.GetSize(u.Free),
 				Percent:    utils.Round(u.UsedPercent),
 			})
+
+			// Add inode info
+			if u.InodesTotal > 0 {
+				resp.Inodes = append(resp.Inodes, types.InodeInfo{
+					Mountpoint: part.Mountpoint,
+					Total:      u.InodesTotal,
+					Used:       u.InodesUsed,
+					Free:       u.InodesFree,
+					Percent:    utils.Round(u.InodesUsedPercent),
+				})
+			}
 		}
 	}
 
@@ -205,7 +216,7 @@ func collectStats() types.Response {
 	resp.GPU = gpu.GetGPUInfo()
 
 	// Processes
-	resp.Processes = getTopProcesses()
+	resp.Processes = getAllProcesses()
 
 	// Boot Time
 	bootTime, _ := host.BootTime()
@@ -235,8 +246,8 @@ func getCPUInfo() types.CPUDetail {
 	return info
 }
 
-// getTopProcesses 获取顶级进程
-func getTopProcesses() []types.ProcessInfo {
+// getAllProcesses 获取所有进程
+func getAllProcesses() []types.ProcessInfo {
 	procs, err := process.Processes()
 	if err != nil {
 		return []types.ProcessInfo{}
@@ -263,8 +274,6 @@ func getTopProcesses() []types.ProcessInfo {
 		return result[i].MemoryPercent > result[j].MemoryPercent
 	})
 
-	if len(result) > 20 {
-		return result[:20]
-	}
+	// Return all processes, not just top 20
 	return result
 }

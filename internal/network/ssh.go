@@ -51,10 +51,42 @@ func GetSSHStats() types.SSHStats {
 	out, err := cmd.Output()
 	if err == nil {
 		lines := strings.Split(string(out), "\n")
-		var sessions []interface{}
+		var sessions []types.SSHSession
 		for _, line := range lines {
-			if strings.TrimSpace(line) != "" {
-				sessions = append(sessions, line)
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			// Parse "who" output format: user tty login-time (ip)
+			// Example: root pts/0 2024-12-14 15:30 (192.168.1.100)
+			fields := strings.Fields(line)
+			if len(fields) >= 3 {
+				session := types.SSHSession{
+					User:      fields[0],
+					TTY:       fields[1],
+					LoginTime: "",
+					IP:        "",
+					Connected: "",
+				}
+
+				// Find IP in parentheses
+				if idx := strings.Index(line, "("); idx != -1 {
+					if endIdx := strings.Index(line[idx:], ")"); endIdx != -1 {
+						session.IP = line[idx+1 : idx+endIdx]
+					}
+				}
+
+				// Extract date/time - typically fields[2] and fields[3]
+				if len(fields) >= 4 {
+					session.LoginTime = fields[2] + " " + fields[3]
+				}
+
+				// Calculate connected time (this would need the actual login time parsing)
+				// For now just show as connected
+				session.Connected = "connected"
+
+				sessions = append(sessions, session)
 			}
 		}
 		stats.Sessions = sessions

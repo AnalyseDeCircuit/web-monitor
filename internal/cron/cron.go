@@ -23,9 +23,9 @@ func ListCronJobs() ([]types.CronJob, error) {
 
 	var jobs []types.CronJob
 
-	// 获取系统crontab
+	// 获取系统crontab - try root user
 	// 在容器中运行时，需要通过 chroot /hostfs 访问宿主机的 crontab
-	cmd := exec.Command("chroot", "/hostfs", "crontab", "-l")
+	cmd := exec.Command("chroot", "/hostfs", "crontab", "-u", "root", "-l")
 	output, err := cmd.Output()
 	if err == nil {
 		scanner := bufio.NewScanner(bytes.NewReader(output))
@@ -37,7 +37,7 @@ func ListCronJobs() ([]types.CronJob, error) {
 				continue
 			}
 
-			job := parseCronLine(line, "system", lineNum)
+			job := parseCronLine(line, "root", lineNum)
 			if job != nil {
 				jobs = append(jobs, *job)
 			}
@@ -47,31 +47,43 @@ func ListCronJobs() ([]types.CronJob, error) {
 
 	// 获取用户crontab
 	// 同样需要通过 chroot 执行，并读取宿主机的 /etc/passwd
-	cmd = exec.Command("chroot", "/hostfs", "bash", "-c", "for user in $(cut -f1 -d: /etc/passwd); do echo \"USER_MARKER:$user\"; crontab -u $user -l 2>/dev/null || true; done")
+	// List common users if full enumeration fails
+	users := []string{"root"}
+
+	// Try to get all users from /hostfs/etc/passwd
+	cmd = exec.Command("chroot", "/hostfs", "bash", "-c", "cut -f1 -d: /etc/passwd | head -20")
 	output, err = cmd.Output()
 	if err == nil {
+		userList := strings.Split(string(output), "\n")
+		for _, u := range userList {
+			u = strings.TrimSpace(u)
+			if u != "" && u != "root" {
+				users = append(users, u)
+			}
+		}
+	}
+
+	// Get crontab for each user
+	for _, user := range users {
+		cmd = exec.Command("chroot", "/hostfs", "crontab", "-u", user, "-l")
+		output, err = cmd.Output()
+		if err != nil {
+			continue
+		}
+
 		scanner := bufio.NewScanner(bytes.NewReader(output))
-		currentUser := ""
 		lineNum := 1
 		for scanner.Scan() {
 			line := scanner.Text()
 			line = strings.TrimSpace(line)
 
-			if strings.HasPrefix(line, "USER_MARKER:") {
-				currentUser = strings.TrimPrefix(line, "USER_MARKER:")
-				lineNum = 1
-				continue
-			}
-
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
 
-			if currentUser != "" {
-				job := parseCronLine(line, currentUser, lineNum)
-				if job != nil {
-					jobs = append(jobs, *job)
-				}
+			job := parseCronLine(line, user, lineNum)
+			if job != nil {
+				jobs = append(jobs, *job)
 			}
 			lineNum++
 		}

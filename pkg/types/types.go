@@ -248,13 +248,22 @@ type ListeningPort struct {
 type SSHStats struct {
 	Status           string         `json:"status"`
 	Connections      int            `json:"connections"`
-	Sessions         []interface{}  `json:"sessions"`
+	Sessions         []SSHSession   `json:"sessions"`
 	AuthMethods      map[string]int `json:"auth_methods"`
 	HostKey          string         `json:"hostkey_fingerprint"`
 	HistorySize      int            `json:"history_size"`
 	OOMRiskProcesses []ProcessInfo  `json:"oom_risk_processes"`
 	FailedLogins     int            `json:"failed_logins"`
 	SSHProcessMemory float64        `json:"ssh_process_memory"`
+}
+
+// SSHSession SSH会话信息
+type SSHSession struct {
+	User      string `json:"user"`
+	IP        string `json:"ip"`
+	TTY       string `json:"tty"`
+	LoginTime string `json:"login_time"`
+	Connected string `json:"connected"`
 }
 
 // ProcessInfo 进程信息
