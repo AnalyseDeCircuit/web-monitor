@@ -710,6 +710,8 @@ func lookupPCIName(vendorID, deviceID string) string {
 		"/usr/share/hwdata/pci.ids",
 		"/usr/share/pci.ids",
 		"/usr/share/misc/pci.ids",
+		"/hostfs/usr/share/hwdata/pci.ids", // Try hostfs
+		"/hostfs/usr/share/misc/pci.ids",   // Try hostfs
 	}
 
 	var file *os.File
