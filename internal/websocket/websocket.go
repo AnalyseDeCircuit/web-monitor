@@ -4,6 +4,7 @@ package websocket
 import (
 	"log"
 	"net/http"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -11,7 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/gpu"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/gorilla/websocket"
@@ -20,7 +23,7 @@ import (
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/net"
+	gopsutilnet "github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
@@ -130,14 +133,24 @@ func collectStats() types.Response {
 		Sout:    utils.GetSize(s.Sout),
 	}
 
-	// Disk
+	// Disk - use hostfs if available
+	useHostfs := false
+	if _, err := os.Stat("/hostfs"); err == nil {
+		useHostfs = true
+	}
+
 	parts, _ := disk.Partitions(false)
 	for _, part := range parts {
 		if strings.Contains(part.Device, "loop") || part.Fstype == "squashfs" {
 			continue
 		}
 
-		u, err := disk.Usage(part.Mountpoint)
+		checkPath := part.Mountpoint
+		if useHostfs {
+			checkPath = "/hostfs" + part.Mountpoint
+		}
+
+		u, err := disk.Usage(checkPath)
 		if err == nil {
 			resp.Disk = append(resp.Disk, types.DiskInfo{
 				Device:     part.Device,
@@ -151,14 +164,45 @@ func collectStats() types.Response {
 		}
 	}
 
+	// Disk IO
+	ioCounters, _ := disk.IOCounters()
+	if ioCounters != nil {
+		resp.DiskIO = make(map[string]types.DiskIOInfo)
+		for name, io := range ioCounters {
+			resp.DiskIO[name] = types.DiskIOInfo{
+				ReadBytes:  utils.GetSize(io.ReadBytes),
+				WriteBytes: utils.GetSize(io.WriteBytes),
+				ReadCount:  io.ReadCount,
+				WriteCount: io.WriteCount,
+				ReadTime:   io.ReadTime,
+				WriteTime:  io.WriteTime,
+			}
+		}
+	}
+
 	// Network
-	netIO, _ := net.IOCounters(false)
+	netIO, _ := gopsutilnet.IOCounters(false)
 	if len(netIO) > 0 {
 		resp.Network.BytesSent = utils.GetSize(netIO[0].BytesSent)
 		resp.Network.BytesRecv = utils.GetSize(netIO[0].BytesRecv)
 		resp.Network.RawSent = netIO[0].BytesSent
 		resp.Network.RawRecv = netIO[0].BytesRecv
 	}
+
+	// Network detailed info
+	if netInfo, err := network.GetNetworkInfo(); err == nil {
+		resp.Network.ConnectionStates = netInfo.ConnectionStates
+		resp.Network.Sockets = netInfo.Sockets
+		resp.Network.Interfaces = netInfo.Interfaces
+		resp.Network.Errors = netInfo.Errors
+		resp.Network.ListeningPorts = netInfo.ListeningPorts
+	}
+
+	// SSH Stats
+	resp.SSHStats = network.GetSSHStats()
+
+	// GPU
+	resp.GPU = gpu.GetGPUInfo()
 
 	// Processes
 	resp.Processes = getTopProcesses()

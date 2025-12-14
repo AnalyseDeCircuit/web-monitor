@@ -14,6 +14,7 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/power"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/prometheus"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/system"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/systemd"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
@@ -453,4 +454,17 @@ func CronLogsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(logs))
+}
+
+// StaticInfoHandler 处理静态系统信息请求
+func StaticInfoHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	info := system.GetStaticInfo()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
 }
