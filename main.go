@@ -4,8 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -24,6 +23,7 @@ import (
 
 	stdnet "net"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -362,6 +362,150 @@ func validateUser(username, password string) *User {
 func hashPasswordBcrypt(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(hash), err
+}
+
+// JWT密钥管理
+var jwtSecret []byte
+
+func initJWT() {
+	// 从环境变量或配置文件读取密钥，如果没有则生成
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		// 生成随机密钥
+		key := make([]byte, 32)
+		rand.Read(key)
+		jwtSecret = key
+		// 保存到文件以便重启后一致
+		ioutil.WriteFile("/data/jwt_secret", key, 0600)
+	} else {
+		jwtSecret = []byte(secret)
+	}
+}
+
+// 生成JWT令牌
+func generateJWT(username, role string) (string, error) {
+	claims := jwt.MapClaims{
+		"username": username,
+		"role":     role,
+		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+		"iat":      time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtSecret)
+}
+
+// 验证JWT令牌
+func validateJWT(tokenString string) (*jwt.MapClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.MapClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return jwtSecret, nil
+		})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(*jwt.MapClaims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("invalid token")
+}
+
+// 从请求中提取令牌
+func extractToken(r *http.Request) string {
+	// 1. 从Authorization头
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		return strings.TrimPrefix(authHeader, "Bearer ")
+	}
+
+	// 2. 从Cookie
+	cookie, err := r.Cookie("auth_token")
+	if err == nil {
+		return cookie.Value
+	}
+
+	// 3. 从查询参数
+	return r.URL.Query().Get("token")
+}
+
+// 密码策略验证
+func validatePasswordPolicy(password string) error {
+	// 1. 长度要求
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters long")
+	}
+
+	// 2. 复杂度要求
+	hasUpper := false
+	hasLower := false
+	hasDigit := false
+
+	for _, ch := range password {
+		switch {
+		case ch >= 'A' && ch <= 'Z':
+			hasUpper = true
+		case ch >= 'a' && ch <= 'z':
+			hasLower = true
+		case ch >= '0' && ch <= '9':
+			hasDigit = true
+		}
+	}
+
+	if !hasUpper || !hasLower || !hasDigit {
+		return fmt.Errorf("password must contain uppercase, lowercase letters and digits")
+	}
+
+	// 3. 常见弱密码检查（可选）
+	weakPasswords := []string{"password", "123456", "admin", "qwerty"}
+	passwordLower := strings.ToLower(password)
+	for _, weak := range weakPasswords {
+		if strings.Contains(passwordLower, weak) {
+			return fmt.Errorf("password is too weak")
+		}
+	}
+
+	return nil
+}
+
+// 账户锁定机制
+var (
+	failedAttempts = make(map[string]int)
+	failedMutex    sync.RWMutex
+	lockouts       = make(map[string]time.Time)
+)
+
+func checkAccountLock(username string) bool {
+	failedMutex.RLock()
+	lockTime, locked := lockouts[username]
+	failedMutex.RUnlock()
+
+	if locked && time.Since(lockTime) < 15*time.Minute {
+		return true // 账户被锁定
+	}
+	return false
+}
+
+func recordFailedLogin(username string) {
+	failedMutex.Lock()
+	defer failedMutex.Unlock()
+
+	failedAttempts[username]++
+
+	if failedAttempts[username] >= 5 {
+		lockouts[username] = time.Now()
+		log.Printf("Account %s locked due to 5 failed login attempts", username)
+	}
+}
+
+func recordSuccessfulLogin(username string) {
+	failedMutex.Lock()
+	defer failedMutex.Unlock()
+
+	delete(failedAttempts, username)
+	delete(lockouts, username)
 }
 
 // 登录请求结构体
@@ -2281,28 +2425,36 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 检查账户锁定状态
+	if checkAccountLock(req.Username) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Account locked due to too many failed attempts. Try again in 15 minutes.",
+		})
+		return
+	}
+
 	// 验证用户
 	user := validateUser(req.Username, req.Password)
 	if user == nil {
+		recordFailedLogin(req.Username)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid credentials"})
 		return
 	}
 
-	// 生成 Session Token
-	sessionToken := fmt.Sprintf("%s_%d", req.Username, time.Now().UnixNano())
-	hash := sha256.Sum256([]byte(sessionToken))
-	tokenStr := hex.EncodeToString(hash[:])
-
-	sessions_mu.Lock()
-	sessions[tokenStr] = SessionInfo{
-		Username:  user.Username,
-		Role:      user.Role,
-		Token:     tokenStr,
-		ExpiresAt: time.Now().Add(24 * time.Hour), // Token 24小时后过期
+	// 生成 JWT Token
+	tokenStr, err := generateJWT(user.Username, user.Role)
+	if err != nil {
+		log.Printf("Failed to generate JWT: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
-	sessions_mu.Unlock()
+
+	// 记录成功登录
+	recordSuccessfulLogin(req.Username)
 
 	// 更新最后登录时间
 	userDB_mu.Lock()
@@ -2315,6 +2467,17 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	userDB_mu.Unlock()
 	saveUserDatabase()
+
+	// 设置安全的HTTP Cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    tokenStr,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true, // 仅在HTTPS下传输
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   86400, // 24小时
+	})
 
 	// 返回 Token
 	w.Header().Set("Content-Type", "application/json")
@@ -2363,32 +2526,27 @@ func isAuthenticated(r *http.Request) bool {
 
 // 获取 Session 信息
 func getSessionInfo(r *http.Request) (*SessionInfo, error) {
-	token := r.Header.Get("Authorization")
-	if token == "" {
-		// 尝试从 Cookie 读取
-		cookie, err := r.Cookie("auth_token")
-		if err != nil {
-			// 尝试从查询参数读取（WebSocket 使用）
-			token = r.URL.Query().Get("token")
-			if token == "" {
-				return nil, fmt.Errorf("no token found")
-			}
-		} else {
-			token = cookie.Value
-		}
-	} else {
-		// 移除 "Bearer " 前缀
-		token = strings.TrimPrefix(token, "Bearer ")
+	tokenStr := extractToken(r)
+	if tokenStr == "" {
+		return nil, fmt.Errorf("no token found")
 	}
 
-	sessions_mu.RLock()
-	session, exists := sessions[token]
-	sessions_mu.RUnlock()
-
-	if !exists {
-		return nil, fmt.Errorf("invalid token")
+	// 验证JWT令牌
+	claims, err := validateJWT(tokenStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid token: %v", err)
 	}
-	return &session, nil
+
+	username, _ := (*claims)["username"].(string)
+	role, _ := (*claims)["role"].(string)
+	exp, _ := (*claims)["exp"].(float64)
+
+	return &SessionInfo{
+		Username:  username,
+		Role:      role,
+		Token:     tokenStr,
+		ExpiresAt: time.Unix(int64(exp), 0),
+	}, nil
 }
 
 // 获取当前用户角色
