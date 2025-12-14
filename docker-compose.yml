@@ -12,6 +12,8 @@ services:
     environment:
       - PORT=38080
       - LANG
+      - DATA_DIR=/data
+      - JWT_SECRET=${JWT_SECRET}
     volumes:
       - /:/hostfs
       - /sys:/sys

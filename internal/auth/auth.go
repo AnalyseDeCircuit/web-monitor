@@ -25,19 +25,39 @@ var (
 	jwtKey       []byte
 )
 
+func getDataDir() string {
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		return v
+	}
+	if _, err := os.Stat("/data"); err == nil {
+		return "/data"
+	}
+	return "./data"
+}
+
 // InitUserDatabase 初始化用户数据库
 func InitUserDatabase() error {
 	userDB_mu.Lock()
 	defer userDB_mu.Unlock()
 
-	// 确保 ./data 目录存在
-	dataDir := "./data"
+	dataDir := getDataDir()
 	log.Printf("Ensuring %s directory exists...\n", dataDir)
 	if err := os.MkdirAll(dataDir, 0777); err != nil {
 		log.Printf("Error creating %s directory: %v\n", dataDir, err)
 	}
 
 	usersFilePath := filepath.Join(dataDir, "users.json")
+	// One-time migration: if we are now using /data but old file exists under ./data
+	if dataDir == "/data" {
+		legacyPath := filepath.Join("./data", "users.json")
+		if _, err := os.Stat(usersFilePath); os.IsNotExist(err) {
+			if legacyData, err2 := os.ReadFile(legacyPath); err2 == nil {
+				if err3 := os.WriteFile(usersFilePath, legacyData, 0666); err3 == nil {
+					log.Printf("Migrated users database from %s to %s\n", legacyPath, usersFilePath)
+				}
+			}
+		}
+	}
 	log.Printf("Reading users from %s...\n", usersFilePath)
 
 	data, err := ioutil.ReadFile(usersFilePath)
@@ -95,7 +115,7 @@ func SaveUserDatabase() error {
 	}
 
 	// 使用与InitUserDatabase相同的路径
-	dataDir := "./data"
+	dataDir := getDataDir()
 	usersFilePath := filepath.Join(dataDir, "users.json")
 	log.Printf("Writing to %s...\n", usersFilePath)
 	if err := ioutil.WriteFile(usersFilePath, data, 0666); err != nil {

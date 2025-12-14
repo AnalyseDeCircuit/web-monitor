@@ -486,6 +486,34 @@
             font-size: 0.9rem;
         }
 
+        #sensors-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .sensor-box {
+            /* Keep class for compatibility; use compact list style */
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+        }
+
+        
+
+        .sensor-dragging {
+            opacity: 0.6;
+            cursor: grabbing;
+        }
+
+        .sensor-drop-target {
+            outline: 1px dashed rgba(255,255,255,0.2);
+            outline-offset: 3px;
+        }
+
         .sensor-value {
             font-weight: bold;
         }
@@ -2820,6 +2848,115 @@
         let currentProcessSearch = '';
         let allProcesses = [];
 
+        // Sensors ordering (persisted)
+        const SENSOR_ORDER_KEY = 'sensorOrder';
+        let lastSensorItemKeys = [];
+
+        function getSensorItemKey(item) {
+            if (!item) return 'unknown';
+            if (item.type === 'fan') return `fan:${item.label || 'unknown'}`;
+            return `temp:${item.chip || 'unknown'}:${item.label || item.chip || 'unknown'}`;
+        }
+
+        function loadSensorOrder() {
+            try {
+                const raw = localStorage.getItem(SENSOR_ORDER_KEY);
+                const parsed = raw ? JSON.parse(raw) : null;
+                return Array.isArray(parsed) ? parsed : [];
+            } catch {
+                return [];
+            }
+        }
+
+        function saveSensorOrder(order) {
+            try {
+                localStorage.setItem(SENSOR_ORDER_KEY, JSON.stringify(order));
+            } catch {
+                // ignore
+            }
+        }
+
+        function orderItemsByStoredOrder(items, keyFn) {
+            const order = loadSensorOrder();
+            if (!order.length) return items;
+
+            const rank = new Map();
+            order.forEach((k, i) => rank.set(k, i));
+            return items.slice().sort((a, b) => {
+                const ka = keyFn(a);
+                const kb = keyFn(b);
+                const ra = rank.has(ka) ? rank.get(ka) : Number.POSITIVE_INFINITY;
+                const rb = rank.has(kb) ? rank.get(kb) : Number.POSITIVE_INFINITY;
+                if (ra !== rb) return ra - rb;
+                return ka.localeCompare(kb);
+            });
+        }
+
+        function applySensorDragAndDrop(container) {
+            if (!container) return;
+
+            container.querySelectorAll('[data-sensor-key]').forEach(el => {
+                el.addEventListener('dragstart', (e) => {
+                    const key = el.getAttribute('data-sensor-key');
+                    if (!key) return;
+                    el.classList.add('sensor-dragging');
+                    try {
+                        e.dataTransfer.setData('text/plain', key);
+                        e.dataTransfer.effectAllowed = 'move';
+                    } catch {
+                        // ignore
+                    }
+                });
+
+                el.addEventListener('dragend', () => {
+                    el.classList.remove('sensor-dragging');
+                    container.querySelectorAll('.sensor-drop-target').forEach(t => t.classList.remove('sensor-drop-target'));
+                });
+
+                el.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    el.classList.add('sensor-drop-target');
+                    try { e.dataTransfer.dropEffect = 'move'; } catch {}
+                });
+
+                el.addEventListener('dragleave', () => {
+                    el.classList.remove('sensor-drop-target');
+                });
+
+                el.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    el.classList.remove('sensor-drop-target');
+
+                    let draggedKey = '';
+                    try { draggedKey = e.dataTransfer.getData('text/plain'); } catch {}
+                    if (!draggedKey) return;
+
+                    const targetKey = el.getAttribute('data-sensor-key');
+                    if (!targetKey || draggedKey === targetKey) return;
+
+                    const keys = lastSensorItemKeys.slice();
+                    const from = keys.indexOf(draggedKey);
+                    const to = keys.indexOf(targetKey);
+                    if (from === -1 || to === -1) return;
+
+                    // Remove dragged
+                    keys.splice(from, 1);
+
+                    // Insert before/after target based on pointer position
+                    const rect = el.getBoundingClientRect();
+                    const before = (e.clientY - rect.top) < (rect.height / 2);
+                    const insertAt = before ? (from < to ? to - 1 : to) : (from < to ? to : to + 1);
+                    const clamped = Math.max(0, Math.min(keys.length, insertAt));
+                    keys.splice(clamped, 0, draggedKey);
+
+                    saveSensorOrder(keys);
+                    if (lastData) {
+                        _renderStatsInternal(lastData);
+                    }
+                });
+            });
+        }
+
         function setSort(column) {
             if (currentSort.column === column) {
                 currentSort.direction = currentSort.direction === 'desc' ? 'asc' : 'desc';
@@ -2913,6 +3050,9 @@
                 const cpuPercent = (proc.cpu_percent || 0).toFixed(1);
                 const memPercent = (proc.memory_percent || 0).toFixed(1);
                 const uptime = proc.uptime || '-';
+
+                const role = localStorage.getItem('role');
+                const isAdmin = role === 'admin';
                 
                 div.innerHTML = `
                     <div class="process-info">
@@ -2935,6 +3075,13 @@
                                 </div>
                                 <div style="font-size: 0.75rem; color: var(--accent-mem);">${memPercent}%</div>
                             </div>
+                            ${(isAdmin && proc.pid > 1) ? `
+                            <div style="margin-left: 10px; display: flex; align-items: center;">
+                                <button onclick="event.stopPropagation(); handleKillProcess(${proc.pid});" style="background: var(--accent-cpu); border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;" title="Kill process">
+                                    <i class=\"fas fa-times\" style=\"margin-right: 6px;\"></i>Kill
+                                </button>
+                            </div>
+                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -2977,6 +3124,9 @@
             const cpuPercent = (proc.cpu_percent || 0).toFixed(1);
             const memPercent = (proc.memory_percent || 0).toFixed(1);
             const uptime = proc.uptime || '-';
+
+            const role = localStorage.getItem('role');
+            const isAdmin = role === 'admin';
             
             // Check if has children
             const hasChildren = proc.children && proc.children.length > 0;
@@ -3003,6 +3153,13 @@
                         </div>
                         <div style="font-size: 0.75rem; color: var(--accent-mem);">${memPercent}%</div>
                     </div>
+                    ${(isAdmin && proc.pid > 1) ? `
+                    <div style="margin-left: 10px; display: flex; align-items: center;">
+                        <button onclick="event.stopPropagation(); handleKillProcess(${proc.pid});" style="background: var(--accent-cpu); border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;" title="Kill process">
+                            <i class=\"fas fa-times\" style=\"margin-right: 6px;\"></i>Kill
+                        </button>
+                    </div>
+                    ` : ''}
                 </div>
             `;
             
@@ -4023,16 +4180,30 @@
                 if (sensorsContainer.querySelector('.no-data')) {
                     sensorsContainer.innerHTML = '';
                 }
+                sensorsList = orderItemsByStoredOrder(sensorsList, getSensorItemKey);
+                lastSensorItemKeys = sensorsList.map(getSensorItemKey);
+
                 updateList('sensors-container', sensorsList,
                     (item) => {
                         const div = document.createElement('div');
+                        const key = getSensorItemKey(item);
                         div.className = 'sensor-item';
-                        div.innerHTML = `<span></span><span class="sensor-value"></span>`;
+                        div.style.display = 'flex';
+                        div.style.justifyContent = 'space-between';
+                        div.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        div.style.padding = '2px 0';
+                        div.classList.add('sensor-draggable');
+                        div.setAttribute('draggable', 'true');
+                        div.setAttribute('data-sensor-key', key);
+                        div.innerHTML = `
+                            <span class="sensor-label" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%;"></span>
+                            <span class="sensor-value" style="font-weight: bold;"></span>
+                        `;
                         return div;
                     },
                     (el, item) => {
-                        const labelSpan = el.firstElementChild;
-                        const valSpan = el.lastElementChild;
+                        const labelSpan = el.querySelector('.sensor-label');
+                        const valSpan = el.querySelector('.sensor-value');
                         
                         if (item.type === 'fan') {
                             labelSpan.innerText = item.label;
@@ -4045,6 +4216,8 @@
                         }
                     }
                 );
+
+                applySensorDragAndDrop(sensorsContainer);
             }
 
             // Power

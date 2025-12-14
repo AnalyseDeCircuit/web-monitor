@@ -50,3 +50,4 @@ package*.sh
 
 # Templates generated files
 /templates/*.cache
+main_legacy.go
