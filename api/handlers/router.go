@@ -54,6 +54,7 @@ func SetupRouter() *Router {
 	router.mux.HandleFunc("/api/power/shutdown-status", ShutdownStatusHandler)
 
 	// Cron任务路由
+	router.mux.HandleFunc("/api/cron", CronLegacyHandler)
 	router.mux.HandleFunc("/api/cron/jobs", CronJobsHandler)
 	router.mux.HandleFunc("/api/cron/action", CronActionHandler)
 	router.mux.HandleFunc("/api/cron/logs", CronLogsHandler)

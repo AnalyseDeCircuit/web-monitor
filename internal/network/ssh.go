@@ -3,8 +3,10 @@ package network
 import (
 	"bufio"
 	"io/ioutil"
+	stdnet "net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -31,22 +33,20 @@ func GetSSHStats() types.SSHStats {
 	}
 
 	stats := types.SSHStats{
-		Status:      "stopped",
+		Status:      "Stopped",
 		AuthMethods: make(map[string]int),
 	}
 
 	// Check SSH Status (port 22)
 	// Try netstat first, then ss, then check /proc/net/tcp
-	stats.Status = "stopped"
 	if checkPort22Open() {
-		stats.Status = "running"
+		stats.Status = "Running"
 	}
 
 	// Connections
 	stats.Connections = getSSHConnectionCount()
 
-	// Sessions (who)
-	// Use chroot to run 'who' on host
+	// Sessions (who) - mimic legacy behavior, only remote sessions with valid IPs
 	cmd := exec.Command("chroot", "/hostfs", "who")
 	out, err := cmd.Output()
 	if err == nil {
@@ -58,29 +58,41 @@ func GetSSHStats() types.SSHStats {
 				continue
 			}
 
-			// Parse "who" output format: user tty login-time (ip)
-			// Example: root pts/0 2024-12-14 15:30 (192.168.1.100)
-			fields := strings.Fields(line)
-			if len(fields) >= 3 {
-				session := types.SSHSession{
-					User:      fields[0],
-					LoginTime: "",
-					IP:        "",
-				}
+			parts := strings.Fields(line)
+			if len(parts) < 5 {
+				continue
+			}
 
-				// Find IP in parentheses
-				if idx := strings.Index(line, "("); idx != -1 {
-					if endIdx := strings.Index(line[idx:], ")"); endIdx != -1 {
-						session.IP = line[idx+1 : idx+endIdx]
+			user := parts[0]
+			startedStr := parts[2] + " " + parts[3]
+
+			// Try to parse time and convert to ISO 8601 (UTC)
+			// who output format: YYYY-01-02 15:04
+			if t, err := time.ParseInLocation("2006-01-02 15:04", startedStr, time.Local); err == nil {
+				startedStr = t.UTC().Format(time.RFC3339)
+			}
+
+			// Extract IP from fields with parentheses, only valid IPs
+			ipsFound := make(map[string]bool)
+			ip := ""
+			for _, part := range parts {
+				if strings.HasPrefix(part, "(") && strings.HasSuffix(part, ")") {
+					candidate := part[1 : len(part)-1]
+					if stdnet.ParseIP(candidate) != nil && !ipsFound[candidate] {
+						ipsFound[candidate] = true
+						ip = candidate
+						break
 					}
 				}
+			}
 
-				// Extract date/time - typically fields[2] and fields[3]
-				if len(fields) >= 4 {
-					session.LoginTime = fields[2] + " " + fields[3]
-				}
-
-				sessions = append(sessions, session)
+			// Only add if we found a valid IP (remote session)
+			if ip != "" {
+				sessions = append(sessions, types.SSHSession{
+					User:      user,
+					IP:        ip,
+					LoginTime: startedStr,
+				})
 			}
 		}
 		stats.Sessions = sessions
@@ -113,16 +125,32 @@ func GetSSHStats() types.SSHStats {
 		}
 	}
 
-	// History Size (approx lines in auth.log)
-	// Just count lines in /hostfs/var/log/auth.log
-	if file, err := os.Open("/hostfs/var/log/auth.log"); err == nil {
-		scanner := bufio.NewScanner(file)
-		count := 0
-		for scanner.Scan() {
-			count++
+	// History Size (known_hosts) - count entries from known_hosts files on host
+	knownHostsPaths := []string{
+		"/root/.ssh/known_hosts",
+		"/hostfs/root/.ssh/known_hosts",
+		os.ExpandEnv("$HOME/.ssh/known_hosts"),
+	}
+	globPatterns := []string{
+		"/home/*/.ssh/known_hosts",
+		"/hostfs/home/*/.ssh/known_hosts",
+	}
+	for _, pattern := range globPatterns {
+		if matches, err := filepath.Glob(pattern); err == nil {
+			knownHostsPaths = append(knownHostsPaths, matches...)
 		}
-		stats.HistorySize = count
-		file.Close()
+	}
+	for _, path := range knownHostsPaths {
+		if path == "" {
+			continue
+		}
+		if content, err := ioutil.ReadFile(path); err == nil {
+			lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+			if len(lines) > 0 {
+				stats.HistorySize = len(lines)
+				break
+			}
+		}
 	}
 
 	// OOM Risk Processes (sshd)

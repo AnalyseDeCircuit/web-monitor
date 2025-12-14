@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/cache"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/cron"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/docker"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/power"
@@ -368,6 +371,94 @@ func ShutdownStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+// getUserAndRoleFromRequest 从请求中解析JWT并返回用户名和角色
+func getUserAndRoleFromRequest(r *http.Request) (string, string, error) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		cookie, err := r.Cookie("auth_token")
+		if err != nil {
+			return "", "", fmt.Errorf("no auth token")
+		}
+		authHeader = "Bearer " + cookie.Value
+	}
+
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return "", "", fmt.Errorf("invalid auth header")
+	}
+
+	token := parts[1]
+	claims, err := auth.ValidateJWT(token)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid token")
+	}
+
+	username := claims.Subject
+	user := auth.GetUserByUsername(username)
+	if user == nil {
+		return "", "", fmt.Errorf("user not found")
+	}
+
+	return username, user.Role, nil
+}
+
+// CronLegacyHandler 兼容旧版 /api/cron 接口
+// GET: 返回当前 crontab 中的所有任务
+// POST: 使用给定的任务列表覆盖 crontab（仅限管理员）
+func CronLegacyHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		jobs, err := cron.ListCronJobs()
+		if err != nil {
+			// 保持与前端错误处理兼容，返回非200状态
+			http.Error(w, "Failed to get cron jobs: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(jobs)
+	case http.MethodPost:
+		username, role, err := getUserAndRoleFromRequest(r)
+		if err != nil || role != "admin" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Forbidden: Admin access required",
+			})
+			return
+		}
+
+		var jobs []types.CronJob
+		if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Invalid request body",
+			})
+			return
+		}
+
+		if err := cron.SaveCronJobs(jobs); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		// 记录操作日志
+		logs.LogOperation(username, "cron_update", "Updated crontab", r.RemoteAddr)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "success",
+		})
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // CronJobsHandler 处理Cron任务请求

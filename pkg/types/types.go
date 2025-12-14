@@ -261,7 +261,7 @@ type SSHStats struct {
 type SSHSession struct {
 	User      string `json:"user"`
 	IP        string `json:"ip"`
-	LoginTime string `json:"login_time"`
+	LoginTime string `json:"started"`
 }
 
 // ProcessInfo 进程信息

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	gopsutilnet "github.com/shirou/gopsutil/v3/net"
 )
@@ -405,8 +406,9 @@ func GetNetworkInfo() (types.NetInfo, error) {
 			}
 
 			if io, ok := ioMap[iface.Name]; ok {
-				stats.BytesSent = fmt.Sprintf("%d", io.BytesSent)
-				stats.BytesRecv = fmt.Sprintf("%d", io.BytesRecv)
+				// 与旧版行为保持一致，使用可读的容量字符串
+				stats.BytesSent = utils.GetSize(io.BytesSent)
+				stats.BytesRecv = utils.GetSize(io.BytesRecv)
 				stats.ErrorsIn = io.Errin
 				stats.ErrorsOut = io.Errout
 				stats.DropsIn = io.Dropin
@@ -418,13 +420,9 @@ func GetNetworkInfo() (types.NetInfo, error) {
 		info.Interfaces = ifaceMap
 	}
 
-	// Raw values for calculation
-	info.RawSent = info.RawSent // Already uint64
-	info.RawRecv = info.RawRecv
-
-	// Format bytes for frontend
-	info.BytesSent = fmt.Sprintf("%d", info.RawSent)
-	info.BytesRecv = fmt.Sprintf("%d", info.RawRecv)
+	// Format bytes for frontend（与旧版保持一致，返回可读字符串）
+	info.BytesSent = utils.GetSize(info.RawSent)
+	info.BytesRecv = utils.GetSize(info.RawRecv)
 
 	// Listening Ports
 	info.ListeningPorts = getListeningPorts()
