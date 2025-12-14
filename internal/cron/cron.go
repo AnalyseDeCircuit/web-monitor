@@ -21,71 +21,38 @@ func ListCronJobs() ([]types.CronJob, error) {
 	cronMutex.Lock()
 	defer cronMutex.Unlock()
 
-	var jobs []types.CronJob
-
-	// 获取系统crontab - try root user
-	// 在容器中运行时，需要通过 chroot /hostfs 访问宿主机的 crontab
-	cmd := exec.Command("chroot", "/hostfs", "crontab", "-u", "root", "-l")
+	cmd := exec.Command("chroot", "/hostfs", "crontab", "-l")
 	output, err := cmd.Output()
-	if err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		lineNum := 1
-		for scanner.Scan() {
-			line := scanner.Text()
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
 
-			job := parseCronLine(line, "root", lineNum)
-			if job != nil {
-				jobs = append(jobs, *job)
-			}
-			lineNum++
+	// If no crontab exists, it returns exit code 1, which is fine, just return empty list
+	if err != nil {
+		// Check if it's just "no crontab for root"
+		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
+			return []types.CronJob{}, nil
 		}
+		// Real error
+		return nil, fmt.Errorf("failed to list cron jobs: %v", err)
 	}
 
-	// 获取用户crontab
-	// 同样需要通过 chroot 执行，并读取宿主机的 /etc/passwd
-	// List common users if full enumeration fails
-	users := []string{"root"}
-
-	// Try to get all users from /hostfs/etc/passwd
-	cmd = exec.Command("chroot", "/hostfs", "bash", "-c", "cut -f1 -d: /etc/passwd | head -20")
-	output, err = cmd.Output()
-	if err == nil {
-		userList := strings.Split(string(output), "\n")
-		for _, u := range userList {
-			u = strings.TrimSpace(u)
-			if u != "" && u != "root" {
-				users = append(users, u)
-			}
-		}
-	}
-
-	// Get crontab for each user
-	for _, user := range users {
-		cmd = exec.Command("chroot", "/hostfs", "crontab", "-u", user, "-l")
-		output, err = cmd.Output()
-		if err != nil {
+	var jobs []types.CronJob
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	id := 0
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		lineNum := 1
-		for scanner.Scan() {
-			line := scanner.Text()
-			line = strings.TrimSpace(line)
-
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-
-			job := parseCronLine(line, user, lineNum)
-			if job != nil {
-				jobs = append(jobs, *job)
-			}
-			lineNum++
+		// Simple parsing: first 5 fields are schedule, rest is command
+		parts := strings.Fields(line)
+		if len(parts) >= 6 {
+			schedule := strings.Join(parts[:5], " ")
+			command := strings.Join(parts[5:], " ")
+			jobs = append(jobs, types.CronJob{
+				ID:       fmt.Sprintf("%d", id),
+				Schedule: schedule,
+				Command:  command,
+			})
+			id++
 		}
 	}
 

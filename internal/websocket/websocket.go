@@ -2,9 +2,12 @@
 package websocket
 
 import (
+	"bufio"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -94,6 +97,71 @@ func collectStats() types.Response {
 	if avg, err := load.Avg(); err == nil {
 		resp.CPU.LoadAvg = []float64{utils.Round(avg.Load1), utils.Round(avg.Load5), utils.Round(avg.Load15)}
 	}
+
+	// CPU Stats
+	stats := getCPUStats()
+	resp.CPU.Stats = map[string]uint64{
+		"ctx_switches":    stats["ctx_switches"],
+		"interrupts":      stats["interrupts"],
+		"soft_interrupts": stats["soft_interrupts"],
+		"syscalls":        stats["syscalls"],
+	}
+
+	// CPU Times
+	if times, err := cpu.Times(false); err == nil && len(times) > 0 {
+		t := times[0]
+		total := t.User + t.System + t.Idle + t.Nice + t.Iowait + t.Irq + t.Softirq + t.Steal + t.Guest + t.GuestNice
+		if total <= 0 {
+			total = 1
+		}
+		resp.CPU.Times = map[string]float64{
+			"user":    utils.Round((t.User / total) * 100),
+			"system":  utils.Round((t.System / total) * 100),
+			"idle":    utils.Round((t.Idle / total) * 100),
+			"iowait":  utils.Round((t.Iowait / total) * 100),
+			"irq":     utils.Round((t.Irq / total) * 100),
+			"softirq": utils.Round((t.Softirq / total) * 100),
+		}
+	}
+
+	// CPU Freq
+	resp.CPU.Freq = getCPUFreq()
+
+	// Sensors
+	resp.Sensors = getSensors()
+
+	// Power
+	resp.Power = getPower()
+
+	// Update temp history
+	historyMutex.Lock()
+	currentTemp := 0.0
+	if sensors, ok := resp.Sensors.(map[string][]interface{}); ok {
+		count := 0.0
+		sum := 0.0
+		for _, list := range sensors {
+			for _, item := range list {
+				if m, ok := item.(map[string]interface{}); ok {
+					if t, ok := m["current"].(float64); ok && t > 0 {
+						sum += t
+						count++
+					}
+				}
+			}
+		}
+		if count > 0 {
+			currentTemp = utils.Round(sum / count)
+		}
+	}
+
+	if len(cpuTempHistory) >= 300 {
+		copy(cpuTempHistory, cpuTempHistory[1:])
+		cpuTempHistory = cpuTempHistory[:len(cpuTempHistory)-1]
+	}
+	cpuTempHistory = append(cpuTempHistory, currentTemp)
+	resp.CPU.TempHistory = make([]float64, len(cpuTempHistory))
+	copy(resp.CPU.TempHistory, cpuTempHistory)
+	historyMutex.Unlock()
 
 	// Memory
 	v, _ := mem.VirtualMemory()
@@ -257,15 +325,57 @@ func getAllProcesses() []types.ProcessInfo {
 	for _, p := range procs {
 		name, _ := p.Name()
 		username, _ := p.Username()
+		if username == "" {
+			if uids, err := p.Uids(); err == nil && len(uids) > 0 {
+				username = fmt.Sprintf("uid:%d", uids[0])
+			} else {
+				username = "unknown"
+			}
+		}
+		numThreads, _ := p.NumThreads()
 		memPercent, _ := p.MemoryPercent()
 		cpuPercent, _ := p.CPUPercent()
+		ppid, _ := p.Ppid()
+		createTime, _ := p.CreateTime() // ms
+
+		uptimeSec := time.Now().Unix() - (createTime / 1000)
+		uptimeStr := "-"
+		if uptimeSec < 60 {
+			uptimeStr = fmt.Sprintf("%ds", uptimeSec)
+		} else if uptimeSec < 3600 {
+			uptimeStr = fmt.Sprintf("%dm", uptimeSec/60)
+		} else if uptimeSec < 86400 {
+			uptimeStr = fmt.Sprintf("%dh", uptimeSec/3600)
+		} else {
+			uptimeStr = fmt.Sprintf("%dd", uptimeSec/86400)
+		}
+
+		cmdline, _ := p.Cmdline()
+		cwd, _ := p.Cwd()
+		if cwd == "" {
+			cwd = "-"
+		}
+
+		ioRead := "-"
+		ioWrite := "-"
+		if ioCounters, err := p.IOCounters(); err == nil {
+			ioRead = utils.GetSize(ioCounters.ReadBytes)
+			ioWrite = utils.GetSize(ioCounters.WriteBytes)
+		}
 
 		result = append(result, types.ProcessInfo{
 			PID:           p.Pid,
 			Name:          name,
 			Username:      username,
+			NumThreads:    numThreads,
 			MemoryPercent: utils.Round(float64(memPercent)),
 			CPUPercent:    utils.Round(cpuPercent),
+			PPID:          ppid,
+			Uptime:        uptimeStr,
+			Cmdline:       cmdline,
+			Cwd:           cwd,
+			IORead:        ioRead,
+			IOWrite:       ioWrite,
 		})
 	}
 
@@ -274,6 +384,133 @@ func getAllProcesses() []types.ProcessInfo {
 		return result[i].MemoryPercent > result[j].MemoryPercent
 	})
 
-	// Return all processes, not just top 20
+	// Return all processes
 	return result
+}
+
+func getCPUStats() map[string]uint64 {
+	stats := make(map[string]uint64)
+	paths := []string{"/hostfs/proc/stat", "/proc/stat"}
+
+	for _, path := range paths {
+		if file, err := os.Open(path); err == nil {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := scanner.Text()
+				parts := strings.Fields(line)
+				if len(parts) < 2 {
+					continue
+				}
+
+				key := parts[0]
+				val, _ := strconv.ParseUint(parts[1], 10, 64)
+
+				switch key {
+				case "ctxt":
+					stats["ctx_switches"] = val
+				case "intr":
+					stats["interrupts"] = val
+				case "softirq":
+					stats["soft_interrupts"] = val
+				}
+			}
+			break
+		}
+	}
+	stats["syscalls"] = 0
+	return stats
+}
+
+func getCPUFreq() types.CPUFreq {
+	freq := types.CPUFreq{
+		Avg:     0,
+		PerCore: []float64{},
+	}
+
+	var realFreqs []float64
+	paths := []string{"/hostfs/proc/cpuinfo", "/proc/cpuinfo"}
+
+	for _, path := range paths {
+		if file, err := os.Open(path); err == nil {
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.Contains(line, "cpu MHz") {
+					parts := strings.Split(line, ":")
+					if len(parts) > 1 {
+						valStr := strings.TrimSpace(parts[1])
+						val, err := strconv.ParseFloat(valStr, 64)
+						if err == nil {
+							realFreqs = append(realFreqs, utils.Round(val))
+						}
+					}
+				}
+			}
+			file.Close()
+			break
+		}
+	}
+
+	if len(realFreqs) > 0 {
+		freq.PerCore = realFreqs
+		sum := 0.0
+		for _, f := range realFreqs {
+			sum += f
+		}
+		freq.Avg = utils.Round(sum / float64(len(realFreqs)))
+	}
+
+	return freq
+}
+
+func getSensors() interface{} {
+	sensors := make(map[string][]interface{})
+	if temps, err := host.SensorsTemperatures(); err == nil {
+		for _, t := range temps {
+			sensors[t.SensorKey] = append(sensors[t.SensorKey], map[string]interface{}{
+				"label":    t.SensorKey,
+				"current":  t.Temperature,
+				"high":     t.High,
+				"critical": t.Critical,
+			})
+		}
+	}
+	return sensors
+}
+
+func getPower() interface{} {
+	powerStatus := make(map[string]interface{})
+
+	// Battery
+	basePath := "/sys/class/power_supply"
+	if _, err := os.Stat(basePath); err == nil {
+		files, _ := os.ReadDir(basePath)
+		for _, f := range files {
+			supplyPath := filepath.Join(basePath, f.Name())
+
+			// Try power_now
+			if content, err := os.ReadFile(filepath.Join(supplyPath, "power_now")); err == nil {
+				if pNow, err := strconv.ParseFloat(strings.TrimSpace(string(content)), 64); err == nil {
+					powerStatus["power_watts"] = utils.Round(pNow / 1000000)
+				}
+			}
+
+			// Try voltage_now
+			if content, err := os.ReadFile(filepath.Join(supplyPath, "voltage_now")); err == nil {
+				if vNow, err := strconv.ParseFloat(strings.TrimSpace(string(content)), 64); err == nil {
+					powerStatus["voltage_volts"] = utils.Round(vNow / 1000000)
+				}
+			}
+
+			// Try current_now
+			if content, err := os.ReadFile(filepath.Join(supplyPath, "current_now")); err == nil {
+				if cNow, err := strconv.ParseFloat(strings.TrimSpace(string(content)), 64); err == nil {
+					powerStatus["current_amps"] = utils.Round(cNow / 1000000)
+				}
+			}
+		}
+	}
+
+	return powerStatus
 }
