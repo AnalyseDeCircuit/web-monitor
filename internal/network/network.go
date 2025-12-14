@@ -2,9 +2,12 @@
 package network
 
 import (
+	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -423,6 +426,9 @@ func GetNetworkInfo() (types.NetInfo, error) {
 	info.BytesSent = fmt.Sprintf("%d", info.RawSent)
 	info.BytesRecv = fmt.Sprintf("%d", info.RawRecv)
 
+	// Listening Ports
+	info.ListeningPorts = getListeningPorts()
+
 	return info, nil
 }
 
@@ -458,4 +464,94 @@ func GetNetworkInterfaces() ([]types.NetworkInterface, error) {
 	}
 
 	return result, nil
+}
+
+// getListeningPorts 获取监听端口
+func getListeningPorts() []types.ListeningPort {
+	var ports []types.ListeningPort
+
+	// Try gopsutil first
+	conns, err := gopsutilnet.Connections("tcp")
+	if err == nil {
+		portMap := make(map[int]bool)
+		for _, conn := range conns {
+			if conn.Status == "LISTEN" {
+				port := int(conn.Laddr.Port)
+				if port > 0 && !portMap[port] {
+					portMap[port] = true
+					ports = append(ports, types.ListeningPort{
+						Port:     port,
+						Protocol: "tcp",
+					})
+				}
+			}
+		}
+
+		// Also check UDP
+		conns, _ = gopsutilnet.Connections("udp")
+		for _, conn := range conns {
+			if conn.Laddr.Port > 0 {
+				port := int(conn.Laddr.Port)
+				// Check if this port is already in TCP
+				found := false
+				for _, p := range ports {
+					if p.Port == port {
+						found = true
+						break
+					}
+				}
+				if !found {
+					ports = append(ports, types.ListeningPort{
+						Port:     port,
+						Protocol: "udp",
+					})
+				}
+			}
+		}
+
+		return ports
+	}
+
+	// Fallback: parse /proc/net/tcp manually
+	paths := []string{"/hostfs/proc/net/tcp", "/proc/net/tcp"}
+	for _, path := range paths {
+		if file, err := os.Open(path); err == nil {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			portMap := make(map[int]bool)
+
+			for scanner.Scan() {
+				line := scanner.Text()
+				fields := strings.Fields(line)
+				if len(fields) < 4 {
+					continue
+				}
+
+				// Check if LISTEN state (0A in hex)
+				if fields[3] != "0A" {
+					continue
+				}
+
+				// Parse local address field
+				localAddr := fields[1]
+				parts := strings.Split(localAddr, ":")
+				if len(parts) == 2 {
+					portHex := parts[1]
+					if portVal, err := strconv.ParseInt(portHex, 16, 32); err == nil {
+						port := int(portVal)
+						if port > 0 && !portMap[port] {
+							portMap[port] = true
+							ports = append(ports, types.ListeningPort{
+								Port:     port,
+								Protocol: "tcp",
+							})
+						}
+					}
+				}
+			}
+			break
+		}
+	}
+
+	return ports
 }

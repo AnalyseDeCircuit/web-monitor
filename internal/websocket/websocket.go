@@ -503,9 +503,14 @@ func getSensors() interface{} {
 func getPower() interface{} {
 	powerStatus := make(map[string]interface{})
 
-	// Battery
-	basePath := "/sys/class/power_supply"
-	if _, err := os.Stat(basePath); err == nil {
+	// Try both regular and hostfs paths
+	paths := []string{"/sys/class/power_supply", "/hostfs/sys/class/power_supply"}
+
+	for _, basePath := range paths {
+		if _, err := os.Stat(basePath); err != nil {
+			continue
+		}
+
 		files, _ := os.ReadDir(basePath)
 		for _, f := range files {
 			supplyPath := filepath.Join(basePath, f.Name())
@@ -530,6 +535,11 @@ func getPower() interface{} {
 					powerStatus["current_amps"] = utils.Round(cNow / 1000000)
 				}
 			}
+		}
+
+		// If we found data, break
+		if len(powerStatus) > 0 {
+			break
 		}
 	}
 
