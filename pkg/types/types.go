@@ -72,16 +72,18 @@ type AlertConfig struct {
 
 // SystemMetrics 系统指标（用于缓存）
 type SystemMetrics struct {
-	CPUPercent    float64   `json:"cpu_percent"`
-	MemoryPercent float64   `json:"memory_percent"`
-	MemoryTotal   uint64    `json:"memory_total"`
-	MemoryUsed    uint64    `json:"memory_used"`
-	MemoryFree    uint64    `json:"memory_free"`
-	DiskPercent   float64   `json:"disk_percent"`
-	DiskTotal     uint64    `json:"disk_total"`
-	DiskUsed      uint64    `json:"disk_used"`
-	DiskFree      uint64    `json:"disk_free"`
-	Timestamp     time.Time `json:"timestamp"`
+	CPUPercent    float64               `json:"cpu_percent"`
+	MemoryPercent float64               `json:"memory_percent"`
+	MemoryTotal   uint64                `json:"memory_total"`
+	MemoryUsed    uint64                `json:"memory_used"`
+	MemoryFree    uint64                `json:"memory_free"`
+	DiskPercent   float64               `json:"disk_percent"`
+	DiskTotal     uint64                `json:"disk_total"`
+	DiskUsed      uint64                `json:"disk_used"`
+	DiskFree      uint64                `json:"disk_free"`
+	Disk          []DiskInfo            `json:"disk"`
+	DiskIO        map[string]DiskIOInfo `json:"disk_io"`
+	Timestamp     time.Time             `json:"timestamp"`
 }
 
 // Response 完整的监控数据响应

@@ -16,7 +16,7 @@ services:
       - /:/hostfs
       - /sys:/sys
       - /proc:/proc
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/utmp:/var/run/utmp:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro

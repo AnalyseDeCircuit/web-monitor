@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	gopsutilnet "github.com/shirou/gopsutil/v3/net"
 )
 
 var (
@@ -329,6 +330,100 @@ func ValidateNetworkTarget(target string) bool {
 	}
 
 	return false
+}
+
+// GetNetworkInfo 获取完整的网络信息
+func GetNetworkInfo() (types.NetInfo, error) {
+	info := types.NetInfo{}
+
+	// IO Counters
+	ioCounters, err := gopsutilnet.IOCounters(false)
+	if err == nil && len(ioCounters) > 0 {
+		info.RawSent = ioCounters[0].BytesSent
+		info.RawRecv = ioCounters[0].BytesRecv
+
+		// Initialize Errors map
+		info.Errors = make(map[string]uint64)
+		info.Errors["total_errors_in"] = ioCounters[0].Errin
+		info.Errors["total_errors_out"] = ioCounters[0].Errout
+		info.Errors["total_drops_in"] = ioCounters[0].Dropin
+		info.Errors["total_drops_out"] = ioCounters[0].Dropout
+	}
+
+	// Connection States
+	conns, err := gopsutilnet.Connections("all")
+	if err == nil {
+		states := make(map[string]int)
+		sockets := make(map[string]int)
+
+		for _, conn := range conns {
+			states[conn.Status]++
+			if conn.Type == 1 { // TCP
+				sockets["tcp"]++
+			} else if conn.Type == 2 { // UDP
+				sockets["udp"]++
+			}
+			if conn.Status == "TIME_WAIT" {
+				sockets["tcp_tw"]++
+			}
+		}
+		info.ConnectionStates = states
+		info.Sockets = sockets
+	}
+
+	// Interfaces
+	ifaces, err := gopsutilnet.Interfaces()
+	if err == nil {
+		// Convert to map for frontend
+		ifaceMap := make(map[string]types.Interface)
+
+		// Get per-interface IO counters
+		perIfaceIO, _ := gopsutilnet.IOCounters(true)
+		ioMap := make(map[string]gopsutilnet.IOCountersStat)
+		for _, io := range perIfaceIO {
+			ioMap[io.Name] = io
+		}
+
+		for _, iface := range ifaces {
+			stats := types.Interface{
+				IsUp: false,
+			}
+			for _, flag := range iface.Flags {
+				if flag == "up" {
+					stats.IsUp = true
+					break
+				}
+			}
+
+			for _, addr := range iface.Addrs {
+				// Simple IP extraction
+				stats.IP = addr.Addr
+				break
+			}
+
+			if io, ok := ioMap[iface.Name]; ok {
+				stats.BytesSent = fmt.Sprintf("%d", io.BytesSent)
+				stats.BytesRecv = fmt.Sprintf("%d", io.BytesRecv)
+				stats.ErrorsIn = io.Errin
+				stats.ErrorsOut = io.Errout
+				stats.DropsIn = io.Dropin
+				stats.DropsOut = io.Dropout
+			}
+
+			ifaceMap[iface.Name] = stats
+		}
+		info.Interfaces = ifaceMap
+	}
+
+	// Raw values for calculation
+	info.RawSent = info.RawSent // Already uint64
+	info.RawRecv = info.RawRecv
+
+	// Format bytes for frontend
+	info.BytesSent = fmt.Sprintf("%d", info.RawSent)
+	info.BytesRecv = fmt.Sprintf("%d", info.RawRecv)
+
+	return info, nil
 }
 
 // GetNetworkInterfaces 获取网络接口信息

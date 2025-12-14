@@ -21,7 +21,8 @@ func ListServices() ([]types.ServiceInfo, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	cmd := exec.Command("systemctl", "list-units", "--type=service", "--all", "--no-pager", "--no-legend")
+	// 使用 chroot /hostfs 在宿主机环境中执行 systemctl
+	cmd := exec.Command("chroot", "/hostfs", "systemctl", "list-units", "--type=service", "--all", "--no-pager", "--no-legend")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list services: %v", err)
@@ -72,7 +73,9 @@ func ServiceAction(serviceName, action string) error {
 		return fmt.Errorf("invalid action: %s", action)
 	}
 
-	cmd := exec.Command("systemctl", args...)
+	// 使用 chroot /hostfs 执行 systemctl
+	fullArgs := append([]string{"/hostfs", "systemctl"}, args...)
+	cmd := exec.Command("chroot", fullArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to %s service %s: %v\nOutput: %s", action, serviceName, err, string(output))
@@ -86,7 +89,7 @@ func GetServiceStatus(serviceName string) (map[string]string, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	cmd := exec.Command("systemctl", "show", serviceName, "--no-pager")
+	cmd := exec.Command("chroot", "/hostfs", "systemctl", "show", serviceName, "--no-pager")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get service status: %v", err)

@@ -11,7 +11,7 @@ RUN go build -mod=vendor -ldflags="-s -w" -trimpath -o server ./cmd/server
 # Runtime stage
 FROM alpine:latest
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add --no-cache ca-certificates tzdata pciutils && \
+    && apk add --no-cache ca-certificates tzdata pciutils net-tools iproute2 && \
     rm -rf /var/cache/apk/* /var/lib/apk/*
 WORKDIR /app
 COPY --from=builder /app/server .

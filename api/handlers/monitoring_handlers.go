@@ -56,8 +56,19 @@ func SystemInfoHandler(w http.ResponseWriter, r *http.Request) {
 		"services": services,
 	}
 
-	// 获取网络信息 - 使用空结构
-	response["network"] = types.NetInfo{}
+	// 获取网络信息
+	// 尝试获取 SSH 统计信息
+	sshStats := network.GetSSHStats()
+	response["ssh_stats"] = sshStats
+
+	// 获取网络信息
+	netInfo, err := network.GetNetworkInfo()
+	if err != nil {
+		response["network_error"] = err.Error()
+		response["network"] = types.NetInfo{}
+	} else {
+		response["network"] = netInfo
+	}
 
 	// 获取电源信息
 	powerInfo, err := power.GetPowerInfo()
@@ -90,7 +101,57 @@ func DockerContainersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(containers)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"containers": containers,
+	})
+}
+
+// DockerImagesHandler 处理Docker镜像请求
+func DockerImagesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	images, err := docker.ListImages()
+	if err != nil {
+		http.Error(w, "Failed to get Docker images: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"images": images,
+	})
+}
+
+// DockerActionHandler 处理Docker操作请求
+func DockerActionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var request struct {
+		ID     string `json:"id"`
+		Action string `json:"action"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := docker.ContainerAction(request.ID, request.Action); err != nil {
+		http.Error(w, "Docker action failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "Docker action completed",
+	})
 }
 
 // SystemdServicesHandler 处理Systemd服务请求

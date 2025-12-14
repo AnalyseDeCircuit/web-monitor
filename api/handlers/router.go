@@ -34,8 +34,11 @@ func SetupRouter() *Router {
 	router.mux.HandleFunc("/api/logs", LogsHandler)
 
 	// 监控数据路由
+	router.mux.HandleFunc("/api/info", SystemInfoHandler) // Alias for /api/system/info or separate static info?
 	router.mux.HandleFunc("/api/system/info", SystemInfoHandler)
 	router.mux.HandleFunc("/api/docker/containers", DockerContainersHandler)
+	router.mux.HandleFunc("/api/docker/images", DockerImagesHandler)
+	router.mux.HandleFunc("/api/docker/action", DockerActionHandler)
 	router.mux.HandleFunc("/api/systemd/services", SystemdServicesHandler)
 	router.mux.HandleFunc("/api/network/info", NetworkInfoHandler)
 	router.mux.HandleFunc("/api/power/info", PowerInfoHandler)
