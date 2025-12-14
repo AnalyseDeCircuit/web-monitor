@@ -1,4 +1,4 @@
-module web-monitor-go
+module github.com/AnalyseDeCircuit/web-monitor
 
 go 1.23.0
 

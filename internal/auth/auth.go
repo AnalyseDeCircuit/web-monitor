@@ -1,0 +1,315 @@
+// Package auth 提供用户认证和授权功能
+package auth
+
+import (
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/time/rate"
+)
+
+var (
+	userDB       *types.UserDatabase
+	userDB_mu    sync.RWMutex
+	loginLimiter = rate.NewLimiter(1, 5) // 每秒1个，最多5个突发请求
+	jwtKey       []byte
+)
+
+// InitUserDatabase 初始化用户数据库
+func InitUserDatabase() error {
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	// 确保 /data 目录存在
+	log.Println("Ensuring /data directory exists...")
+	if err := os.MkdirAll("/data", 0777); err != nil {
+		log.Printf("Error creating /data directory: %v\n", err)
+	}
+
+	usersFilePath := "/data/users.json"
+	log.Printf("Reading users from %s...\n", usersFilePath)
+
+	data, err := ioutil.ReadFile(usersFilePath)
+	if err != nil {
+		log.Printf("Users file not found, creating default: %v\n", err)
+		// 创建默认用户数据库
+		now := time.Now()
+		userDB = &types.UserDatabase{
+			Users: []types.User{
+				{
+					ID:        "admin",
+					Username:  "admin",
+					Password:  "$2a$10$Spuxl0kXOXW2hFb//8Ylj.Nrr./Qpa2Ba0JA0eKprr0NoNHaMJwUC", // bcrypt hash of "admin123"
+					Role:      "admin",
+					CreatedAt: now,
+					LastLogin: nil,
+				},
+			},
+		}
+
+		// 保存前先解锁
+		log.Println("Marshaling user data...")
+		jsonData, err := json.MarshalIndent(userDB, "", "  ")
+		if err != nil {
+			log.Printf("Error marshaling users: %v\n", err)
+			return err
+		}
+
+		log.Println("Writing to file...")
+		if err := ioutil.WriteFile(usersFilePath, jsonData, 0666); err != nil {
+			log.Printf("Error writing users file: %v\n", err)
+			return err
+		}
+		log.Println("User database created successfully")
+		return nil
+	}
+
+	log.Println("Parsing users from file...")
+	userDB = &types.UserDatabase{}
+	if err := json.Unmarshal(data, userDB); err != nil {
+		log.Printf("Error parsing users: %v\n", err)
+		return err
+	}
+	log.Printf("Loaded %d users\n", len(userDB.Users))
+	return nil
+}
+
+// SaveUserDatabase 保存用户数据库
+func SaveUserDatabase() error {
+	log.Println("Saving user database...")
+	data, err := json.MarshalIndent(userDB, "", "  ")
+	if err != nil {
+		log.Printf("Error marshaling users: %v\n", err)
+		return err
+	}
+
+	usersFilePath := "/data/users.json"
+	log.Printf("Writing to %s...\n", usersFilePath)
+	if err := ioutil.WriteFile(usersFilePath, data, 0666); err != nil {
+		log.Printf("Error writing users file: %v\n", err)
+		return err
+	}
+	log.Println("User database saved successfully")
+	return nil
+}
+
+// InitJWTKey 初始化JWT密钥
+func InitJWTKey() {
+	key := os.Getenv("JWT_SECRET")
+	if key == "" {
+		log.Println("WARNING: JWT_SECRET environment variable is not set, generating random key for development only")
+		// 生成随机的32字节密钥（仅用于开发环境）
+		randomKey := make([]byte, 32)
+		if _, err := rand.Read(randomKey); err != nil {
+			log.Fatalf("Failed to generate random JWT key: %v", err)
+		}
+		jwtKey = randomKey
+	} else {
+		jwtKey = []byte(key)
+		if len(jwtKey) < 32 {
+			log.Fatal("JWT_SECRET must be at least 32 bytes long for security")
+		}
+		log.Println("JWT key loaded from environment variable")
+	}
+}
+
+// GenerateJWT 生成JWT令牌
+func GenerateJWT(username, role string) (string, error) {
+	expirationTime := time.Now().Add(24 * time.Hour)
+	claims := &jwt.RegisteredClaims{
+		Subject:   username,
+		ExpiresAt: jwt.NewNumericDate(expirationTime),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		NotBefore: jwt.NewNumericDate(time.Now()),
+		ID:        fmt.Sprintf("%s-%d", username, time.Now().UnixNano()),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtKey)
+}
+
+// ValidateJWT 验证JWT令牌并返回声明
+func ValidateJWT(tokenString string) (*jwt.RegisteredClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
+		return claims, nil
+	}
+	return nil, fmt.Errorf("invalid token")
+}
+
+// HashPasswordBcrypt 生成密码哈希
+func HashPasswordBcrypt(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(hash), err
+}
+
+// ValidateUser 验证用户
+func ValidateUser(username, password string) *types.User {
+	userDB_mu.RLock()
+	defer userDB_mu.RUnlock()
+
+	log.Printf("Validating user: %s", username)
+
+	for i, user := range userDB.Users {
+		if user.Username == username {
+			// 检查账户是否被锁定
+			if CheckAccountLock(&user) {
+				log.Printf("Account locked for user: %s", username)
+				return nil
+			}
+
+			log.Printf("Found user: %s, checking password...", username)
+			// 使用 bcrypt 验证密码
+			if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err == nil {
+				log.Printf("Password valid for user: %s", username)
+				// 更新用户状态
+				userDB.Users[i].FailedLoginCount = 0
+				userDB.Users[i].LockedUntil = nil
+				now := time.Now()
+				userDB.Users[i].LastLogin = &now
+				return &userDB.Users[i]
+			} else {
+				log.Printf("Password invalid for user: %s, error: %v", username, err)
+				// 记录失败登录
+				userDB.Users[i].FailedLoginCount++
+				if userDB.Users[i].FailedLoginCount >= 5 {
+					lockDuration := 15 * time.Minute
+					lockedUntil := time.Now().Add(lockDuration)
+					userDB.Users[i].LockedUntil = &lockedUntil
+					log.Printf("Account locked for user: %s due to 5 failed attempts", username)
+				}
+				SaveUserDatabase()
+			}
+			return nil
+		}
+	}
+	log.Printf("User not found: %s", username)
+	return nil
+}
+
+// CheckAccountLock 检查账户是否被锁定
+func CheckAccountLock(user *types.User) bool {
+	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
+		return true
+	}
+	return false
+}
+
+// GetUserByUsername 根据用户名获取用户
+func GetUserByUsername(username string) *types.User {
+	userDB_mu.RLock()
+	defer userDB_mu.RUnlock()
+
+	for _, user := range userDB.Users {
+		if user.Username == username {
+			return &user
+		}
+	}
+	return nil
+}
+
+// GetAllUsers 获取所有用户
+func GetAllUsers() []types.User {
+	userDB_mu.RLock()
+	defer userDB_mu.RUnlock()
+
+	users := make([]types.User, len(userDB.Users))
+	copy(users, userDB.Users)
+	return users
+}
+
+// CreateUser 创建新用户
+func CreateUser(username, password, role string) error {
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	// 检查用户是否存在
+	for _, u := range userDB.Users {
+		if u.Username == username {
+			return fmt.Errorf("user already exists")
+		}
+	}
+
+	// 生成密码哈希
+	hash, err := HashPasswordBcrypt(password)
+	if err != nil {
+		return fmt.Errorf("password hashing failed: %v", err)
+	}
+
+	// 添加新用户
+	newUser := types.User{
+		ID:        fmt.Sprintf("user_%d", len(userDB.Users)),
+		Username:  username,
+		Password:  hash,
+		Role:      role,
+		CreatedAt: time.Now(),
+		LastLogin: nil,
+	}
+	userDB.Users = append(userDB.Users, newUser)
+
+	return SaveUserDatabase()
+}
+
+// DeleteUser 删除用户
+func DeleteUser(username string) error {
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	// 防止删除管理员
+	if username == "admin" {
+		return fmt.Errorf("cannot delete admin user")
+	}
+
+	found := false
+	for i, u := range userDB.Users {
+		if u.Username == username {
+			userDB.Users = append(userDB.Users[:i], userDB.Users[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("user not found")
+	}
+
+	return SaveUserDatabase()
+}
+
+// UpdateUserPassword 更新用户密码
+func UpdateUserPassword(username, newPassword string) error {
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	for i := range userDB.Users {
+		if userDB.Users[i].Username == username {
+			hash, err := HashPasswordBcrypt(newPassword)
+			if err != nil {
+				return fmt.Errorf("password hashing failed: %v", err)
+			}
+			userDB.Users[i].Password = hash
+			return SaveUserDatabase()
+		}
+	}
+
+	return fmt.Errorf("user not found")
+}
+
+// GetLoginLimiter 获取登录限流器
+func GetLoginLimiter() *rate.Limiter {
+	return loginLimiter
+}
