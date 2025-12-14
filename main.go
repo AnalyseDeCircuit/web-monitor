@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -90,8 +91,6 @@ type OperationLog struct {
 }
 
 var (
-	sessions     = make(map[string]SessionInfo)
-	sessions_mu  sync.RWMutex
 	userDB       *UserDatabase
 	userDB_mu    sync.RWMutex
 	opLogs       []OperationLog
@@ -2388,16 +2387,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 存储会话信息（使用用户名作为键）
-	sessions_mu.Lock()
-	sessions[user.Username] = SessionInfo{
-		Username:  user.Username,
-		Role:      user.Role,
-		Token:     jwtToken,
-		ExpiresAt: time.Now().Add(24 * time.Hour), // 会话24小时后过期
-	}
-	sessions_mu.Unlock()
-
 	// 更新最后登录时间
 	userDB_mu.Lock()
 	for i, u := range userDB.Users {
@@ -2438,13 +2427,9 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := r.Header.Get("Authorization")
-	if token != "" {
-		token = strings.TrimPrefix(token, "Bearer ")
-		sessions_mu.Lock()
-		delete(sessions, token)
-		sessions_mu.Unlock()
-	}
+	// 由于我们使用JWT，登出由客户端删除token即可
+	// 如果需要服务端使token失效，需要维护一个黑名单，这里简化处理
+	// 我们只是返回成功，客户端需要删除存储的token
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Logged out"})
@@ -2452,22 +2437,31 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 // 认证检查函数
 func isAuthenticated(r *http.Request) bool {
-	session, err := getSessionInfo(r)
-	if err != nil {
-		return false
-	}
-	// 检查Token是否过期
-	if session.ExpiresAt.Before(time.Now()) {
-		sessions_mu.Lock()
-		delete(sessions, session.Token)
-		sessions_mu.Unlock()
-		return false
-	}
-	return true
+	_, err := getSessionInfo(r)
+	return err == nil
 }
 
-// JWT 密钥，实际应用中应从环境变量或配置文件中读取，这里使用固定密钥（仅用于演示）
-var jwtKey = []byte("your-secret-key-change-in-production")
+// JWT 密钥，从环境变量 JWT_SECRET 读取，如果未设置则使用随机生成（仅用于开发环境）
+var jwtKey []byte
+
+func initJWTKey() {
+	key := os.Getenv("JWT_SECRET")
+	if key == "" {
+		log.Println("WARNING: JWT_SECRET environment variable is not set, generating random key for development only")
+		// 生成随机的32字节密钥（仅用于开发环境）
+		randomKey := make([]byte, 32)
+		if _, err := rand.Read(randomKey); err != nil {
+			log.Fatalf("Failed to generate random JWT key: %v", err)
+		}
+		jwtKey = randomKey
+	} else {
+		jwtKey = []byte(key)
+		if len(jwtKey) < 32 {
+			log.Fatal("JWT_SECRET must be at least 32 bytes long for security")
+		}
+		log.Println("JWT key loaded from environment variable")
+	}
+}
 
 // 生成JWT令牌
 func generateJWT(username, role string) (string, error) {
@@ -2531,21 +2525,30 @@ func getSessionInfo(r *http.Request) (*SessionInfo, error) {
 	// 从JWT声明中获取用户名
 	username := claims.Subject
 
-	// 从内存中获取会话信息（或从数据库/缓存中获取）
-	sessions_mu.RLock()
-	session, exists := sessions[username] // 注意：这里我们使用username作为键，而不是token
-	sessions_mu.RUnlock()
+	// 从用户数据库获取用户角色
+	userDB_mu.RLock()
+	var role string
+	for _, user := range userDB.Users {
+		if user.Username == username {
+			role = user.Role
+			break
+		}
+	}
+	userDB_mu.RUnlock()
 
-	if !exists {
-		return nil, fmt.Errorf("session not found")
+	if role == "" {
+		return nil, fmt.Errorf("user not found in database")
 	}
 
-	// 检查会话是否过期（JWT已经验证过期，这里双重检查）
-	if session.ExpiresAt.Before(time.Now()) {
-		sessions_mu.Lock()
-		delete(sessions, username)
-		sessions_mu.Unlock()
-		return nil, fmt.Errorf("session expired")
+	// 从JWT声明中获取过期时间
+	expiresAt := claims.ExpiresAt.Time
+
+	// 创建会话信息（完全基于JWT，不存储在内存中）
+	session := SessionInfo{
+		Username:  username,
+		Role:      role,
+		Token:     "", // 不需要存储token
+		ExpiresAt: expiresAt,
 	}
 
 	return &session, nil
@@ -2678,6 +2681,14 @@ func createUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.Role != "admin" && req.Role != "user" {
 		req.Role = "user"
+	}
+
+	// 验证密码策略
+	if !validatePasswordPolicy(req.Password) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Password does not meet complexity requirements. Must be at least 8 characters long and contain at least three of: uppercase letters, lowercase letters, digits, and special characters."})
+		return
 	}
 
 	// 生成密码哈希
@@ -2842,6 +2853,14 @@ func changePasswordHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid old password"})
 			return
 		}
+	}
+
+	// 验证新密码策略
+	if !validatePasswordPolicy(req.NewPassword) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "New password does not meet complexity requirements. Must be at least 8 characters long and contain at least three of: uppercase letters, lowercase letters, digits, and special characters."})
+		return
 	}
 
 	// Hash new password
