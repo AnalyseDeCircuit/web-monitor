@@ -961,10 +961,6 @@
                     <i class="fas fa-chart-line"></i>
                     <span>Traffic</span>
                 </div>
-                <div class="nav-item" onclick="switchPage('net-diag')" style="font-size: 0.9rem;">
-                    <i class="fas fa-tools"></i>
-                    <span>Diagnostics</span>
-                </div>
                 <div class="nav-item" onclick="switchPage('ssh')" style="font-size: 0.9rem;">
                     <i class="fas fa-lock"></i>
                     <span>SSH</span>
@@ -1821,30 +1817,6 @@
         </div>
     </div>
 
-    <!-- Network Tools Page -->
-    <div id="page-net-diag" class="page">
-        <div class="grid-container">
-            <div class="card" style="grid-column: 1 / -1;">
-                <div class="card-title">
-                    <span>Network Diagnostics</span>
-                </div>
-                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-                    <button class="net-tab active" onclick="switchNetTab('ping')" id="tab-ping">Ping</button>
-                    <button class="net-tab" onclick="switchNetTab('trace')" id="tab-trace">Trace</button>
-                    <button class="net-tab" onclick="switchNetTab('dig')" id="tab-dig">Dig (DNS)</button>
-                    <button class="net-tab" onclick="switchNetTab('curl')" id="tab-curl">Curl (HTTP)</button>
-                </div>
-                
-                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-                    <input type="text" id="net-target" placeholder="Enter hostname or IP (e.g., google.com)" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
-                    <button id="btn-run-net" onclick="runNetworkTest()" style="padding: 10px 20px; background: var(--accent-net); border: none; color: white; border-radius: 4px; cursor: pointer;">Run Test</button>
-                </div>
-
-                <div style="background: #000; padding: 15px; border-radius: 4px; font-family: monospace; min-height: 200px; white-space: pre-wrap; color: #0f0;" id="net-output">Waiting for input...</div>
-            </div>
-        </div>
-    </div>
-
     <!-- User Management Page -->
     <div id="page-users" class="page">
         <div class="grid-container">
@@ -2061,7 +2033,7 @@
                 navItem.classList.add('active');
                 // If it's a submenu item, keep parent active too (optional, but good for UX)
                 // For now, just ensure the submenu is open if we are navigating to a child
-                if (['net-traffic', 'net-diag', 'ssh'].includes(pageId)) {
+                if (['net-traffic', 'ssh'].includes(pageId)) {
                     document.getElementById('network-submenu').style.display = 'flex';
                     document.getElementById('net-submenu-icon').classList.remove('fa-chevron-down');
                     document.getElementById('net-submenu-icon').classList.add('fa-chevron-up');
@@ -2076,7 +2048,6 @@
                 'processes': 'Process Manager',
                 'storage': 'Storage Manager',
                 'net-traffic': 'Network Traffic',
-                'net-diag': 'Network Diagnostics',
                 'gpu': 'GPU Monitor',
                 'docker': 'Docker Management',
                 'services': 'System Services',
@@ -2101,38 +2072,7 @@
                 // (Chart.js usually handles this, but good to know)
             }
 
-            // Handle Network Diagnostics permissions
-            if (pageId === 'net-diag') {
-                const role = localStorage.getItem('role');
-                const inputEl = document.getElementById('net-target');
-                const btnEl = document.getElementById('btn-run-net');
-                const tabButtons = document.querySelectorAll('.net-tab');
-                
-                if (role === 'user') {
-                    // Disable all interactive elements for non-admin users
-                    inputEl.disabled = true;
-                    inputEl.style.opacity = '0.5';
-                    inputEl.style.cursor = 'not-allowed';
-                    btnEl.style.display = 'none';  // Hide run button entirely
-                    tabButtons.forEach(btn => {
-                        btn.disabled = true;
-                        btn.style.opacity = '0.5';
-                        btn.style.cursor = 'not-allowed';
-                    });
-                    document.getElementById('net-output').innerText = '⚠️ Read-only mode: Only administrators can run network diagnostics tests.';
-                } else {
-                    // Enable for admin users
-                    inputEl.disabled = false;
-                    inputEl.style.opacity = '1';
-                    inputEl.style.cursor = 'text';
-                    btnEl.style.display = 'block';
-                    tabButtons.forEach(btn => {
-                        btn.disabled = false;
-                        btn.style.opacity = '1';
-                        btn.style.cursor = 'pointer';
-                    });
-                }
-            }
+            // Network Diagnostics 页面已移除，无需额外权限处理
 
             // Load data for specific pages
             if (pageId === 'docker') { loadDockerContainers(); loadDockerImages(); }
@@ -2576,49 +2516,7 @@
         // Network Tools Functions
         let currentNetTool = 'ping';
 
-        function switchNetTab(tool) {
-            currentNetTool = tool;
-            document.querySelectorAll('.net-tab').forEach(el => el.classList.remove('active'));
-            document.querySelector(`.net-tab[onclick*="'${tool}'"]`).classList.add('active');
-            
-            const output = document.getElementById('net-output');
-            output.innerText = `Ready to run ${tool.toUpperCase()}...`;
-        }
-
-        async function runNetworkTest() {
-            const target = document.getElementById('net-target').value.trim();
-            if (!target) {
-                alert('Please enter a target hostname or IP');
-                return;
-            }
-
-            const output = document.getElementById('net-output');
-            output.innerText = `Running ${currentNetTool} on ${target}...\n`;
-            
-            const btn = document.getElementById('btn-run-net');
-            btn.disabled = true;
-            btn.style.opacity = '0.5';
-
-            try {
-                const response = await fetch('/api/network/test', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tool: currentNetTool, target: target })
-                });
-
-                const data = await response.json();
-                if (response.ok) {
-                    output.innerText += '\n' + data.output;
-                } else {
-                    output.innerText += '\nError: ' + (data.error || 'Request failed');
-                }
-            } catch (error) {
-                output.innerText += '\nNetwork Error: ' + error.message;
-            } finally {
-                btn.disabled = false;
-                btn.style.opacity = '1';
-            }
-        }
+        // Network Diagnostics 功能已移除
 
         // User Management Functions
         async function loadUsers() {
@@ -3145,6 +3043,9 @@
             const modal = document.getElementById('proc-detail-modal');
             const titleEl = document.getElementById('proc-detail-name');
             const contentEl = document.getElementById('proc-detail-content');
+
+            const role = localStorage.getItem('role');
+            const isAdmin = role === 'admin';
             
             titleEl.innerText = `${proc.name} (PID: ${proc.pid})`;
             
@@ -3208,6 +3109,14 @@
                     </div>
                 </div>
                 ` : ''}
+
+                ${(isAdmin && proc.pid > 1) ? `
+                <div style="margin-top: 18px; display: flex; justify-content: flex-end;">
+                    <button onclick="handleKillProcess(${proc.pid});" style="background: var(--accent-cpu); border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.9rem;" title="Kill process">
+                        <i class="fas fa-times" style="margin-right: 6px;"></i>Kill Process
+                    </button>
+                </div>
+                ` : ''}
             `;
             
             modal.style.display = 'flex';
@@ -3216,6 +3125,41 @@
         // Close process detail modal
         function closeProcDetail() {
             document.getElementById('proc-detail-modal').style.display = 'none';
+        }
+
+        // Admin-only: kill a process by PID
+        async function handleKillProcess(pid) {
+            const role = localStorage.getItem('role');
+            if (role !== 'admin') {
+                alert('Forbidden: Admin access required');
+                return;
+            }
+
+            const proc = allProcesses.find(p => p.pid === pid);
+            const name = proc ? proc.name : 'unknown';
+            if (!confirm(`Kill process ${name} (PID: ${pid})? This cannot be undone.`)) return;
+
+            try {
+                const response = await fetch('/api/process/kill', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pid })
+                });
+
+                if (response.ok) {
+                    closeProcDetail();
+                    alert('Kill signal sent. The process list will refresh shortly.');
+                    setTimeout(() => {
+                        try { filterAndRenderProcesses(); } catch (_) {}
+                    }, 500);
+                    return;
+                }
+
+                const data = await response.json();
+                alert('Error: ' + (data.error || 'Kill failed'));
+            } catch (err) {
+                alert('Failed to kill process');
+            }
         }
 
         // Update process statistics
@@ -4724,7 +4668,22 @@
                 options.headers['Authorization'] = `Bearer ${token}`;
             }
             args[1] = options;
-            return originalFetch.apply(window, args);
+
+			return originalFetch.apply(window, args).then((res) => {
+				// token 失效/缺失时，自动清理并跳转到登录页
+				if (res && res.status === 401) {
+					try {
+						localStorage.removeItem('auth_token');
+						localStorage.removeItem('username');
+						localStorage.removeItem('role');
+					} catch (_) {}
+
+					if (window.location.pathname !== '/login') {
+						window.location.href = '/login';
+					}
+				}
+				return res;
+			});
         };
 
         // 添加登出按钮到侧边栏

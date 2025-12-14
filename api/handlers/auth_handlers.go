@@ -79,7 +79,17 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 由于我们使用JWT，登出由客户端删除token即可
+	// 清理 Cookie（客户端也会清理 localStorage）
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Logged out"})
 }
@@ -131,14 +141,134 @@ func ValidatePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UsersHandler 处理用户管理请求
+// UsersHandler 处理用户管理请求（仅管理员）
+// GET    /api/users                 -> 列出所有用户
+// POST   /api/users                 -> 创建新用户 {username,password,role}
+// DELETE /api/users?username=alice  -> 删除指定用户
+
 func UsersHandler(w http.ResponseWriter, r *http.Request) {
-	// 简单实现：返回所有用户
-	users := auth.GetAllUsers()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"users": users,
-	})
+	username, role, err := getUserAndRoleFromRequest(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Unauthorized",
+		})
+		return
+	}
+	if role != "admin" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Forbidden: Admin access required",
+		})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		users := auth.GetAllUsers()
+		respUsers := make([]map[string]interface{}, len(users))
+		for i, u := range users {
+			respUsers[i] = map[string]interface{}{
+				"id":         u.ID,
+				"username":   u.Username,
+				"role":       u.Role,
+				"created_at": u.CreatedAt,
+				"last_login": u.LastLogin,
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"users": respUsers,
+		})
+
+	case http.MethodPost:
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
+			return
+		}
+
+		if req.Username == "" || req.Password == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Username and password are required"})
+			return
+		}
+
+		if req.Role != "admin" && req.Role != "user" {
+			req.Role = "user"
+		}
+
+		if !utils.ValidatePasswordPolicy(req.Password) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Password does not meet complexity requirements. Must be at least 8 characters long and contain at least three of: uppercase letters, lowercase letters, digits, and special characters."})
+			return
+		}
+
+		if err := auth.CreateUser(req.Username, req.Password, req.Role); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			if err.Error() == "user already exists" {
+				w.WriteHeader(http.StatusConflict)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		// 记录操作日志（此时 username 为当前登录用户，通常是 admin）
+		logs.LogOperation(username, "create_user", "Created user: "+req.Username+" ("+req.Role+")", r.RemoteAddr)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{
+			"message":  "User created successfully",
+			"username": req.Username,
+		})
+
+	case http.MethodDelete:
+		target := r.URL.Query().Get("username")
+		if target == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Username required"})
+			return
+		}
+
+		if target == "admin" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Cannot delete admin user"})
+			return
+		}
+
+		if err := auth.DeleteUser(target); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			if err.Error() == "user not found" {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+
+		logs.LogOperation(username, "delete_user", "Deleted user: "+target, r.RemoteAddr)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"message": "User deleted successfully"})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // LogsHandler 处理操作日志请求

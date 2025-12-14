@@ -227,27 +227,31 @@ func GetPowerInfo() (*types.PowerInfo, error) {
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
-	// 获取电池信息
-	batteryInfo, err := getBatteryInfo()
-	if err == nil {
+	// 获取电池信息（用于电源管理页面等）
+	if batteryInfo, err := getBatteryInfo(); err == nil {
 		info.Battery = batteryInfo
+		// 兼容前端 Sensors & Power 中对 data.power.percent 的使用
+		// 前端会读取 data.power.percent 作为电池电量百分比
+		info.Profile = "battery"
 	}
 
 	// 获取AC电源状态
-	acStatus, err := getACStatus()
-	if err == nil {
+	if acStatus, err := getACStatus(); err == nil {
 		info.ACPower = acStatus
+		if acStatus {
+			info.ACStatus = "online"
+		} else {
+			info.ACStatus = "offline"
+		}
 	}
 
 	// 获取系统运行时间
-	uptime, err := getSystemUptime()
-	if err == nil {
+	if uptime, err := getSystemUptime(); err == nil {
 		info.Uptime = uptime
 	}
 
 	// 获取关机状态
-	shutdownStatus, err := GetShutdownStatus()
-	if err == nil {
+	if shutdownStatus, err := GetShutdownStatus(); err == nil {
 		info.ShutdownScheduled = shutdownStatus.Scheduled
 		info.ScheduledTime = shutdownStatus.ScheduledTime
 	}
@@ -258,15 +262,18 @@ func GetPowerInfo() (*types.PowerInfo, error) {
 // getBatteryInfo 获取电池信息
 func getBatteryInfo() (*types.BatteryInfo, error) {
 	// 尝试从/sys/class/power_supply读取电池信息
-	cmd := exec.Command("bash", "-c", "cat /sys/class/power_supply/BAT*/capacity 2>/dev/null || echo 'Unknown'")
+	cmd := exec.Command("bash", "-c", "cat /sys/class/power_supply/BAT*/capacity 2>/dev/null || echo ''")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
 
-	capacity := strings.TrimSpace(string(output))
+	capacityStr := strings.TrimSpace(string(output))
+	if capacityStr == "" {
+		return nil, fmt.Errorf("no battery capacity found")
+	}
 
-	cmd = exec.Command("bash", "-c", "cat /sys/class/power_supply/BAT*/status 2>/dev/null || echo 'Unknown'")
+	cmd = exec.Command("bash", "-c", "cat /sys/class/power_supply/BAT*/status 2>/dev/null || echo ''")
 	output, err = cmd.Output()
 	if err != nil {
 		return nil, err
@@ -275,9 +282,10 @@ func getBatteryInfo() (*types.BatteryInfo, error) {
 	status := strings.TrimSpace(string(output))
 
 	percentage := 0.0
-	fmt.Sscanf(capacity, "%f", &percentage)
+	fmt.Sscanf(capacityStr, "%f", &percentage)
 
 	return &types.BatteryInfo{
+		Present:    true,
 		Capacity:   percentage,
 		Percentage: percentage,
 		Status:     status,

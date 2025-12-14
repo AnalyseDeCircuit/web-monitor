@@ -136,20 +136,45 @@ func DockerActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	username, role, err := getUserAndRoleFromRequest(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Unauthorized",
+		})
+		return
+	}
+	if role != "admin" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Forbidden: Admin access required",
+		})
+		return
+	}
+
 	var request struct {
 		ID     string `json:"id"`
 		Action string `json:"action"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body: " + err.Error()})
 		return
 	}
 
 	if err := docker.ContainerAction(request.ID, request.Action); err != nil {
-		http.Error(w, "Docker action failed: "+err.Error(), http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Docker action failed: " + err.Error()})
 		return
 	}
+
+	// 记录操作日志
+	logs.LogOperation(username, "docker_action", fmt.Sprintf("%s %s", request.Action, request.ID), r.RemoteAddr)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -173,6 +198,71 @@ func SystemdServicesHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(services)
+}
+
+// SystemdActionHandler 处理 Systemd 服务操作请求
+func SystemdActionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	username, role, err := getUserAndRoleFromRequest(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Unauthorized",
+		})
+		return
+	}
+	if role != "admin" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Forbidden: Admin access required",
+		})
+		return
+	}
+
+	var req struct {
+		Unit   string `json:"unit"`
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	allowedActions := map[string]bool{
+		"start":   true,
+		"stop":    true,
+		"restart": true,
+		"reload":  true,
+		"enable":  true,
+		"disable": true,
+	}
+	if !allowedActions[req.Action] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid action"})
+		return
+	}
+
+	if err := systemd.ServiceAction(req.Unit, req.Action); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	// 记录操作日志
+	logs.LogOperation(username, "systemd_action", fmt.Sprintf("%s %s", req.Action, req.Unit), r.RemoteAddr)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
 // NetworkInfoHandler 处理网络信息请求
@@ -421,7 +511,15 @@ func CronLegacyHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(jobs)
 	case http.MethodPost:
 		username, role, err := getUserAndRoleFromRequest(r)
-		if err != nil || role != "admin" {
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Unauthorized",
+			})
+			return
+		}
+		if role != "admin" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{

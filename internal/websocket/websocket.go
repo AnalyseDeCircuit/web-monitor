@@ -34,6 +34,10 @@ var (
 	cpuTempHistory = make([]float64, 0, 300)
 	memHistory     = make([]float64, 0, 300)
 	historyMutex   sync.Mutex
+
+	raplReadings = make(map[string]uint64)
+	raplTime     time.Time
+	raplLock     sync.Mutex
 )
 
 // Upgrader WebSocket升级器
@@ -503,44 +507,127 @@ func getSensors() interface{} {
 func getPower() interface{} {
 	powerStatus := make(map[string]interface{})
 
-	// Try both regular and hostfs paths
-	paths := []string{"/sys/class/power_supply", "/hostfs/sys/class/power_supply"}
-
-	for _, basePath := range paths {
+	// 尝试从 /sys 或 /hostfs/sys 读取电池/适配器实时功耗
+	basePaths := []string{"/hostfs/sys/class/power_supply", "/sys/class/power_supply"}
+	foundConsumption := false
+	for _, basePath := range basePaths {
 		if _, err := os.Stat(basePath); err != nil {
 			continue
 		}
 
-		files, _ := os.ReadDir(basePath)
-		for _, f := range files {
-			supplyPath := filepath.Join(basePath, f.Name())
+		entries, _ := os.ReadDir(basePath)
+		for _, e := range entries {
+			supplyPath := filepath.Join(basePath, e.Name())
 
-			// Try power_now
+			// 优先使用 power_now（微瓦）
 			if content, err := os.ReadFile(filepath.Join(supplyPath, "power_now")); err == nil {
 				if pNow, err := strconv.ParseFloat(strings.TrimSpace(string(content)), 64); err == nil {
-					powerStatus["power_watts"] = utils.Round(pNow / 1000000)
+					powerStatus["consumption_watts"] = utils.Round(pNow / 1000000.0)
+					foundConsumption = true
+					break
 				}
 			}
 
-			// Try voltage_now
-			if content, err := os.ReadFile(filepath.Join(supplyPath, "voltage_now")); err == nil {
-				if vNow, err := strconv.ParseFloat(strings.TrimSpace(string(content)), 64); err == nil {
-					powerStatus["voltage_volts"] = utils.Round(vNow / 1000000)
-				}
-			}
-
-			// Try current_now
-			if content, err := os.ReadFile(filepath.Join(supplyPath, "current_now")); err == nil {
-				if cNow, err := strconv.ParseFloat(strings.TrimSpace(string(content)), 64); err == nil {
-					powerStatus["current_amps"] = utils.Round(cNow / 1000000)
-				}
+			// 其次使用 voltage_now * current_now（纳瓦转换为瓦）
+			vBytes, err1 := os.ReadFile(filepath.Join(supplyPath, "voltage_now"))
+			cBytes, err2 := os.ReadFile(filepath.Join(supplyPath, "current_now"))
+			if err1 == nil && err2 == nil {
+				vNow, _ := strconv.ParseFloat(strings.TrimSpace(string(vBytes)), 64)
+				cNow, _ := strconv.ParseFloat(strings.TrimSpace(string(cBytes)), 64)
+				powerStatus["consumption_watts"] = utils.Round((vNow * cNow) / 1e12)
+				foundConsumption = true
+				break
 			}
 		}
-
-		// If we found data, break
-		if len(powerStatus) > 0 {
+		if foundConsumption {
 			break
 		}
+	}
+
+	// RAPL (Intel Power) – 计算 CPU 等域的功耗并暴露 rapl 映射
+	raplLock.Lock()
+	defer raplLock.Unlock()
+
+	raplBasePaths := []string{"/hostfs/sys/class/powercap", "/sys/class/powercap"}
+	now := time.Now()
+	raplDomains := make(map[string]float64)
+	totalWatts := 0.0
+	hasNewReading := false
+
+	for _, basePath := range raplBasePaths {
+		matches, err := filepath.Glob(filepath.Join(basePath, "intel-rapl:*"))
+		if err != nil || len(matches) == 0 {
+			continue
+		}
+
+		for _, domainPath := range matches {
+			nameFile := filepath.Join(domainPath, "name")
+			nameBytes, err := os.ReadFile(nameFile)
+			if err != nil {
+				continue
+			}
+			name := strings.TrimSpace(string(nameBytes))
+
+			energyFile := filepath.Join(domainPath, "energy_uj")
+			maxEnergyFile := filepath.Join(domainPath, "max_energy_range_uj")
+
+			energyBytes, err := os.ReadFile(energyFile)
+			if err != nil {
+				continue
+			}
+			energyUj, parseErr := strconv.ParseUint(strings.TrimSpace(string(energyBytes)), 10, 64)
+			if parseErr != nil {
+				continue
+			}
+
+			if lastEnergy, ok := raplReadings[domainPath]; ok && !raplTime.IsZero() {
+				dt := now.Sub(raplTime).Seconds()
+				if dt > 0 {
+					var de uint64
+					if energyUj >= lastEnergy {
+						de = energyUj - lastEnergy
+					} else {
+						// 处理计数器回绕
+						var maxRange uint64
+						if maxBytes, err := os.ReadFile(maxEnergyFile); err == nil {
+							maxRange, _ = strconv.ParseUint(strings.TrimSpace(string(maxBytes)), 10, 64)
+						}
+						if maxRange > 0 {
+							de = (maxRange - lastEnergy) + energyUj
+						} else {
+							de = 0
+						}
+					}
+
+					if de > 0 {
+						watts := (float64(de) / 1000000.0) / dt
+						if watts < 0 {
+							watts = 0
+						}
+						// 记录每个 RAPL 域的功耗
+						raplDomains[name] = utils.Round(watts)
+						// 汇总 package 域作为总功耗
+						if strings.HasPrefix(strings.ToLower(name), "package") {
+							totalWatts += watts
+						}
+					}
+				}
+			}
+
+			raplReadings[domainPath] = energyUj
+			hasNewReading = true
+		}
+	}
+
+	if hasNewReading {
+		raplTime = now
+	}
+	if totalWatts > 0 {
+		// 如果电池没有提供 consumption_watts，则使用 RAPL 计算的总功耗
+		powerStatus["consumption_watts"] = utils.Round(totalWatts)
+	}
+	if len(raplDomains) > 0 {
+		powerStatus["rapl"] = raplDomains
 	}
 
 	return powerStatus
