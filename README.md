@@ -14,6 +14,8 @@
 *   **SSH 监控**：监控 SSH 连接数、活跃会话、登录历史及失败记录。
 *   **安全审计**：内置用户角色系统 (Admin/User)，记录关键操作日志。
 *   **Prometheus 集成**：暴露 `/metrics` 接口，支持 Prometheus/Grafana 采集。
+*   **告警配置**：支持 CPU、内存、磁盘使用率阈值告警，可配置 Webhook。
+*   **电源管理**：查看和调整系统电源性能模式（需硬件支持）。
 
 ## 🚀 快速部署 (Docker Compose)
 
@@ -69,16 +71,125 @@ PORT=8080 ./web-monitor-go
 
 注意：直接运行时，程序会直接调用宿主机命令，不需要 `/hostfs` 机制。
 
-## 📝 配置文件与数据
+## 🔒 安全特性
 
-所有持久化数据（用户数据库、日志）存储在 `/data` 目录下。在 Docker 部署中，这被映射为 `web-monitor-data` 卷。
+Web Monitor 内置多层安全机制，确保系统安全：
 
-## 🖥️ 兼容性
+### 认证与授权
+*   **JWT 令牌认证**：使用标准 JWT (JSON Web Token) 进行会话管理，令牌24小时过期。
+*   **角色权限控制**：管理员 (admin) 和普通用户 (user) 两级权限。
+*   **密码策略**：密码必须至少8位，包含大小写字母、数字和特殊字符中的三种。
+*   **账户锁定**：连续5次登录失败后账户锁定15分钟。
+*   **速率限制**：登录接口限流，防止暴力破解。
 
-*   **OS**: Linux (推荐 Ubuntu, Debian, CentOS, Alpine)
-*   **架构**: AMD64, ARM64
-*   **浏览器**: Chrome, Firefox, Edge, Safari (现代浏览器)
+### 网络安全
+*   **安全HTTP头**：自动设置 CSP, X-Frame-Options, X-XSS-Protection 等安全头。
+*   **CSP策略**：严格的内容安全策略，防止 XSS 攻击。
+*   **输入验证**：所有用户输入均经过严格验证，防止命令注入。
+*   **HTTPS就绪**：支持配置 TLS 证书，启用 HTTPS。
+
+### 操作审计
+*   **完整操作日志**：记录所有关键操作（登录、用户管理、服务操作等）。
+*   **IP地址记录**：记录操作来源 IP。
+*   **日志保留**：保留最近1000条操作日志。
+
+## 📊 监控指标
+
+Web Monitor 通过 Prometheus 暴露丰富的系统指标，包括：
+
+*   `system_cpu_usage_percent`: CPU 使用率
+*   `system_memory_usage_percent`: 内存使用率
+*   `system_memory_total_bytes`: 总内存大小
+*   `system_memory_used_bytes`: 已用内存大小
+*   `system_disk_usage_percent`: 磁盘使用率（按挂载点）
+*   `system_network_sent_bytes_total`: 网络发送总字节数
+*   `system_network_recv_bytes_total`: 网络接收总字节数
+*   `system_temperature_celsius`: 硬件温度（按传感器）
+
+可通过 `/metrics` 端点采集数据，与 Prometheus + Grafana 集成。
+
+## ⚙️ 配置说明
+
+### 环境变量
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `PORT` | `8000` | 服务监听端口 |
+| `JWT_SECRET` | 自动生成 | JWT 签名密钥，建议在生产环境设置 |
+| `SSL_CERT_FILE` | 空 | TLS 证书文件路径（启用 HTTPS） |
+| `SSL_KEY_FILE` | 空 | TLS 私钥文件路径（启用 HTTPS） |
+
+### 数据持久化
+
+所有持久化数据（用户数据库、日志、告警配置）存储在 `/data` 目录下。在 Docker 部署中，这被映射为 `web-monitor-data` 卷。
+
+## 🐛 故障排除
+
+### 常见问题
+
+1.  **无法查看 Systemd 服务或 Cron 任务**
+    *   检查 Docker 是否挂载了 `/:/hostfs` 目录。
+    *   确保容器以 `privileged: true` 权限运行。
+
+2.  **Docker 管理页面为空**
+    *   检查是否挂载了 `/var/run/docker.sock`。
+
+3.  **温度传感器显示为0**
+    *   确保挂载了 `/sys` 目录且容器有特权权限。
+
+4.  **忘记管理员密码**
+    ```bash
+    # 进入容器
+    docker exec -it web-monitor-go sh
+    
+    # 删除用户数据库
+    rm /data/users.json
+    
+    # 重启容器
+    docker restart web-monitor-go
+    ```
+    重启后系统将重新创建默认账户 (admin/admin123)。
+
+### 日志查看
+
+```bash
+# 查看容器日志
+docker logs web-monitor-go
+
+# 跟踪实时日志
+docker logs -f web-monitor-go
+```
+
+## 🤝 贡献指南
+
+欢迎提交 Issue 和 Pull Request 来改进 Web Monitor。
+
+### 开发环境搭建
+
+1. 克隆仓库
+2. 安装 Go 1.21+ 和 Node.js
+3. 运行 `go mod download` 下载依赖
+4. 启动开发服务器：`go run main.go`
+
+### 代码规范
+
+*   Go 代码遵循标准格式（使用 `go fmt`）
+*   前端代码使用 ES6+ 标准
+*   提交前请运行测试
 
 ## 📄 许可证
 
 CC BY-NC 4.0
+
+## 📞 支持
+
+*   [GitHub Issues](https://github.com/AnalyseDeCircuit/web-monitor/issues) - 报告问题或提出功能请求
+*   [使用手册](MANUAL.md) - 详细功能说明和配置指南
+*   [英文文档](README_EN.md) - English documentation
+
+---
+
+**注意事项**：
+1.  Web Monitor 需要较高权限访问系统信息，请仅在受信任的网络环境中部署。
+2.  生产环境务必修改默认密码并配置 HTTPS。
+3.  定期备份 `/data` 目录中的重要数据。
