@@ -261,9 +261,7 @@ type SSHStats struct {
 type SSHSession struct {
 	User      string `json:"user"`
 	IP        string `json:"ip"`
-	TTY       string `json:"tty"`
 	LoginTime string `json:"login_time"`
-	Connected string `json:"connected"`
 }
 
 // ProcessInfo 进程信息

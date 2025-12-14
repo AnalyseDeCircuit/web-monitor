@@ -64,10 +64,8 @@ func GetSSHStats() types.SSHStats {
 			if len(fields) >= 3 {
 				session := types.SSHSession{
 					User:      fields[0],
-					TTY:       fields[1],
 					LoginTime: "",
 					IP:        "",
-					Connected: "",
 				}
 
 				// Find IP in parentheses
@@ -81,10 +79,6 @@ func GetSSHStats() types.SSHStats {
 				if len(fields) >= 4 {
 					session.LoginTime = fields[2] + " " + fields[3]
 				}
-
-				// Calculate connected time (this would need the actual login time parsing)
-				// For now just show as connected
-				session.Connected = "connected"
 
 				sessions = append(sessions, session)
 			}
@@ -101,22 +95,19 @@ func GetSSHStats() types.SSHStats {
 	stats.FailedLogins = sshAuthCounters["failed"]
 
 	// Host Key Fingerprint
-	// Try multiple key types
+	// Try multiple key types and generate fingerprint
 	keyFiles := []string{
 		"/hostfs/etc/ssh/ssh_host_ed25519_key.pub",
 		"/hostfs/etc/ssh/ssh_host_rsa_key.pub",
 		"/hostfs/etc/ssh/ssh_host_ecdsa_key.pub",
 	}
 	for _, keyFile := range keyFiles {
-		if content, err := ioutil.ReadFile(keyFile); err == nil {
-			parts := strings.Fields(string(content))
-			if len(parts) >= 2 {
-				stats.HostKey = parts[1] // The key itself, frontend can truncate or hash if needed
-				// Or run ssh-keygen -lf
-				cmd := exec.Command("ssh-keygen", "-lf", keyFile)
-				if out, err := cmd.Output(); err == nil {
-					stats.HostKey = strings.TrimSpace(string(out))
-				}
+		// Check if file exists
+		if _, err := os.Stat(keyFile); err == nil {
+			// Generate fingerprint using ssh-keygen
+			cmd := exec.Command("ssh-keygen", "-lf", keyFile)
+			if out, err := cmd.Output(); err == nil {
+				stats.HostKey = strings.TrimSpace(string(out))
 				break
 			}
 		}

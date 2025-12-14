@@ -22,16 +22,19 @@ func ListCronJobs() ([]types.CronJob, error) {
 	defer cronMutex.Unlock()
 
 	cmd := exec.Command("chroot", "/hostfs", "crontab", "-l")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 
 	// If no crontab exists, it returns exit code 1, which is fine, just return empty list
 	if err != nil {
-		// Check if it's just "no crontab for root"
+		// Check if it's just "no crontab for root" or "no crontab for user"
+		outputStr := string(output)
 		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
-			return []types.CronJob{}, nil
+			if strings.Contains(outputStr, "no crontab") {
+				return []types.CronJob{}, nil
+			}
 		}
 		// Real error
-		return nil, fmt.Errorf("failed to list cron jobs: %v", err)
+		return nil, fmt.Errorf("failed to list cron jobs: %v, output: %s", err, outputStr)
 	}
 
 	var jobs []types.CronJob

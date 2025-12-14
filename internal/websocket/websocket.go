@@ -311,6 +311,27 @@ func getCPUInfo() types.CPUDetail {
 	info.Cores, _ = cpu.Counts(false)
 	info.Threads, _ = cpu.Counts(true)
 
+	// Read CPU model from /proc/cpuinfo
+	paths := []string{"/hostfs/proc/cpuinfo", "/proc/cpuinfo"}
+	for _, path := range paths {
+		if file, err := os.Open(path); err == nil {
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.HasPrefix(line, "model name") {
+					parts := strings.Split(line, ":")
+					if len(parts) > 1 {
+						info.Model = strings.TrimSpace(parts[1])
+						file.Close()
+						return info
+					}
+				}
+			}
+			file.Close()
+			break
+		}
+	}
+
 	return info
 }
 
