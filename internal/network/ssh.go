@@ -22,6 +22,7 @@ var (
 	sshAuthLogOffset int64
 	sshAuthCounters  = map[string]int{"publickey": 0, "password": 0, "other": 0, "failed": 0}
 	sshStatsLock     sync.Mutex
+	clkTckCache      int64
 )
 
 // GetSSHStats 获取SSH统计信息
@@ -137,53 +138,44 @@ func GetSSHStats() types.SSHStats {
 }
 
 func checkPort22Open() bool {
-	// Method 1: netstat
-	cmd := exec.Command("netstat", "-tuln")
+	// Method 1: /proc/net/tcp (fastest, no exec)
+	// Port 22 is 0016 in hex. State 0A is LISTEN.
+	checkProc := func(path string) bool {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return false
+		}
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) < 4 {
+				continue
+			}
+			localAddr := fields[1]
+			state := fields[3]
+			if strings.HasSuffix(localAddr, ":0016") && state == "0A" {
+				return true
+			}
+		}
+		return false
+	}
+
+	if checkProc("/proc/net/tcp") || checkProc("/hostfs/proc/net/tcp") {
+		return true
+	}
+
+	// Method 2: ss (fallback)
+	cmd := exec.Command("ss", "-tuln")
 	out, err := cmd.Output()
 	if err == nil && strings.Contains(string(out), ":22 ") {
 		return true
 	}
 
-	// Method 2: ss
-	cmd = exec.Command("ss", "-tuln")
+	// Method 3: netstat (fallback)
+	cmd = exec.Command("netstat", "-tuln")
 	out, err = cmd.Output()
 	if err == nil && strings.Contains(string(out), ":22 ") {
 		return true
-	}
-
-	// Method 3: /proc/net/tcp (if mounted from host or using host net)
-	// Port 22 is 0016 in hex. State 0A is LISTEN.
-	content, err := os.ReadFile("/proc/net/tcp")
-	if err == nil {
-		lines := strings.Split(string(content), "\n")
-		for _, line := range lines {
-			fields := strings.Fields(line)
-			if len(fields) < 4 {
-				continue
-			}
-			localAddr := fields[1]
-			state := fields[3]
-			if strings.HasSuffix(localAddr, ":0016") && state == "0A" {
-				return true
-			}
-		}
-	}
-
-	// Method 4: /hostfs/proc/net/tcp (if mounted)
-	content, err = os.ReadFile("/hostfs/proc/net/tcp")
-	if err == nil {
-		lines := strings.Split(string(content), "\n")
-		for _, line := range lines {
-			fields := strings.Fields(line)
-			if len(fields) < 4 {
-				continue
-			}
-			localAddr := fields[1]
-			state := fields[3]
-			if strings.HasSuffix(localAddr, ":0016") && state == "0A" {
-				return true
-			}
-		}
 	}
 
 	return false
@@ -334,13 +326,6 @@ func getSSHSessionsFromWho() []types.SSHSession {
 }
 
 func getSSHSessionsFromHostProc() []types.SSHSession {
-	// Build who-based time map to keep legacy-like timestamps when available.
-	whoSessions := getSSHSessionsFromWho()
-	whoTimeByUserIP := make(map[string]string, len(whoSessions))
-	for _, s := range whoSessions {
-		whoTimeByUserIP[s.User+"|"+s.IP] = s.LoginTime
-	}
-
 	clkTck := getClockTicksPerSecond()
 	bootTime := getHostBootTimeUnix()
 	remoteIPByInode := buildSSHRemoteIPByInode()
@@ -393,11 +378,9 @@ func getSSHSessionsFromHostProc() []types.SSHSession {
 			continue
 		}
 
-		loginTime := whoTimeByUserIP[user+"|"+ip]
-		if loginTime == "" {
-			if ts, ok := procStartTimeRFC3339(pid, bootTime, clkTck); ok {
-				loginTime = ts
-			}
+		var loginTime string
+		if ts, ok := procStartTimeRFC3339(pid, bootTime, clkTck); ok {
+			loginTime = ts
 		}
 		if loginTime == "" {
 			// Best-effort fallback; keep stable format for UI.
@@ -594,15 +577,21 @@ func getHostBootTimeUnix() int64 {
 }
 
 func getClockTicksPerSecond() int64 {
+	if clkTckCache > 0 {
+		return clkTckCache
+	}
 	cmd := exec.Command("getconf", "CLK_TCK")
 	out, err := cmd.Output()
 	if err != nil {
+		clkTckCache = 100
 		return 100
 	}
 	v, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
 	if err != nil || v <= 0 {
+		clkTckCache = 100
 		return 100
 	}
+	clkTckCache = v
 	return v
 }
 

@@ -1,23 +1,26 @@
 # Build stage (offline-friendly, uses vendored deps)
-FROM golang:1.23-alpine AS builder
+FROM golang:1.23-bookworm AS builder
 WORKDIR /app
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
-ENV CGO_ENABLED=0 GO111MODULE=on GOOS=linux GOARCH=amd64
+# Use Aliyun mirror for Debian
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+ENV CGO_ENABLED=1 GO111MODULE=on GOOS=linux GOARCH=amd64
 COPY go.mod ./
 COPY vendor ./vendor
 COPY . .
 RUN go build -mod=vendor -ldflags="-s -w" -trimpath -o server ./cmd/server
 
 # Runtime stage
-FROM alpine:latest
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add --no-cache ca-certificates tzdata pciutils net-tools iproute2 && \
-    rm -rf /var/cache/apk/* /var/lib/apk/*
+FROM debian:bookworm-slim
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates tzdata pciutils net-tools iproute2 curl \
+    && update-pciids \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/server .
 COPY templates/ ./templates/
 COPY static/ ./static/
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:8000/api/info || exit 1
+    CMD curl -f http://localhost:8000/api/info || exit 1
 CMD ["./server"]

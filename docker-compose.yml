@@ -15,6 +15,9 @@ services:
       - DATA_DIR=/data
       - JWT_SECRET=${JWT_SECRET}
       - WS_ALLOWED_ORIGINS=${WS_ALLOWED_ORIGINS}
+      # NVIDIA GPU Support (Dynamic)
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - /:/hostfs
       - /sys:/sys
@@ -25,15 +28,7 @@ services:
       - /etc/group:/etc/group:ro
       - web-monitor-data:/data
     restart: unless-stopped
-    # 内存和CPU优化
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 256M
-        reservations:
-          cpus: '0.5'
-          memory: 128M
+
 
 volumes:
   web-monitor-data:

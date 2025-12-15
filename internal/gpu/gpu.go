@@ -3,8 +3,10 @@ package gpu
 
 import (
 	"bufio"
+	"compress/gzip"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
 
 var (
@@ -23,12 +26,23 @@ var (
 	gpuDetailsCache []types.GPUDetail
 	lastDetailsTime time.Time
 
-	// nvidia-smi availability cache
-	nvidiaSmiAvailable     bool
+	// NVML state
+	nvmlInitialized bool
+
+	// nvidia-smi state
 	nvidiaSmiChecked       bool
+	nvidiaSmiAvailable     bool
 	nvidiaSmiCheckTime     time.Time
-	nvidiaSmiCheckInterval = 5 * time.Minute
+	nvidiaSmiCheckInterval = 1 * time.Minute
 )
+
+// nvidiaProcess represents a process running on NVIDIA GPU
+type nvidiaProcess struct {
+	BusID    string
+	PID      int
+	Name     string
+	VRAMUsed string
+}
 
 // GetGPUInfo 获取GPU详细信息
 func GetGPUInfo() []types.GPUDetail {
@@ -42,22 +56,22 @@ func GetGPUInfo() []types.GPUDetail {
 
 	var details []types.GPUDetail
 
-	// Try nvidia-smi first for NVIDIA GPUs (provides much richer data)
+	// Try NVML first for NVIDIA GPUs
 	nvidiaGPUs := getNvidiaGPUInfo()
 	if len(nvidiaGPUs) > 0 {
 		details = append(details, nvidiaGPUs...)
 	}
 
-	// Then scan DRM for other GPUs (Intel, AMD, or NVIDIA without nvidia-smi)
+	// Then scan DRM for other GPUs (Intel, AMD, or NVIDIA without NVML)
 	drmGPUs := getDRMGPUInfo(len(details))
 
-	// Merge: skip DRM entries that are already covered by nvidia-smi
+	// Merge: skip DRM entries that are already covered by NVML
 	nvidiaIndices := make(map[string]bool)
 	for _, g := range nvidiaGPUs {
 		nvidiaIndices[g.PCIAddress] = true
 	}
 	for _, g := range drmGPUs {
-		// Skip if this is an NVIDIA GPU already reported by nvidia-smi
+		// Skip if this is an NVIDIA GPU already reported by NVML
 		if strings.Contains(strings.ToLower(g.Vendor), "10de") && len(nvidiaGPUs) > 0 {
 			continue
 		}
@@ -69,38 +83,176 @@ func GetGPUInfo() []types.GPUDetail {
 	return details
 }
 
-// checkNvidiaSmi checks if nvidia-smi is available
-func checkNvidiaSmi() bool {
-	now := time.Now()
-	if nvidiaSmiChecked && now.Sub(nvidiaSmiCheckTime) < nvidiaSmiCheckInterval {
-		return nvidiaSmiAvailable
+// commonUtil converts C-style null-terminated byte array to string
+func commonUtil(b []byte) string {
+	n := 0
+	for n < len(b) && b[n] != 0 {
+		n++
 	}
-
-	nvidiaSmiChecked = true
-	nvidiaSmiCheckTime = now
-
-	// Check common paths
-	paths := []string{
-		"nvidia-smi",
-		"/usr/bin/nvidia-smi",
-		"/usr/local/bin/nvidia-smi",
-		"/hostfs/usr/bin/nvidia-smi",
-	}
-	for _, p := range paths {
-		if _, err := exec.LookPath(p); err == nil {
-			nvidiaSmiAvailable = true
-			return true
-		}
-	}
-	nvidiaSmiAvailable = false
-	return false
+	return string(b[:n])
 }
 
-// getNvidiaGPUInfo gets detailed NVIDIA GPU info via nvidia-smi
+// getNvidiaGPUInfo gets detailed NVIDIA GPU info via NVML
 func getNvidiaGPUInfo() []types.GPUDetail {
+	if !nvmlInitialized {
+		if ret := nvml.Init(); ret != nvml.SUCCESS {
+			// Fallback to nvidia-smi if NVML init fails (e.g. library not found)
+			return getNvidiaGPUInfoLegacy()
+		}
+		nvmlInitialized = true
+	}
+
+	count, ret := nvml.DeviceGetCount()
+	if ret != nvml.SUCCESS {
+		return nil
+	}
+
+	var gpus []types.GPUDetail
+	for i := 0; i < count; i++ {
+		device, ret := nvml.DeviceGetHandleByIndex(i)
+		if ret != nvml.SUCCESS {
+			continue
+		}
+
+		name, _ := device.GetName()
+		pciInfo, _ := device.GetPciInfo()
+		memInfo, _ := device.GetMemoryInfo()
+		util, _ := device.GetUtilizationRates()
+		temp, _ := device.GetTemperature(nvml.TEMPERATURE_GPU)
+		power, _ := device.GetPowerUsage() // in milliwatts
+
+		var vramPercent float64
+		if memInfo.Total > 0 {
+			vramPercent = (float64(memInfo.Used) / float64(memInfo.Total)) * 100
+		}
+
+		gpu := types.GPUDetail{
+			Index:       i,
+			Name:        "NVIDIA " + name,
+			Vendor:      "0x10de",
+			PCIAddress:  commonUtil(pciInfo.BusId[:]),
+			DRMCard:     fmt.Sprintf("card%d", i),
+			VRAMTotal:   formatBytes(float64(memInfo.Total)),
+			VRAMUsed:    formatBytes(float64(memInfo.Used)),
+			VRAMPercent: vramPercent,
+			FreqMHz:     0, // Could query clock info if needed
+			TempC:       float64(temp),
+			PowerW:      float64(power) / 1000.0,
+			LoadPercent: float64(util.Gpu),
+		}
+
+		// Get processes
+		procs, ret := device.GetComputeRunningProcesses()
+		if ret == nvml.SUCCESS {
+			for _, p := range procs {
+				// NVML returns PID and memory used. Need to resolve name.
+				procName := "unknown"
+				// Try to read process name from /proc
+				if nameBytes, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", p.Pid)); err == nil {
+					procName = strings.TrimSpace(string(nameBytes))
+				} else if nameBytes, err := os.ReadFile(fmt.Sprintf("/hostfs/proc/%d/comm", p.Pid)); err == nil {
+					procName = strings.TrimSpace(string(nameBytes))
+				}
+
+				gpu.Processes = append(gpu.Processes, types.GPUProcess{
+					PID:      int(p.Pid),
+					Name:     procName,
+					VRAMUsed: formatBytes(float64(p.UsedGpuMemory)),
+				})
+			}
+		}
+
+		// Also check graphics processes
+		gProcs, ret := device.GetGraphicsRunningProcesses()
+		if ret == nvml.SUCCESS {
+			for _, p := range gProcs {
+				// Check if already added
+				exists := false
+				for _, existing := range gpu.Processes {
+					if existing.PID == int(p.Pid) {
+						exists = true
+						break
+					}
+				}
+				if exists {
+					continue
+				}
+
+				procName := "unknown"
+				if nameBytes, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", p.Pid)); err == nil {
+					procName = strings.TrimSpace(string(nameBytes))
+				} else if nameBytes, err := os.ReadFile(fmt.Sprintf("/hostfs/proc/%d/comm", p.Pid)); err == nil {
+					procName = strings.TrimSpace(string(nameBytes))
+				}
+
+				gpu.Processes = append(gpu.Processes, types.GPUProcess{
+					PID:      int(p.Pid),
+					Name:     procName,
+					VRAMUsed: formatBytes(float64(p.UsedGpuMemory)),
+				})
+			}
+		}
+
+		gpus = append(gpus, gpu)
+	}
+
+	return gpus
+}
+
+// getNvidiaProcesses gets the list of processes running on NVIDIA GPUs
+func getNvidiaProcesses() []nvidiaProcess {
+	cmd := exec.Command("nvidia-smi",
+		"--query-compute-apps=gpu_bus_id,pid,process_name,used_memory",
+		"--format=csv,noheader,nounits")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	var procs []nvidiaProcess
+	reader := csv.NewReader(strings.NewReader(string(output)))
+	reader.TrimLeadingSpace = true
+
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			break
+		}
+		if len(record) < 4 {
+			continue
+		}
+
+		busID := strings.TrimSpace(record[0])
+		pid, _ := strconv.Atoi(strings.TrimSpace(record[1]))
+		name := strings.TrimSpace(record[2])
+		mem := strings.TrimSpace(record[3])
+
+		procs = append(procs, nvidiaProcess{
+			BusID:    busID,
+			PID:      pid,
+			Name:     name,
+			VRAMUsed: mem + " MiB",
+		})
+	}
+
+	return procs
+}
+
+// getNvidiaGPUInfoLegacy gets detailed NVIDIA GPU info via nvidia-smi (Fallback)
+func getNvidiaGPUInfoLegacy() []types.GPUDetail {
 	if !checkNvidiaSmi() {
 		return nil
 	}
+
+	// Start fetching processes in parallel
+	var procs []nvidiaProcess
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		procs = getNvidiaProcesses()
+	}()
 
 	// Query format: index, name, pci.bus_id, memory.total, memory.used, utilization.gpu, temperature.gpu, power.draw
 	cmd := exec.Command("nvidia-smi",
@@ -108,6 +260,10 @@ func getNvidiaGPUInfo() []types.GPUDetail {
 		"--format=csv,noheader,nounits")
 
 	output, err := cmd.Output()
+
+	// Wait for process fetching to complete
+	wg.Wait()
+
 	if err != nil {
 		return nil
 	}
@@ -157,12 +313,12 @@ func getNvidiaGPUInfo() []types.GPUDetail {
 	}
 
 	// Try to get GPU processes
-	if len(gpus) > 0 {
-		procs := getNvidiaProcesses()
+	if len(gpus) > 0 && len(procs) > 0 {
 		// Attach processes to GPUs
 		for i := range gpus {
 			for _, p := range procs {
-				if p.GPUIndex == gpus[i].Index {
+				// Match by PCI Bus ID (exact string match usually works for nvidia-smi output)
+				if p.BusID == gpus[i].PCIAddress {
 					gpus[i].Processes = append(gpus[i].Processes, types.GPUProcess{
 						PID:      p.PID,
 						Name:     p.Name,
@@ -176,50 +332,31 @@ func getNvidiaGPUInfo() []types.GPUDetail {
 	return gpus
 }
 
-type nvidiaProcess struct {
-	GPUIndex int
-	PID      int
-	Name     string
-	VRAMUsed string
-}
-
-// getNvidiaProcesses gets processes using NVIDIA GPUs
-func getNvidiaProcesses() []nvidiaProcess {
-	cmd := exec.Command("nvidia-smi",
-		"--query-compute-apps=gpu_bus_id,pid,process_name,used_memory",
-		"--format=csv,noheader,nounits")
-
-	output, err := cmd.Output()
-	if err != nil {
-		return nil
+// checkNvidiaSmi checks if nvidia-smi is available
+func checkNvidiaSmi() bool {
+	now := time.Now()
+	if nvidiaSmiChecked && now.Sub(nvidiaSmiCheckTime) < nvidiaSmiCheckInterval {
+		return nvidiaSmiAvailable
 	}
 
-	var procs []nvidiaProcess
-	reader := csv.NewReader(strings.NewReader(string(output)))
-	reader.TrimLeadingSpace = true
+	nvidiaSmiChecked = true
+	nvidiaSmiCheckTime = now
 
-	for {
-		record, err := reader.Read()
-		if err != nil {
-			break
-		}
-		if len(record) < 4 {
-			continue
-		}
-
-		pid, _ := strconv.Atoi(strings.TrimSpace(record[1]))
-		name := strings.TrimSpace(record[2])
-		mem := strings.TrimSpace(record[3])
-
-		procs = append(procs, nvidiaProcess{
-			GPUIndex: 0, // Will be matched by bus_id in a more complete implementation
-			PID:      pid,
-			Name:     name,
-			VRAMUsed: mem + " MiB",
-		})
+	// Check common paths
+	paths := []string{
+		"nvidia-smi",
+		"/usr/bin/nvidia-smi",
+		"/usr/local/bin/nvidia-smi",
+		"/hostfs/usr/bin/nvidia-smi",
 	}
-
-	return procs
+	for _, p := range paths {
+		if _, err := exec.LookPath(p); err == nil {
+			nvidiaSmiAvailable = true
+			return true
+		}
+	}
+	nvidiaSmiAvailable = false
+	return false
 }
 
 // detectGPUDriver detects the driver used by a DRM card
@@ -523,13 +660,18 @@ func lookupPCIName(vendorID, deviceID string) string {
 		"/usr/share/misc/pci.ids",
 		"/hostfs/usr/share/hwdata/pci.ids",
 		"/hostfs/usr/share/misc/pci.ids",
+		// Compressed paths
+		"/usr/share/misc/pci.ids.gz",
+		"/usr/share/pci.ids.gz",
 	}
 
 	var file *os.File
 	var err error
+	var selectedPath string
 	for _, path := range paths {
 		file, err = os.Open(path)
 		if err == nil {
+			selectedPath = path
 			break
 		}
 	}
@@ -538,7 +680,17 @@ func lookupPCIName(vendorID, deviceID string) string {
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
+	var reader io.Reader = file
+	if strings.HasSuffix(selectedPath, ".gz") {
+		gzReader, err := gzip.NewReader(file)
+		if err != nil {
+			return ""
+		}
+		defer gzReader.Close()
+		reader = gzReader
+	}
+
+	scanner := bufio.NewScanner(reader)
 	inVendor := false
 	for scanner.Scan() {
 		line := scanner.Text()

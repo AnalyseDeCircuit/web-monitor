@@ -15,6 +15,8 @@ import (
 
 func clientIP(r *http.Request) string {
 	// Prefer proxy headers when present.
+	// SECURITY WARNING: Trusting these headers blindly is dangerous if the server is directly accessible.
+	// Ensure your firewall (e.g., UFW, iptables) only allows traffic from trusted proxies (e.g., Cloudflare IPs).
 	if v := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); v != "" {
 		return v
 	}
