@@ -2,13 +2,19 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/api/handlers"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 )
 
 func main() {
@@ -55,8 +61,35 @@ func main() {
 	if port == "" {
 		port = "8000"
 	}
-	log.Printf("Server starting on port %s...\n", port)
-	if err := router.Start(":" + port); err != nil {
-		log.Fatal("Server failed to start: ", err)
+
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: router.Handler(),
 	}
+
+	// 启动服务器（非阻塞）
+	go func() {
+		log.Printf("Server starting on port %s...\n", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("Server failed to start: ", err)
+		}
+	}()
+
+	// 等待中断信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	// 优雅关闭 WebSocket hub
+	websocket.Shutdown()
+
+	// 优雅关闭 HTTP 服务器（等待最多 10 秒）
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited gracefully")
 }

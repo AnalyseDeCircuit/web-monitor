@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,14 +21,19 @@ type dynamicResponseCollector struct {
 
 	collect func() types.Response
 
+	ctx      context.Context
+	cancel   context.CancelFunc
 	updateCh chan time.Duration
 	last     atomic.Value // stores types.Response
 }
 
 func newDynamicResponseCollector(collect func() types.Response) *dynamicResponseCollector {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &dynamicResponseCollector{
 		ready:    make(chan struct{}),
 		collect:  collect,
+		ctx:      ctx,
+		cancel:   cancel,
 		updateCh: make(chan time.Duration, 1),
 	}
 }
@@ -48,6 +54,9 @@ func (c *dynamicResponseCollector) Start(initialInterval time.Duration) {
 
 			for {
 				select {
+				case <-c.ctx.Done():
+					log.Println("dynamicResponseCollector: shutting down")
+					return
 				case <-ticker.C:
 					c.last.Store(c.collect())
 				case d := <-c.updateCh:
@@ -64,6 +73,12 @@ func (c *dynamicResponseCollector) Start(initialInterval time.Duration) {
 			}
 		}()
 	})
+}
+
+func (c *dynamicResponseCollector) Stop() {
+	if c.cancel != nil {
+		c.cancel()
+	}
 }
 
 func (c *dynamicResponseCollector) SetInterval(d time.Duration) {
@@ -105,12 +120,14 @@ type conditionalCollector[T any] struct {
 	interval time.Duration
 	collect  func() T
 
-	mu      sync.Mutex
-	subs    int
-	running bool
-	cancel  context.CancelFunc
-	ready   chan struct{}
-	last    atomic.Value // stores T
+	mu       sync.Mutex
+	subs     int
+	running  bool
+	ctx      context.Context
+	cancel   context.CancelFunc
+	ready    chan struct{}
+	last     atomic.Value // stores T
+	shutdown bool         // permanent shutdown flag
 }
 
 func newConditionalCollector[T any](interval time.Duration, collect func() T) *conditionalCollector[T] {
@@ -126,14 +143,16 @@ func newConditionalCollector[T any](interval time.Duration, collect func() T) *c
 func (c *conditionalCollector[T]) Subscribe() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.shutdown {
+		return
+	}
 	c.subs++
 	if c.running {
 		return
 	}
 	c.running = true
 	c.ready = make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	c.cancel = cancel
+	c.ctx, c.cancel = context.WithCancel(context.Background())
 
 	go func() {
 		// Prime immediately.
@@ -144,7 +163,8 @@ func (c *conditionalCollector[T]) Subscribe() {
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-c.ctx.Done():
+				log.Println("conditionalCollector: shutting down")
 				return
 			case <-ticker.C:
 				c.last.Store(c.collect())
@@ -169,6 +189,20 @@ func (c *conditionalCollector[T]) Unsubscribe() {
 	if c.cancel != nil {
 		c.cancel()
 		c.cancel = nil
+	}
+}
+
+func (c *conditionalCollector[T]) Stop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.shutdown = true
+	c.subs = 0
+	if c.running {
+		c.running = false
+		if c.cancel != nil {
+			c.cancel()
+			c.cancel = nil
+		}
 	}
 }
 
@@ -208,6 +242,7 @@ type statsHub struct {
 
 	mu             sync.Mutex
 	clientInterval map[uint64]time.Duration
+	shutdown       bool
 }
 
 func newStatsHub() *statsHub {
@@ -220,6 +255,22 @@ func newStatsHub() *statsHub {
 	// Start base immediately with a sane default.
 	h.base.Start(5 * time.Second)
 	return h
+}
+
+// Shutdown gracefully stops all collectors
+func (h *statsHub) Shutdown() {
+	h.mu.Lock()
+	if h.shutdown {
+		h.mu.Unlock()
+		return
+	}
+	h.shutdown = true
+	h.mu.Unlock()
+
+	log.Println("statsHub: shutting down all collectors")
+	h.base.Stop()
+	h.processes.Stop()
+	h.netDetail.Stop()
 }
 
 func (h *statsHub) RegisterClient(id uint64, interval time.Duration) {

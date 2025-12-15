@@ -49,6 +49,14 @@ var (
 	wsClientID uint64
 )
 
+// Shutdown gracefully stops the WebSocket hub and all collectors.
+// Call this during application shutdown.
+func Shutdown() {
+	if wsHub != nil {
+		wsHub.Shutdown()
+	}
+}
+
 // Upgrader WebSocket升级器
 var Upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {

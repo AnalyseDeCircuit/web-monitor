@@ -131,3 +131,8 @@ func wrapWithAPIAuthorization(next http.Handler) http.Handler {
 func (r *Router) Start(addr string) error {
 	return http.ListenAndServe(addr, wrapWithAPIAuthorization(r.mux))
 }
+
+// Handler 返回包装了授权中间件的 HTTP Handler
+func (r *Router) Handler() http.Handler {
+	return wrapWithAPIAuthorization(r.mux)
+}
