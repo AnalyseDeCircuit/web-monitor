@@ -178,6 +178,49 @@ func DockerActionHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DockerImageRemoveHandler 删除Docker镜像（仅管理员）
+func DockerImageRemoveHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	username, role, err := getUserAndRoleFromRequest(r)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	if role != "admin" {
+		writeJSONError(w, http.StatusForbidden, "Forbidden: Admin access required")
+		return
+	}
+
+	var request struct {
+		ID      string `json:"id"`
+		Force   bool   `json:"force,omitempty"`
+		NoPrune bool   `json:"noprune,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return
+	}
+	if request.ID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Missing image id")
+		return
+	}
+
+	if err := docker.RemoveImage(request.ID, request.Force, request.NoPrune); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Docker image remove failed: "+err.Error())
+		return
+	}
+
+	logs.LogOperation(username, "docker_image_remove", fmt.Sprintf("remove %s", request.ID), r.RemoteAddr)
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": "Docker image removed",
+	})
+}
+
 // SystemdServicesHandler 处理Systemd服务请求
 func SystemdServicesHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
@@ -294,8 +337,10 @@ func PowerInfoHandler(w http.ResponseWriter, r *http.Request) {
 // PrometheusMetricsHandler 处理Prometheus指标请求
 func PrometheusMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		// metrics 输出为 text/plain；这里保持简单
+		// metrics 输出为 text/plain；这里保持简单且明确
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = w.Write([]byte("Method not allowed"))
 		return
 	}
 
@@ -326,62 +371,6 @@ func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
 		"version": "1.0.0",
 		"message": "Web Monitor is running",
 	})
-}
-
-// NetworkDiagnosticsHandler 处理网络诊断请求
-func NetworkDiagnosticsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var request struct {
-		Action string `json:"action"`
-		Target string `json:"target"`
-		Count  int    `json:"count,omitempty"`
-		Ports  []int  `json:"ports,omitempty"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	var result interface{}
-	var err error
-
-	switch request.Action {
-	case "ping":
-		count := 4
-		if request.Count > 0 {
-			count = request.Count
-		}
-		result, err = network.PingTarget(request.Target, count)
-	case "traceroute":
-		result, err = network.TracerouteTarget(request.Target, 30)
-	case "portscan":
-		ports := request.Ports
-		if len(ports) == 0 {
-			// 默认扫描常用端口
-			ports = []int{22, 80, 443, 8080, 3306, 5432}
-		}
-		result, err = network.PortScan(request.Target, ports, 2*time.Second)
-	case "dns":
-		result, err = network.DNSLookup(request.Target, "A")
-	case "interfaces":
-		result, err = network.GetNetworkInterfaces()
-	default:
-		http.Error(w, "Invalid network action: "+request.Action, http.StatusBadRequest)
-		return
-	}
-
-	if err != nil {
-		http.Error(w, "Network diagnostic failed: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
 }
 
 // PowerActionHandler 处理电源操作请求

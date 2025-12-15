@@ -14,6 +14,9 @@
 - **返回格式**：
   - JSON：`application/json`
   - 文本：`text/plain`
+- **明确的非 JSON 端点**（请使用 `response.text()`）：
+  - `GET /api/metrics`（Prometheus 指标输出）
+  - `GET /api/cron/logs`（Cron 日志文本）
 - **错误返回**：
   - 部分 handler 使用 `http.Error(...)`，会返回 `text/plain` 的错误字符串
   - admin-only 的认证失败通常返回 JSON：`{"error":"..."}`
@@ -78,7 +81,10 @@
 
 ### POST /api/password
 
-修改密码（当前为占位实现，尚未做 JWT/角色校验）。
+修改密码（需要登录）。
+
+- 普通用户：仅可修改自己的密码，必须提供 `old_password`。
+- 管理员：可修改任意用户密码；当修改他人密码时，`old_password` 不要求。
 
 请求 Body（JSON）：
 
@@ -93,12 +99,15 @@
 成功响应（200，JSON）：
 
 ```json
-{ "message": "Password change endpoint (to be implemented)" }
+{ "status": "success" }
 ```
 
 常见错误：
 
-- 400（text/plain）：`Invalid request`
+- 400（JSON）：`{"error":"old_password is required"}` / `{"error":"new_password is required"}`
+- 401（JSON）：`{"error":"Unauthorized"}` 或 `{"error":"Invalid old password"}`
+- 403（JSON）：`{"error":"Forbidden: Admin access required"}`
+- 404（JSON）：`{"error":"User not found"}`
 
 ### POST /api/validate-password
 

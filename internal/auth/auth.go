@@ -4,11 +4,13 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,11 +21,61 @@ import (
 )
 
 var (
-	userDB       *types.UserDatabase
-	userDB_mu    sync.RWMutex
-	loginLimiter = rate.NewLimiter(1, 5) // 每秒1个，最多5个突发请求
-	jwtKey       []byte
+	userDB        *types.UserDatabase
+	userDB_mu     sync.RWMutex
+	loginLimiters = newLoginLimiterStore(1, 5, 10*time.Minute)
+	jwtKey        []byte
 )
+
+type loginLimiterStore struct {
+	mu         sync.Mutex
+	limiters   map[string]*rate.Limiter
+	lastSeen   map[string]time.Time
+	r          rate.Limit
+	burst      int
+	maxIdle    time.Duration
+	lastGC     time.Time
+	gcInterval time.Duration
+}
+
+func newLoginLimiterStore(r rate.Limit, burst int, maxIdle time.Duration) *loginLimiterStore {
+	if maxIdle <= 0 {
+		maxIdle = 10 * time.Minute
+	}
+	return &loginLimiterStore{
+		limiters:   make(map[string]*rate.Limiter),
+		lastSeen:   make(map[string]time.Time),
+		r:          r,
+		burst:      burst,
+		maxIdle:    maxIdle,
+		gcInterval: 5 * time.Minute,
+		lastGC:     time.Now(),
+	}
+}
+
+func (s *loginLimiterStore) get(key string) *rate.Limiter {
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if now.Sub(s.lastGC) >= s.gcInterval {
+		for k, seen := range s.lastSeen {
+			if now.Sub(seen) > s.maxIdle {
+				delete(s.lastSeen, k)
+				delete(s.limiters, k)
+			}
+		}
+		s.lastGC = now
+	}
+
+	lim, ok := s.limiters[key]
+	if !ok {
+		lim = rate.NewLimiter(s.r, s.burst)
+		s.limiters[key] = lim
+	}
+	s.lastSeen[key] = now
+	return lim
+}
 
 func getDataDir() string {
 	if v := os.Getenv("DATA_DIR"); v != "" {
@@ -42,9 +94,10 @@ func InitUserDatabase() error {
 
 	dataDir := getDataDir()
 	log.Printf("Ensuring %s directory exists...\n", dataDir)
-	if err := os.MkdirAll(dataDir, 0777); err != nil {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		log.Printf("Error creating %s directory: %v\n", dataDir, err)
 	}
+	_ = os.Chmod(dataDir, 0700)
 
 	usersFilePath := filepath.Join(dataDir, "users.json")
 	// One-time migration: if we are now using /data but old file exists under ./data
@@ -52,7 +105,7 @@ func InitUserDatabase() error {
 		legacyPath := filepath.Join("./data", "users.json")
 		if _, err := os.Stat(usersFilePath); os.IsNotExist(err) {
 			if legacyData, err2 := os.ReadFile(legacyPath); err2 == nil {
-				if err3 := os.WriteFile(usersFilePath, legacyData, 0666); err3 == nil {
+				if err3 := os.WriteFile(usersFilePath, legacyData, 0600); err3 == nil {
 					log.Printf("Migrated users database from %s to %s\n", legacyPath, usersFilePath)
 				}
 			}
@@ -87,10 +140,11 @@ func InitUserDatabase() error {
 		}
 
 		log.Println("Writing to file...")
-		if err := ioutil.WriteFile(usersFilePath, jsonData, 0666); err != nil {
+		if err := ioutil.WriteFile(usersFilePath, jsonData, 0600); err != nil {
 			log.Printf("Error writing users file: %v\n", err)
 			return err
 		}
+		_ = os.Chmod(usersFilePath, 0600)
 		log.Println("User database created successfully")
 		return nil
 	}
@@ -118,10 +172,11 @@ func SaveUserDatabase() error {
 	dataDir := getDataDir()
 	usersFilePath := filepath.Join(dataDir, "users.json")
 	log.Printf("Writing to %s...\n", usersFilePath)
-	if err := ioutil.WriteFile(usersFilePath, data, 0666); err != nil {
+	if err := ioutil.WriteFile(usersFilePath, data, 0600); err != nil {
 		log.Printf("Error writing users file: %v\n", err)
 		return err
 	}
+	_ = os.Chmod(usersFilePath, 0600)
 	log.Println("User database saved successfully")
 	return nil
 }
@@ -183,8 +238,8 @@ func HashPasswordBcrypt(password string) (string, error) {
 
 // ValidateUser 验证用户
 func ValidateUser(username, password string) *types.User {
-	userDB_mu.RLock()
-	defer userDB_mu.RUnlock()
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
 
 	log.Printf("Validating user: %s", username)
 
@@ -205,6 +260,7 @@ func ValidateUser(username, password string) *types.User {
 				userDB.Users[i].LockedUntil = nil
 				now := time.Now()
 				userDB.Users[i].LastLogin = &now
+				_ = SaveUserDatabase()
 				return &userDB.Users[i]
 			} else {
 				log.Printf("Password invalid for user: %s, error: %v", username, err)
@@ -216,7 +272,7 @@ func ValidateUser(username, password string) *types.User {
 					userDB.Users[i].LockedUntil = &lockedUntil
 					log.Printf("Account locked for user: %s due to 5 failed attempts", username)
 				}
-				SaveUserDatabase()
+				_ = SaveUserDatabase()
 			}
 			return nil
 		}
@@ -238,12 +294,69 @@ func GetUserByUsername(username string) *types.User {
 	userDB_mu.RLock()
 	defer userDB_mu.RUnlock()
 
-	for _, user := range userDB.Users {
-		if user.Username == username {
-			return &user
+	for i := range userDB.Users {
+		if userDB.Users[i].Username == username {
+			return &userDB.Users[i]
 		}
 	}
 	return nil
+}
+
+// ChangePassword updates a user's password.
+// - If targetUsername is empty, it defaults to requesterUsername.
+// - If changing own password, oldPassword must match.
+// - If changing another user's password, requesterRole must be "admin".
+func ChangePassword(requesterUsername, requesterRole, targetUsername, oldPassword, newPassword string) error {
+	requesterUsername = strings.TrimSpace(requesterUsername)
+	requesterRole = strings.TrimSpace(requesterRole)
+	targetUsername = strings.TrimSpace(targetUsername)
+	if targetUsername == "" {
+		targetUsername = requesterUsername
+	}
+	if requesterUsername == "" || targetUsername == "" {
+		return errors.New("missing username")
+	}
+	if strings.TrimSpace(newPassword) == "" {
+		return errors.New("new_password is required")
+	}
+
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	// Locate target user
+	idx := -1
+	for i := range userDB.Users {
+		if userDB.Users[i].Username == targetUsername {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("user not found")
+	}
+
+	if targetUsername != requesterUsername {
+		if requesterRole != "admin" {
+			return fmt.Errorf("forbidden")
+		}
+	} else {
+		// Self-change requires old password verification.
+		if strings.TrimSpace(oldPassword) == "" {
+			return errors.New("old_password is required")
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(userDB.Users[idx].Password), []byte(oldPassword)); err != nil {
+			return errors.New("invalid old password")
+		}
+	}
+
+	hash, err := HashPasswordBcrypt(newPassword)
+	if err != nil {
+		return fmt.Errorf("password hashing failed: %v", err)
+	}
+	userDB.Users[idx].Password = hash
+	userDB.Users[idx].FailedLoginCount = 0
+	userDB.Users[idx].LockedUntil = nil
+	return SaveUserDatabase()
 }
 
 // GetAllUsers 获取所有用户
@@ -333,7 +446,11 @@ func UpdateUserPassword(username, newPassword string) error {
 	return fmt.Errorf("user not found")
 }
 
-// GetLoginLimiter 获取登录限流器
-func GetLoginLimiter() *rate.Limiter {
-	return loginLimiter
+// GetLoginLimiterForKey returns a rate limiter scoped to a caller-provided key
+// (e.g. ip address, username, or a composite). This avoids a global limiter DoS.
+func GetLoginLimiterForKey(key string) *rate.Limiter {
+	if key == "" {
+		key = "_"
+	}
+	return loginLimiters.get(key)
 }

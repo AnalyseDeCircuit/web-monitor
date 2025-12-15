@@ -42,6 +42,7 @@ func SetupRouter() *Router {
 	router.mux.HandleFunc("/api/docker/containers", DockerContainersHandler)
 	router.mux.HandleFunc("/api/docker/images", DockerImagesHandler)
 	router.mux.HandleFunc("/api/docker/action", DockerActionHandler)
+	router.mux.HandleFunc("/api/docker/image/remove", DockerImageRemoveHandler)
 	router.mux.HandleFunc("/api/systemd/services", SystemdServicesHandler)
 	router.mux.HandleFunc("/api/systemd/action", SystemdActionHandler)
 	router.mux.HandleFunc("/api/network/info", NetworkInfoHandler)
@@ -111,7 +112,7 @@ func wrapWithAPIAuthorization(next http.Handler) http.Handler {
 			// Admin-only endpoints (defense in depth)
 			adminOnly := false
 			switch path {
-			case "/api/users", "/api/logs", "/api/docker/action", "/api/systemd/action", "/api/power/action", "/api/cron/action", "/api/cron/logs", "/api/process/kill":
+			case "/api/users", "/api/logs", "/api/docker/action", "/api/docker/image/remove", "/api/systemd/action", "/api/power/action", "/api/cron/action", "/api/cron/logs", "/api/process/kill":
 				adminOnly = true
 			case "/api/cron":
 				adminOnly = (r.Method != http.MethodGet)

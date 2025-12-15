@@ -617,25 +617,37 @@
         /* Scrollbar styling for processes */
         #processes-container::-webkit-scrollbar,
         .cpu-grid::-webkit-scrollbar,
-        #sensors-container::-webkit-scrollbar {
+        #sensors-container::-webkit-scrollbar,
+        .logs-scroll::-webkit-scrollbar {
             width: 6px;
         }
         #processes-container::-webkit-scrollbar-track,
         .cpu-grid::-webkit-scrollbar-track,
-        #sensors-container::-webkit-scrollbar-track {
+        #sensors-container::-webkit-scrollbar-track,
+        .logs-scroll::-webkit-scrollbar-track {
             background: rgba(255,255,255,0.05);
             border-radius: 3px;
         }
         #processes-container::-webkit-scrollbar-thumb,
         .cpu-grid::-webkit-scrollbar-thumb,
-        #sensors-container::-webkit-scrollbar-thumb {
+        #sensors-container::-webkit-scrollbar-thumb,
+        .logs-scroll::-webkit-scrollbar-thumb {
             background: rgba(255,255,255,0.2);
             border-radius: 3px;
         }
         #processes-container::-webkit-scrollbar-thumb:hover,
         .cpu-grid::-webkit-scrollbar-thumb:hover,
-        #sensors-container::-webkit-scrollbar-thumb:hover {
+        #sensors-container::-webkit-scrollbar-thumb:hover,
+        .logs-scroll::-webkit-scrollbar-thumb:hover {
             background: rgba(255,255,255,0.3);
+        }
+
+        .logs-scroll {
+            max-height: 65vh;
+            overflow-y: auto;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-right: 5px;
         }
 
         /* GPU Styles */
@@ -699,7 +711,15 @@
             .main-content {
                 flex: 1;
                 width: 100%;
-                padding-top: 60px;
+                padding-top: calc(60px + env(safe-area-inset-top));
+                padding-left: calc(10px + env(safe-area-inset-left));
+                padding-right: calc(10px + env(safe-area-inset-right));
+                padding-bottom: calc(10px + env(safe-area-inset-bottom));
+            }
+
+            .mobile-menu-btn {
+                top: calc(15px + env(safe-area-inset-top));
+                left: calc(15px + env(safe-area-inset-left));
             }
             
             .header {
@@ -735,6 +755,21 @@
             
             .ascii-logo {
                 display: none;
+            }
+
+            #proc-detail-modal > div {
+                margin: 10px auto !important;
+                max-width: calc(100% - 20px) !important;
+                max-height: calc(100dvh - 20px) !important;
+            }
+
+            #add-user-modal > .card {
+                width: calc(100% - 20px) !important;
+                max-width: 420px;
+            }
+
+            .logs-scroll {
+                max-height: 70dvh;
             }
         }
         
@@ -861,6 +896,10 @@
             button, .nav-item {
                 min-height: 44px;
                 min-width: 44px;
+            }
+
+            .logs-scroll {
+                max-height: 75dvh;
             }
         }
         
@@ -1775,6 +1814,7 @@
                                 <th style="padding: 10px;">Tags</th>
                                 <th style="padding: 10px; cursor: pointer;" onclick="setDockerImageSort('size')">Size <i class="fas fa-sort"></i></th>
                                 <th style="padding: 10px; cursor: pointer;" onclick="setDockerImageSort('created')">Created <i class="fas fa-sort"></i></th>
+                                <th style="padding: 10px;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="docker-images-body"></tbody>
@@ -1880,7 +1920,7 @@
         <div class="grid-container">
             <div class="card" style="grid-column: 1 / -1;">
                 <div class="card-title">Operation Logs</div>
-                <div style="overflow-x: auto;">
+                <div class="logs-scroll">
                     <table style="width: 100%; border-collapse: collapse; color: var(--text-main);">
                         <thead>
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
@@ -2261,15 +2301,24 @@
             });
 
             if (filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-dim);">No images found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="padding: 10px; text-align: center; color: var(--text-dim);">No images found</td></tr>';
                 return;
             }
+
+            const role = localStorage.getItem('role');
 
             filtered.forEach(img => {
                 const id = img.Id.substring(7, 19); // sha256:xxxxxxxx...
                 const size = (img.Size / 1024 / 1024).toFixed(2) + ' MB';
                 const created = new Date(img.Created * 1000).toLocaleDateString();
                 const tags = img.RepoTags ? img.RepoTags.join(', ') : '<none>';
+
+                let actionsHtml = '';
+                if (role === 'admin') {
+                    actionsHtml = `<button onclick="handleDockerImageRemove('${img.Id}')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Delete</button>`;
+                } else {
+                    actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
+                }
                 
                 const tr = document.createElement('tr');
                 tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
@@ -2278,9 +2327,29 @@
                     <td style="padding: 10px;">${tags}</td>
                     <td style="padding: 10px;">${size}</td>
                     <td style="padding: 10px;">${created}</td>
+                    <td style="padding: 10px;">${actionsHtml}</td>
                 `;
                 tbody.appendChild(tr);
             });
+        }
+
+        async function handleDockerImageRemove(imageId) {
+            if (!confirm('Are you sure you want to delete this image?')) return;
+            try {
+                const response = await fetch('/api/docker/image/remove', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: imageId})
+                });
+                if (response.ok) {
+                    loadDockerImages();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error || 'Delete failed'));
+                }
+            } catch (err) {
+                alert('Failed to delete image');
+            }
         }
 
         function setDockerImageSort(column) {
@@ -2554,6 +2623,8 @@
                     const data = await response.json();
                     const tbody = document.getElementById('users-table-body');
                     tbody.innerHTML = '';
+                    const currentRole = localStorage.getItem('role');
+                    const isAdmin = currentRole === 'admin';
                     data.users.forEach(user => {
                         const tr = document.createElement('tr');
                         tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
@@ -2563,7 +2634,8 @@
                             <td style="padding: 10px;">${new Date(user.created_at).toLocaleString()}</td>
                             <td style="padding: 10px;">${user.last_login ? new Date(user.last_login).toLocaleString() : '-'}</td>
                             <td style="padding: 10px;">
-                                ${user.username !== 'admin' ? `<button onclick="handleDeleteUser('${user.username}')" style="background: var(--accent-cpu); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Delete</button>` : ''}
+                                ${isAdmin && user.username !== 'admin' ? `<button onclick="handleResetPassword(${JSON.stringify(user.username)})" style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 8px;">Reset Password</button>` : ''}
+                                ${user.username !== 'admin' ? `<button onclick="handleDeleteUser(${JSON.stringify(user.username)})" style="background: var(--accent-cpu); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Delete</button>` : ''}
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -2571,6 +2643,36 @@
                 }
             } catch (err) {
                 console.error('Failed to load users', err);
+            }
+        }
+
+        async function handleResetPassword(username) {
+            if (!username || username === 'admin') return;
+            const newPassword = prompt(`Set a new password for ${username}:`);
+            if (!newPassword) return;
+
+            const token = getAuthToken();
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            try {
+                const response = await fetch('/api/password', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ username, new_password: newPassword })
+                });
+
+                if (response.ok) {
+                    alert('Password reset successfully');
+                    return;
+                }
+
+                const data = await response.json().catch(() => ({}));
+                alert('Error: ' + (data.error || 'Failed to reset password'));
+            } catch (err) {
+                alert('Error resetting password');
             }
         }
 

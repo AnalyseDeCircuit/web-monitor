@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
@@ -101,6 +102,37 @@ func ContainerAction(containerID, action string) error {
 	}
 
 	resp, err := dockerRequest(method, path)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Docker: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return fmt.Errorf("Docker error %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// RemoveImage 删除镜像（默认非强制）。
+// imageRef 可以是镜像 ID（如 sha256:...）或引用（如 repo:tag）。
+func RemoveImage(imageRef string, force bool, noprune bool) error {
+	if imageRef == "" {
+		return fmt.Errorf("image reference is required")
+	}
+
+	forceVal := "0"
+	if force {
+		forceVal = "1"
+	}
+	nopruneVal := "0"
+	if noprune {
+		nopruneVal = "1"
+	}
+
+	path := fmt.Sprintf("/images/%s?force=%s&noprune=%s", url.PathEscape(imageRef), forceVal, nopruneVal)
+	resp, err := dockerRequest("DELETE", path)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %v", err)
 	}

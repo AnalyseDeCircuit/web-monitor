@@ -3,7 +3,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
@@ -11,17 +13,30 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
 
+func clientIP(r *http.Request) string {
+	// Prefer proxy headers when present.
+	if v := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(r.Header.Get("X-Real-IP")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); v != "" {
+		parts := strings.Split(v, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
+}
+
 // LoginHandler 处理登录请求
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-
-	// 速率限制检查
-	if !auth.GetLoginLimiter().Allow() {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusTooManyRequests)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Too many login attempts. Please try again later."})
 		return
 	}
 
@@ -29,6 +44,24 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "Invalid request")
 		return
+	}
+
+	// 速率限制检查（按 IP 与 username 分开限流，避免全局 limiter 被 DoS）
+	ip := clientIP(r)
+	if !auth.GetLoginLimiterForKey("ip:" + ip).Allow() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Too many login attempts. Please try again later."})
+		return
+	}
+	if req.Username != "" {
+		uname := strings.ToLower(strings.TrimSpace(req.Username))
+		if uname != "" && !auth.GetLoginLimiterForKey("user:"+uname).Allow() {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Too many login attempts. Please try again later."})
+			return
+		}
 	}
 
 	// 验证用户
@@ -98,6 +131,12 @@ func ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	requesterUsername, requesterRole, err := getUserAndRoleFromRequest(r)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
 	var req struct {
 		Username    string `json:"username"` // Optional, if admin changing other's password
 		OldPassword string `json:"old_password"`
@@ -109,10 +148,47 @@ func ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 这里需要实现JWT验证和用户角色检查
-	// 暂时返回一个简单的响应
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "Password change endpoint (to be implemented)"})
+	if req.NewPassword == "" {
+		writeJSONError(w, http.StatusBadRequest, "new_password is required")
+		return
+	}
+	if !utils.ValidatePasswordPolicy(req.NewPassword) {
+		writeJSONError(w, http.StatusBadRequest, "Password does not meet complexity requirements")
+		return
+	}
+
+	target := req.Username
+	if target == "" {
+		target = requesterUsername
+	}
+
+	if target != requesterUsername && requesterRole != "admin" {
+		writeJSONError(w, http.StatusForbidden, "Forbidden: Admin access required")
+		return
+	}
+
+	if err := auth.ChangePassword(requesterUsername, requesterRole, target, req.OldPassword, req.NewPassword); err != nil {
+		switch err.Error() {
+		case "old_password is required", "new_password is required", "missing username":
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		case "invalid old password":
+			writeJSONError(w, http.StatusUnauthorized, "Invalid old password")
+			return
+		case "forbidden":
+			writeJSONError(w, http.StatusForbidden, "Forbidden: Admin access required")
+			return
+		case "user not found":
+			writeJSONError(w, http.StatusNotFound, "User not found")
+			return
+		default:
+			writeJSONError(w, http.StatusInternalServerError, "Failed to change password")
+			return
+		}
+	}
+
+	logs.LogOperation(requesterUsername, "change_password", "Changed password for: "+target, r.RemoteAddr)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 // ValidatePasswordHandler 验证密码策略

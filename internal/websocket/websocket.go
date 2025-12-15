@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
@@ -41,7 +42,64 @@ var (
 	raplReadings = make(map[string]uint64)
 	raplTime     time.Time
 	raplLock     sync.Mutex
+
+	statsCollector = newSharedStatsCollector(2 * time.Second)
 )
+
+type sharedStatsCollector struct {
+	baseInterval time.Duration
+
+	started sync.Once
+	ready   chan struct{}
+	last    atomic.Value // stores types.Response
+}
+
+func newSharedStatsCollector(baseInterval time.Duration) *sharedStatsCollector {
+	if baseInterval <= 0 {
+		baseInterval = 2 * time.Second
+	}
+	return &sharedStatsCollector{
+		baseInterval: baseInterval,
+		ready:        make(chan struct{}),
+	}
+}
+
+func (c *sharedStatsCollector) Start() {
+	c.started.Do(func() {
+		go func() {
+			// Prime immediately so first client doesn't wait a full tick.
+			stats := collectStats()
+			c.last.Store(stats)
+			close(c.ready)
+
+			ticker := time.NewTicker(c.baseInterval)
+			defer ticker.Stop()
+			for range ticker.C {
+				c.last.Store(collectStats())
+			}
+		}()
+	})
+}
+
+func (c *sharedStatsCollector) WaitReady(timeout time.Duration) {
+	if timeout <= 0 {
+		<-c.ready
+		return
+	}
+	select {
+	case <-c.ready:
+	case <-time.After(timeout):
+	}
+}
+
+func (c *sharedStatsCollector) Latest() (types.Response, bool) {
+	v := c.last.Load()
+	if v == nil {
+		return types.Response{}, false
+	}
+	stats, ok := v.(types.Response)
+	return stats, ok
+}
 
 // Upgrader WebSocket升级器
 var Upgrader = websocket.Upgrader{
@@ -206,11 +264,19 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		interval = 60
 	}
 
+	statsCollector.Start()
+	statsCollector.WaitReady(3 * time.Second)
+
 	ticker := time.NewTicker(time.Duration(interval * float64(time.Second)))
 	defer ticker.Stop()
 
 	for {
-		stats := collectStats()
+		stats, ok := statsCollector.Latest()
+		if !ok {
+			// Collector not ready yet; try again next tick.
+			<-ticker.C
+			continue
+		}
 		err := c.WriteJSON(stats)
 		if err != nil {
 			log.Println("write:", err)
