@@ -3,6 +3,7 @@ package websocket
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -43,63 +44,10 @@ var (
 	raplTime     time.Time
 	raplLock     sync.Mutex
 
-	statsCollector = newSharedStatsCollector(2 * time.Second)
+	wsHub = newStatsHub()
+
+	wsClientID uint64
 )
-
-type sharedStatsCollector struct {
-	baseInterval time.Duration
-
-	started sync.Once
-	ready   chan struct{}
-	last    atomic.Value // stores types.Response
-}
-
-func newSharedStatsCollector(baseInterval time.Duration) *sharedStatsCollector {
-	if baseInterval <= 0 {
-		baseInterval = 2 * time.Second
-	}
-	return &sharedStatsCollector{
-		baseInterval: baseInterval,
-		ready:        make(chan struct{}),
-	}
-}
-
-func (c *sharedStatsCollector) Start() {
-	c.started.Do(func() {
-		go func() {
-			// Prime immediately so first client doesn't wait a full tick.
-			stats := collectStats()
-			c.last.Store(stats)
-			close(c.ready)
-
-			ticker := time.NewTicker(c.baseInterval)
-			defer ticker.Stop()
-			for range ticker.C {
-				c.last.Store(collectStats())
-			}
-		}()
-	})
-}
-
-func (c *sharedStatsCollector) WaitReady(timeout time.Duration) {
-	if timeout <= 0 {
-		<-c.ready
-		return
-	}
-	select {
-	case <-c.ready:
-	case <-time.After(timeout):
-	}
-}
-
-func (c *sharedStatsCollector) Latest() (types.Response, bool) {
-	v := c.last.Load()
-	if v == nil {
-		return types.Response{}, false
-	}
-	stats, ok := v.(types.Response)
-	return stats, ok
-}
 
 // Upgrader WebSocket升级器
 var Upgrader = websocket.Upgrader{
@@ -264,31 +212,145 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		interval = 60
 	}
 
-	statsCollector.Start()
-	statsCollector.WaitReady(3 * time.Second)
+	clientInterval := time.Duration(interval * float64(time.Second))
+	clientInterval = clampInterval(clientInterval)
 
-	ticker := time.NewTicker(time.Duration(interval * float64(time.Second)))
+	clientID := atomic.AddUint64(&wsClientID, 1)
+	wsHub.RegisterClient(clientID, clientInterval)
+	defer wsHub.UnregisterClient(clientID)
+
+	wsHub.WaitReady(3 * time.Second)
+
+	// Per-connection topic subscriptions (base always on).
+	subs := map[string]bool{"base": true}
+	var subsMu sync.Mutex
+
+	// Signal writer to push immediately (e.g., after subscription changes).
+	poke := make(chan struct{}, 1)
+	pokeOnce := func() {
+		select {
+		case poke <- struct{}{}:
+		default:
+		}
+	}
+
+	// Reader: handle subscription updates from client.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			_, msg, err := c.ReadMessage()
+			if err != nil {
+				return
+			}
+			var req struct {
+				Type   string   `json:"type"`
+				Topics []string `json:"topics"`
+			}
+			if err := json.Unmarshal(msg, &req); err != nil {
+				continue
+			}
+			if req.Type != "set_topics" {
+				continue
+			}
+
+			newSubs := map[string]bool{"base": true}
+			for _, t := range req.Topics {
+				t = strings.TrimSpace(t)
+				switch t {
+				case "processes", "net_detail":
+					newSubs[t] = true
+				}
+			}
+
+			subsMu.Lock()
+			oldSubs := subs
+			subs = newSubs
+			subsMu.Unlock()
+
+			// Apply diffs to hub subscriptions.
+			for _, t := range []string{"processes", "net_detail"} {
+				oldOn := oldSubs[t]
+				newOn := newSubs[t]
+				if !oldOn && newOn {
+					wsHub.Subscribe(t)
+				}
+				if oldOn && !newOn {
+					wsHub.Unsubscribe(t)
+				}
+			}
+
+			pokeOnce()
+		}
+	}()
+
+	// Writer: push merged stats on interval or after subscription changes.
+	ticker := time.NewTicker(clientInterval)
 	defer ticker.Stop()
 
 	for {
-		stats, ok := statsCollector.Latest()
+		select {
+		case <-ticker.C:
+		case <-poke:
+		case <-done:
+			return
+		}
+
+		base, ok := wsHub.LatestBase()
 		if !ok {
-			// Collector not ready yet; try again next tick.
-			<-ticker.C
 			continue
 		}
-		err := c.WriteJSON(stats)
-		if err != nil {
-			log.Println("write:", err)
-			break
+
+		// Merge optional topics into a legacy Response payload.
+		subsMu.Lock()
+		wantProcesses := subs["processes"]
+		wantNetDetail := subs["net_detail"]
+		subsMu.Unlock()
+
+		if wantNetDetail {
+			if nd, ok := wsHub.LatestNetDetail(); ok {
+				base.Network.Interfaces = nd.Network.Interfaces
+				base.Network.Sockets = nd.Network.Sockets
+				base.Network.ConnectionStates = nd.Network.ConnectionStates
+				base.Network.Errors = nd.Network.Errors
+				base.Network.ListeningPorts = nd.Network.ListeningPorts
+				base.SSHStats = nd.SSHStats
+			}
 		}
-		<-ticker.C
+		if wantProcesses {
+			if procs, ok := wsHub.LatestProcesses(); ok {
+				base.Processes = procs
+			}
+		}
+
+		if err := c.WriteJSON(base); err != nil {
+			log.Println("write:", err)
+			return
+		}
 	}
 }
 
-// collectStats 收集系统统计信息
-func collectStats() types.Response {
+// collectBaseStats 收集基础系统统计信息（不包含高成本数据：进程列表/网络明细/SSH）。
+func collectBaseStats() types.Response {
 	var resp types.Response
+
+	// Ensure JSON shape stability (avoid null maps/slices in frontend).
+	resp.Fans = []interface{}{}
+	resp.Disk = []types.DiskInfo{}
+	resp.DiskIO = map[string]types.DiskIOInfo{}
+	resp.Inodes = []types.InodeInfo{}
+	resp.Processes = []types.ProcessInfo{}
+	resp.GPU = []types.GPUDetail{}
+	resp.Network.Interfaces = map[string]types.Interface{}
+	resp.Network.Sockets = map[string]int{}
+	resp.Network.ConnectionStates = map[string]int{}
+	resp.Network.Errors = map[string]uint64{}
+	resp.Network.ListeningPorts = []types.ListeningPort{}
+	resp.SSHStats = types.SSHStats{
+		Sessions:         []types.SSHSession{},
+		AuthMethods:      map[string]int{},
+		OOMRiskProcesses: []types.ProcessInfo{},
+	}
 
 	// CPU
 	cpuPercent, _ := cpu.Percent(0, false)
@@ -479,33 +541,78 @@ func collectStats() types.Response {
 		resp.Network.RawRecv = netIO[0].BytesRecv
 	}
 
-	// Network detailed info
-	if netInfo, err := network.GetNetworkInfo(); err == nil {
-		resp.Network.ConnectionStates = netInfo.ConnectionStates
-		resp.Network.Sockets = netInfo.Sockets
-		resp.Network.Interfaces = netInfo.Interfaces
-		resp.Network.Errors = netInfo.Errors
-		resp.Network.ListeningPorts = netInfo.ListeningPorts
+	// SSH (cached internally; keep it in base so UI stays correct on all pages)
+	resp.SSHStats = network.GetSSHStats()
+	if resp.SSHStats.AuthMethods == nil {
+		resp.SSHStats.AuthMethods = map[string]int{}
+	}
+	if resp.SSHStats.Sessions == nil {
+		resp.SSHStats.Sessions = []types.SSHSession{}
+	}
+	if resp.SSHStats.OOMRiskProcesses == nil {
+		resp.SSHStats.OOMRiskProcesses = []types.ProcessInfo{}
 	}
 
-	// SSH Stats
-	resp.SSHStats = network.GetSSHStats()
-
-	// GPU
+	// GPU (internally cached)
 	resp.GPU = gpu.GetGPUInfo()
-
-	// Processes
-	resp.Processes = getAllProcesses()
 
 	// Boot Time
 	bootTime, _ := host.BootTime()
 	bt := time.Unix(int64(bootTime), 0)
 	resp.BootTime = bt.Format("2006/01/02 15:04:05")
 
-	// Check alerts
+	// Check alerts (disk percent is computed elsewhere)
 	monitoring.CheckAlerts(resp.CPU.Percent, resp.Memory.Percent, 0)
 
 	return resp
+}
+
+func collectProcesses() []types.ProcessInfo {
+	procs := getAllProcesses()
+	if procs == nil {
+		return []types.ProcessInfo{}
+	}
+	return procs
+}
+
+func collectNetDetail() netDetailSnapshot {
+	// Keep maps non-nil for frontend.
+	out := netDetailSnapshot{
+		Network: types.NetInfo{
+			Interfaces:       map[string]types.Interface{},
+			Sockets:          map[string]int{},
+			ConnectionStates: map[string]int{},
+			Errors:           map[string]uint64{},
+			ListeningPorts:   []types.ListeningPort{},
+		},
+		SSHStats: types.SSHStats{
+			Sessions:         []types.SSHSession{},
+			AuthMethods:      map[string]int{},
+			OOMRiskProcesses: []types.ProcessInfo{},
+		},
+	}
+
+	if netInfo, err := network.GetNetworkInfo(); err == nil {
+		out.Network.ConnectionStates = netInfo.ConnectionStates
+		out.Network.Sockets = netInfo.Sockets
+		out.Network.Interfaces = netInfo.Interfaces
+		out.Network.Errors = netInfo.Errors
+		out.Network.ListeningPorts = netInfo.ListeningPorts
+	}
+
+	out.SSHStats = network.GetSSHStats()
+	// Ensure non-nil nested fields.
+	if out.SSHStats.AuthMethods == nil {
+		out.SSHStats.AuthMethods = map[string]int{}
+	}
+	if out.SSHStats.Sessions == nil {
+		out.SSHStats.Sessions = []types.SSHSession{}
+	}
+	if out.SSHStats.OOMRiskProcesses == nil {
+		out.SSHStats.OOMRiskProcesses = []types.ProcessInfo{}
+	}
+
+	return out
 }
 
 // getCPUInfo 获取CPU信息

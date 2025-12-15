@@ -2302,6 +2302,9 @@
             document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
             // Show selected page
             document.getElementById('page-' + pageId).classList.add('active');
+
+            // Update WS subscriptions to avoid collecting heavy data when not needed.
+            sendTopicsForPage(pageId);
             
             // Update nav active state
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -3900,6 +3903,20 @@
         let websocket = null;
         let reconnectTimer = null;
 
+        function topicsForPage(pageId) {
+            const topics = ['base'];
+            if (pageId === 'processes' || pageId === 'general') topics.push('processes');
+            if (pageId === 'net-traffic' || pageId === 'ssh') topics.push('net_detail');
+            return topics;
+        }
+
+        function sendTopicsForPage(pageId) {
+            try {
+                if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+                websocket.send(JSON.stringify({ type: 'set_topics', topics: topicsForPage(pageId) }));
+            } catch (_) {}
+        }
+
         function connectWebSocket(options = {}) {
             const useQueryToken = !!options.useQueryToken;
             const allowFallback = options.allowFallback !== false;
@@ -3940,6 +3957,11 @@
                 console.log('WebSocket connected');
                 opened = true;
                 statusDot.classList.add('connected');
+
+                // Subscribe based on current active page.
+                const active = document.querySelector('.page.active');
+                const pageId = active && active.id ? active.id.replace('page-', '') : 'general';
+                sendTopicsForPage(pageId);
             };
 
             websocket.onmessage = function(event) {
