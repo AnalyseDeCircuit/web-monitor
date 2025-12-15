@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -63,6 +64,8 @@ func getHostname() string {
 }
 
 func getOSInfo() string {
+	arch := getArchitecture()
+
 	paths := []string{
 		"/hostfs/etc/os-release",
 		"/etc/os-release",
@@ -89,14 +92,42 @@ func getOSInfo() string {
 		}
 
 		if osName != "" {
+			osPretty := osName
 			if osVersion != "" {
-				return fmt.Sprintf("%s %s", osName, osVersion)
+				osPretty = fmt.Sprintf("%s %s", osName, osVersion)
 			}
-			return osName
+			if arch != "" {
+				return fmt.Sprintf("%s %s", arch, osPretty)
+			}
+			return osPretty
 		}
 	}
 
+	if arch != "" {
+		return fmt.Sprintf("%s %s", arch, runtime.GOOS)
+	}
 	return runtime.GOOS
+}
+
+func getArchitecture() string {
+	// Prefer host architecture when running in a container.
+	cmd := exec.Command("chroot", "/hostfs", "uname", "-m")
+	if out, err := cmd.Output(); err == nil {
+		arch := strings.TrimSpace(string(out))
+		if arch != "" {
+			return arch
+		}
+	}
+
+	cmd = exec.Command("uname", "-m")
+	if out, err := cmd.Output(); err == nil {
+		arch := strings.TrimSpace(string(out))
+		if arch != "" {
+			return arch
+		}
+	}
+
+	return runtime.GOARCH
 }
 
 func getKernelVersion() string {
@@ -146,11 +177,53 @@ func getUptime() string {
 }
 
 func getShell() string {
+	if shells := getAvailableShells(); len(shells) > 0 {
+		return strings.Join(shells, ", ")
+	}
+
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
 	}
 	return shell
+}
+
+func getAvailableShells() []string {
+	paths := []string{
+		"/hostfs/etc/shells",
+		"/etc/shells",
+	}
+
+	for _, p := range paths {
+		data, err := ioutil.ReadFile(p)
+		if err != nil {
+			continue
+		}
+
+		lines := strings.Split(string(data), "\n")
+		seen := make(map[string]bool)
+		var shells []string
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			name := filepath.Base(line)
+			if name == "" || name == "." || name == "/" {
+				continue
+			}
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			shells = append(shells, name)
+		}
+		if len(shells) > 0 {
+			return shells
+		}
+	}
+
+	return nil
 }
 
 func getCPUModel() string {

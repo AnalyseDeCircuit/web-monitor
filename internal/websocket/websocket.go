@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/gpu"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
@@ -49,6 +50,27 @@ var Upgrader = websocket.Upgrader{
 
 // HandleWebSocket 处理WebSocket连接
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Require JWT for stats websocket.
+	// Frontend passes token via query param, so we accept that.
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		if cookie, err := r.Cookie("auth_token"); err == nil {
+			token = cookie.Value
+		}
+	}
+	if token == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"Unauthorized"}`))
+		return
+	}
+	if _, err := auth.ValidateJWT(token); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"Unauthorized"}`))
+		return
+	}
+
 	c, err := Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("upgrade:", err)

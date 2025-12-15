@@ -193,7 +193,7 @@
 
 ### GET /api/logs
 
-返回操作日志（当前 handler 未限制方法，也未强制鉴权；按 GET 使用）。
+返回操作日志（admin-only）。
 
 成功响应（200，JSON）：
 
@@ -216,6 +216,8 @@
 ### GET /api/info
 
 静态系统信息（`internal/system.StaticInfo`）。
+
+需要登录（任意有效 JWT；admin/user 均可）。
 
 成功响应（200，JSON）：
 
@@ -243,6 +245,8 @@
 ### GET /api/system/info
 
 系统综合信息（聚合接口）。该接口会尽量返回所有模块的数据；如果某个模块获取失败，会同时提供 `*_error` 字段并给对应数据一个空值。
+
+需要登录（任意有效 JWT；admin/user 均可）。
 
 成功响应（200，JSON，示例）：
 
@@ -543,7 +547,7 @@
 
 ### POST /api/power/action
 
-注意：当前 handler 未做鉴权。
+admin-only。
 
 支持的 `action`：`shutdown|reboot|cancel|suspend|hibernate`。
 
@@ -569,9 +573,9 @@
 
 常见错误（text/plain）：
 
-- 400：`Invalid request body: ...`
-- 400：`Invalid power action: <action>`
-- 500：`Power action failed: ...`
+- 400（JSON）：`{ "error": "Invalid request body: ..." }`
+- 400（JSON）：`{ "error": "Invalid power action: <action>" }`
+- 500（JSON）：`{ "error": "Power action failed: ..." }`
 
 ### GET /api/power/shutdown-status
 
@@ -661,7 +665,7 @@
 
 ### POST /api/cron/action
 
-注意：当前 handler 未做鉴权。
+admin-only。
 
 请求 Body（JSON）：
 
@@ -682,11 +686,11 @@
 { "status": "success", "message": "Cron action completed" }
 ```
 
-常见错误（text/plain）：
+常见错误（JSON）：
 
-- 400：`Invalid request body: ...`
-- 400：`Invalid cron action: <action>`
-- 500：`Cron action failed: ...`
+- 400：`{ "error": "Invalid request body: ..." }`
+- 400：`{ "error": "Invalid cron action: <action>" }`
+- 500：`{ "error": "Cron action failed: ..." }`
 
 ### GET /api/cron/logs?lines=50
 
@@ -755,10 +759,11 @@ Prometheus 指标（Prometheus exposition format）。
 
 ### WS /ws/stats?interval=2
 
-实时监控推送（当前实现未做 token 校验）。
+实时监控推送（需要 token）。
 
 - Query 参数：
   - `interval`：秒，范围 `2` 到 `60`（小于 2 会被提升到 2，大于 60 会被限制为 60）
+  - `token`：JWT（前端会附带该参数；也支持 Cookie `auth_token`）
 
 服务端推送消息为 `types.Response`（示例字段结构）：
 

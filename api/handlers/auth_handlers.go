@@ -13,8 +13,7 @@ import (
 
 // LoginHandler 处理登录请求
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -28,7 +27,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req types.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "Invalid request")
 		return
 	}
 
@@ -44,7 +43,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// 生成JWT令牌
 	jwtToken, err := auth.GenerateJWT(user.Username, user.Role)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}
 
@@ -74,8 +73,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 // LogoutHandler 处理登出请求
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -96,8 +94,7 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 
 // ChangePasswordHandler 处理修改密码请求
 func ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -108,7 +105,7 @@ func ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "Invalid request")
 		return
 	}
 
@@ -120,8 +117,7 @@ func ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 // ValidatePasswordHandler 验证密码策略
 func ValidatePasswordHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -130,7 +126,7 @@ func ValidatePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "Invalid request")
 		return
 	}
 
@@ -267,16 +263,22 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"message": "User deleted successfully"})
 
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
 // LogsHandler 处理操作日志请求
 func LogsHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if _, ok := requireAdmin(w, r); !ok {
+		return
+	}
+
 	// 返回操作日志
-	logs := logs.GetLogs()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"logs": logs,
+	opLogs := logs.GetLogs()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"logs": opLogs,
 	})
 }

@@ -2,11 +2,13 @@ package network
 
 import (
 	"bufio"
+	"encoding/hex"
 	"io/ioutil"
 	stdnet "net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,58 +46,18 @@ func GetSSHStats() types.SSHStats {
 	}
 
 	// Connections
-	stats.Connections = getSSHConnectionCount()
-
-	// Sessions (who) - mimic legacy behavior, only remote sessions with valid IPs
-	cmd := exec.Command("chroot", "/hostfs", "who")
-	out, err := cmd.Output()
-	if err == nil {
-		lines := strings.Split(string(out), "\n")
-		var sessions []types.SSHSession
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-
-			parts := strings.Fields(line)
-			if len(parts) < 5 {
-				continue
-			}
-
-			user := parts[0]
-			startedStr := parts[2] + " " + parts[3]
-
-			// Try to parse time and convert to ISO 8601 (UTC)
-			// who output format: YYYY-01-02 15:04
-			if t, err := time.ParseInLocation("2006-01-02 15:04", startedStr, time.Local); err == nil {
-				startedStr = t.UTC().Format(time.RFC3339)
-			}
-
-			// Extract IP from fields with parentheses, only valid IPs
-			ipsFound := make(map[string]bool)
-			ip := ""
-			for _, part := range parts {
-				if strings.HasPrefix(part, "(") && strings.HasSuffix(part, ")") {
-					candidate := part[1 : len(part)-1]
-					if stdnet.ParseIP(candidate) != nil && !ipsFound[candidate] {
-						ipsFound[candidate] = true
-						ip = candidate
-						break
-					}
-				}
-			}
-
-			// Only add if we found a valid IP (remote session)
-			if ip != "" {
-				sessions = append(sessions, types.SSHSession{
-					User:      user,
-					IP:        ip,
-					LoginTime: startedStr,
-				})
-			}
+	procSessions := getSSHSessionsFromHostProc()
+	if len(procSessions) > 0 {
+		stats.Sessions = procSessions
+		stats.Connections = len(procSessions)
+	} else {
+		whoSessions := getSSHSessionsFromWho()
+		if len(whoSessions) > 0 {
+			stats.Sessions = whoSessions
+			stats.Connections = len(whoSessions)
+		} else {
+			stats.Connections = getSSHConnectionCount()
 		}
-		stats.Sessions = sessions
 	}
 
 	// Auth Logs (Incremental)
@@ -312,4 +274,363 @@ func updateSSHAuthStats() {
 			sshAuthCounters["failed"]++
 		}
 	}
+}
+
+func getSSHSessionsFromWho() []types.SSHSession {
+	// mimic legacy behavior, only remote sessions with valid IPs
+	cmd := exec.Command("chroot", "/hostfs", "who")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	lines := strings.Split(string(out), "\n")
+	var sessions []types.SSHSession
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) < 5 {
+			continue
+		}
+
+		user := parts[0]
+		startedStr := parts[2] + " " + parts[3]
+
+		// Try to parse time and convert to ISO 8601 (UTC)
+		// who output format: YYYY-01-02 15:04
+		if t, err := time.ParseInLocation("2006-01-02 15:04", startedStr, time.Local); err == nil {
+			startedStr = t.UTC().Format(time.RFC3339)
+		}
+
+		// Extract IP from fields with parentheses, only valid IPs
+		ip := ""
+		for _, part := range parts {
+			if strings.HasPrefix(part, "(") && strings.HasSuffix(part, ")") {
+				candidate := part[1 : len(part)-1]
+				parsed := stdnet.ParseIP(candidate)
+				if parsed == nil {
+					continue
+				}
+				if parsed.IsLoopback() {
+					continue
+				}
+				ip = candidate
+				break
+			}
+		}
+
+		if ip != "" {
+			sessions = append(sessions, types.SSHSession{
+				User:      user,
+				IP:        ip,
+				LoginTime: startedStr,
+			})
+		}
+	}
+	return sessions
+}
+
+func getSSHSessionsFromHostProc() []types.SSHSession {
+	// Build who-based time map to keep legacy-like timestamps when available.
+	whoSessions := getSSHSessionsFromWho()
+	whoTimeByUserIP := make(map[string]string, len(whoSessions))
+	for _, s := range whoSessions {
+		whoTimeByUserIP[s.User+"|"+s.IP] = s.LoginTime
+	}
+
+	clkTck := getClockTicksPerSecond()
+	bootTime := getHostBootTimeUnix()
+	remoteIPByInode := buildSSHRemoteIPByInode()
+	if len(remoteIPByInode) == 0 {
+		return nil
+	}
+
+	entries, err := os.ReadDir("/hostfs/proc")
+	if err != nil {
+		return nil
+	}
+
+	sessionsByKey := make(map[string]types.SSHSession)
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(ent.Name())
+		if err != nil || pid <= 0 {
+			continue
+		}
+
+		arg0, ok := readProcArg0("/hostfs/proc/" + ent.Name() + "/cmdline")
+		if !ok {
+			continue
+		}
+		if !strings.HasPrefix(arg0, "sshd:") {
+			continue
+		}
+		// Filter out non-session sshd processes.
+		if strings.Contains(arg0, "[priv]") || strings.Contains(arg0, "[listener]") {
+			continue
+		}
+		// Accept interactive sessions (pts) and subsystem sessions (notty).
+		if !strings.Contains(arg0, "@pts/") && !strings.Contains(arg0, "@notty") {
+			continue
+		}
+
+		user := parseSSHDUser(arg0)
+		if user == "" {
+			continue
+		}
+
+		ip := findRemoteIPForPID(pid, remoteIPByInode)
+		if ip == "" {
+			continue
+		}
+		parsed := stdnet.ParseIP(ip)
+		if parsed == nil || parsed.IsLoopback() {
+			continue
+		}
+
+		loginTime := whoTimeByUserIP[user+"|"+ip]
+		if loginTime == "" {
+			if ts, ok := procStartTimeRFC3339(pid, bootTime, clkTck); ok {
+				loginTime = ts
+			}
+		}
+		if loginTime == "" {
+			// Best-effort fallback; keep stable format for UI.
+			loginTime = time.Now().UTC().Format(time.RFC3339)
+		}
+
+		key := user + "|" + ip + "|" + loginTime
+		if _, exists := sessionsByKey[key]; exists {
+			continue
+		}
+		sessionsByKey[key] = types.SSHSession{User: user, IP: ip, LoginTime: loginTime}
+	}
+
+	if len(sessionsByKey) == 0 {
+		return nil
+	}
+
+	// Stable order not strictly required; keep insertion randomness acceptable.
+	sessions := make([]types.SSHSession, 0, len(sessionsByKey))
+	for _, s := range sessionsByKey {
+		sessions = append(sessions, s)
+	}
+	return sessions
+}
+
+func readProcArg0(cmdlinePath string) (string, bool) {
+	data, err := ioutil.ReadFile(cmdlinePath)
+	if err != nil || len(data) == 0 {
+		return "", false
+	}
+	// cmdline is NUL-separated.
+	parts := strings.Split(string(data), "\x00")
+	if len(parts) == 0 {
+		return "", false
+	}
+	arg0 := strings.TrimSpace(parts[0])
+	if arg0 == "" {
+		return "", false
+	}
+	return arg0, true
+}
+
+func parseSSHDUser(arg0 string) string {
+	// Examples:
+	//  - "sshd: user@pts/0"
+	//  - "sshd: user@notty"
+	//  - "sshd: user [priv]" (filtered earlier)
+	s := strings.TrimSpace(strings.TrimPrefix(arg0, "sshd:"))
+	if s == "" {
+		return ""
+	}
+	at := strings.Index(s, "@")
+	if at <= 0 {
+		return ""
+	}
+	user := strings.TrimSpace(s[:at])
+	if user == "" {
+		return ""
+	}
+	return user
+}
+
+func buildSSHRemoteIPByInode() map[string]string {
+	remoteIPByInode := make(map[string]string)
+	for _, p := range []string{"/hostfs/proc/net/tcp", "/proc/net/tcp"} {
+		mergeSSHRemoteIPByInode(remoteIPByInode, p, false)
+		if len(remoteIPByInode) > 0 {
+			break
+		}
+	}
+	for _, p := range []string{"/hostfs/proc/net/tcp6", "/proc/net/tcp6"} {
+		mergeSSHRemoteIPByInode(remoteIPByInode, p, true)
+	}
+	return remoteIPByInode
+}
+
+func mergeSSHRemoteIPByInode(dst map[string]string, path string, isV6 bool) {
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 10 {
+			continue
+		}
+		localAddr := fields[1]
+		remoteAddr := fields[2]
+		state := fields[3]
+		inode := fields[9]
+
+		if inode == "" {
+			continue
+		}
+		// Port 22 is 0016 in hex
+		if !strings.HasSuffix(localAddr, ":0016") {
+			continue
+		}
+		// 01 is ESTABLISHED
+		if state != "01" {
+			continue
+		}
+
+		ip, ok := parseProcNetIP(remoteAddr, isV6)
+		if !ok {
+			continue
+		}
+		if _, exists := dst[inode]; !exists {
+			dst[inode] = ip
+		}
+	}
+}
+
+func parseProcNetIP(addrPort string, isV6 bool) (string, bool) {
+	parts := strings.Split(addrPort, ":")
+	if len(parts) != 2 {
+		return "", false
+	}
+	hexAddr := parts[0]
+	if isV6 {
+		if len(hexAddr) != 32 {
+			return "", false
+		}
+		b, err := hex.DecodeString(hexAddr)
+		if err != nil || len(b) != 16 {
+			return "", false
+		}
+		// /proc/net/tcp6 uses little-endian for each 32-bit word.
+		for i := 0; i < 16; i += 4 {
+			b[i+0], b[i+3] = b[i+3], b[i+0]
+			b[i+1], b[i+2] = b[i+2], b[i+1]
+		}
+		ip := stdnet.IP(b)
+		return ip.String(), true
+	}
+	if len(hexAddr) != 8 {
+		return "", false
+	}
+	// IPv4 in /proc/net/tcp is little-endian
+	b, err := hex.DecodeString(hexAddr)
+	if err != nil || len(b) != 4 {
+		return "", false
+	}
+	ip := stdnet.IP([]byte{b[3], b[2], b[1], b[0]})
+	return ip.String(), true
+}
+
+func findRemoteIPForPID(pid int, remoteIPByInode map[string]string) string {
+	fds, err := os.ReadDir("/hostfs/proc/" + strconv.Itoa(pid) + "/fd")
+	if err != nil {
+		return ""
+	}
+	for _, fd := range fds {
+		link, err := os.Readlink("/hostfs/proc/" + strconv.Itoa(pid) + "/fd/" + fd.Name())
+		if err != nil {
+			continue
+		}
+		if !strings.HasPrefix(link, "socket:[") || !strings.HasSuffix(link, "]") {
+			continue
+		}
+		inode := strings.TrimSuffix(strings.TrimPrefix(link, "socket:["), "]")
+		if inode == "" {
+			continue
+		}
+		if ip, ok := remoteIPByInode[inode]; ok {
+			return ip
+		}
+	}
+	return ""
+}
+
+func getHostBootTimeUnix() int64 {
+	content, err := ioutil.ReadFile("/hostfs/proc/stat")
+	if err != nil {
+		content, err = ioutil.ReadFile("/proc/stat")
+		if err != nil {
+			return 0
+		}
+	}
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "btime ") {
+			parts := strings.Fields(line)
+			if len(parts) == 2 {
+				if v, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+					return v
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func getClockTicksPerSecond() int64 {
+	cmd := exec.Command("getconf", "CLK_TCK")
+	out, err := cmd.Output()
+	if err != nil {
+		return 100
+	}
+	v, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil || v <= 0 {
+		return 100
+	}
+	return v
+}
+
+func procStartTimeRFC3339(pid int, bootTimeUnix int64, clkTck int64) (string, bool) {
+	if bootTimeUnix <= 0 || clkTck <= 0 {
+		return "", false
+	}
+	statPath := "/hostfs/proc/" + strconv.Itoa(pid) + "/stat"
+	data, err := ioutil.ReadFile(statPath)
+	if err != nil {
+		return "", false
+	}
+	line := string(data)
+	idx := strings.LastIndex(line, ")")
+	if idx < 0 {
+		return "", false
+	}
+	after := strings.TrimSpace(line[idx+1:])
+	fields := strings.Fields(after)
+	// starttime is field 22 overall; after removing pid+comm, it's at index 19 (0-based).
+	if len(fields) <= 19 {
+		return "", false
+	}
+	startTicks, err := strconv.ParseInt(fields[19], 10, 64)
+	if err != nil || startTicks <= 0 {
+		return "", false
+	}
+	startUnix := bootTimeUnix + (startTicks / clkTck)
+	return time.Unix(startUnix, 0).UTC().Format(time.RFC3339), true
 }

@@ -24,8 +24,10 @@ import (
 
 // SystemInfoHandler 处理系统信息请求
 func SystemInfoHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if _, _, ok := requireAuth(w, r); !ok {
 		return
 	}
 
@@ -93,14 +95,13 @@ func SystemInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 // DockerContainersHandler 处理Docker容器请求
 func DockerContainersHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	containers, err := docker.ListContainers()
 	if err != nil {
-		http.Error(w, "Failed to get Docker containers: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get Docker containers: "+err.Error())
 		return
 	}
 
@@ -112,14 +113,13 @@ func DockerContainersHandler(w http.ResponseWriter, r *http.Request) {
 
 // DockerImagesHandler 处理Docker镜像请求
 func DockerImagesHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	images, err := docker.ListImages()
 	if err != nil {
-		http.Error(w, "Failed to get Docker images: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get Docker images: "+err.Error())
 		return
 	}
 
@@ -131,8 +131,7 @@ func DockerImagesHandler(w http.ResponseWriter, r *http.Request) {
 
 // DockerActionHandler 处理Docker操作请求
 func DockerActionHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -160,16 +159,12 @@ func DockerActionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body: " + err.Error()})
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
 	if err := docker.ContainerAction(request.ID, request.Action); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Docker action failed: " + err.Error()})
+		writeJSONError(w, http.StatusInternalServerError, "Docker action failed: "+err.Error())
 		return
 	}
 
@@ -185,14 +180,13 @@ func DockerActionHandler(w http.ResponseWriter, r *http.Request) {
 
 // SystemdServicesHandler 处理Systemd服务请求
 func SystemdServicesHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	services, err := systemd.ListServices()
 	if err != nil {
-		http.Error(w, "Failed to get Systemd services: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get Systemd services: "+err.Error())
 		return
 	}
 
@@ -202,8 +196,7 @@ func SystemdServicesHandler(w http.ResponseWriter, r *http.Request) {
 
 // SystemdActionHandler 处理 Systemd 服务操作请求
 func SystemdActionHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -230,9 +223,7 @@ func SystemdActionHandler(w http.ResponseWriter, r *http.Request) {
 		Action string `json:"action"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"})
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
@@ -245,16 +236,12 @@ func SystemdActionHandler(w http.ResponseWriter, r *http.Request) {
 		"disable": true,
 	}
 	if !allowedActions[req.Action] {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid action"})
+		writeJSONError(w, http.StatusBadRequest, "Invalid action")
 		return
 	}
 
 	if err := systemd.ServiceAction(req.Unit, req.Action); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -267,15 +254,14 @@ func SystemdActionHandler(w http.ResponseWriter, r *http.Request) {
 
 // NetworkInfoHandler 处理网络信息请求
 func NetworkInfoHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	// 获取网络接口信息
 	interfaces, err := network.GetNetworkInterfaces()
 	if err != nil {
-		http.Error(w, "Failed to get network info: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get network info: "+err.Error())
 		return
 	}
 
@@ -291,14 +277,13 @@ func NetworkInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 // PowerInfoHandler 处理电源信息请求
 func PowerInfoHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	info, err := power.GetPowerInfo()
 	if err != nil {
-		http.Error(w, "Failed to get power info: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get power info: "+err.Error())
 		return
 	}
 
@@ -309,7 +294,8 @@ func PowerInfoHandler(w http.ResponseWriter, r *http.Request) {
 // PrometheusMetricsHandler 处理Prometheus指标请求
 func PrometheusMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		// metrics 输出为 text/plain；这里保持简单
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -319,8 +305,7 @@ func PrometheusMetricsHandler(w http.ResponseWriter, r *http.Request) {
 
 // CacheInfoHandler 处理缓存信息请求
 func CacheInfoHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -336,8 +321,7 @@ func CacheInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 // HealthCheckHandler 处理健康检查请求
 func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "healthy",
 		"version": "1.0.0",
 		"message": "Web Monitor is running",
@@ -402,8 +386,11 @@ func NetworkDiagnosticsHandler(w http.ResponseWriter, r *http.Request) {
 
 // PowerActionHandler 处理电源操作请求
 func PowerActionHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	// power action 有副作用：按约定改为 admin-only
+	if _, ok := requireAdmin(w, r); !ok {
 		return
 	}
 
@@ -414,7 +401,7 @@ func PowerActionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -433,12 +420,12 @@ func PowerActionHandler(w http.ResponseWriter, r *http.Request) {
 	case "hibernate":
 		result, err = power.HibernateSystem()
 	default:
-		http.Error(w, "Invalid power action: "+request.Action, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "Invalid power action: "+request.Action)
 		return
 	}
 
 	if err != nil {
-		http.Error(w, "Power action failed: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Power action failed: "+err.Error())
 		return
 	}
 
@@ -448,14 +435,13 @@ func PowerActionHandler(w http.ResponseWriter, r *http.Request) {
 
 // ShutdownStatusHandler 处理关机状态请求
 func ShutdownStatusHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	status, err := power.GetShutdownStatus()
 	if err != nil {
-		http.Error(w, "Failed to get shutdown status: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get shutdown status: "+err.Error())
 		return
 	}
 
@@ -502,8 +488,7 @@ func CronLegacyHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		jobs, err := cron.ListCronJobs()
 		if err != nil {
-			// 保持与前端错误处理兼容，返回非200状态
-			http.Error(w, "Failed to get cron jobs: "+err.Error(), http.StatusInternalServerError)
+			writeJSONError(w, http.StatusInternalServerError, "Failed to get cron jobs: "+err.Error())
 			return
 		}
 
@@ -530,20 +515,12 @@ func CronLegacyHandler(w http.ResponseWriter, r *http.Request) {
 
 		var jobs []types.CronJob
 		if err := json.NewDecoder(r.Body).Decode(&jobs); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "Invalid request body",
-			})
+			writeJSONError(w, http.StatusBadRequest, "Invalid request body")
 			return
 		}
 
 		if err := cron.SaveCronJobs(jobs); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": err.Error(),
-			})
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
@@ -555,20 +532,19 @@ func CronLegacyHandler(w http.ResponseWriter, r *http.Request) {
 			"status": "success",
 		})
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
 // CronJobsHandler 处理Cron任务请求
 func CronJobsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	jobs, err := cron.ListCronJobs()
 	if err != nil {
-		http.Error(w, "Failed to get cron jobs: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get cron jobs: "+err.Error())
 		return
 	}
 
@@ -578,8 +554,11 @@ func CronJobsHandler(w http.ResponseWriter, r *http.Request) {
 
 // CronActionHandler 处理Cron操作请求
 func CronActionHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	// cron action 有副作用：按约定改为 admin-only
+	if _, ok := requireAdmin(w, r); !ok {
 		return
 	}
 
@@ -592,7 +571,7 @@ func CronActionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -607,12 +586,12 @@ func CronActionHandler(w http.ResponseWriter, r *http.Request) {
 	case "disable":
 		err = cron.DisableCronJob(request.User, request.JobID)
 	default:
-		http.Error(w, "Invalid cron action: "+request.Action, http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "Invalid cron action: "+request.Action)
 		return
 	}
 
 	if err != nil {
-		http.Error(w, "Cron action failed: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Cron action failed: "+err.Error())
 		return
 	}
 
@@ -626,7 +605,9 @@ func CronActionHandler(w http.ResponseWriter, r *http.Request) {
 // CronLogsHandler 处理Cron日志请求
 func CronLogsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = w.Write([]byte("Method not allowed"))
 		return
 	}
 
@@ -637,7 +618,7 @@ func CronLogsHandler(w http.ResponseWriter, r *http.Request) {
 
 	logs, err := cron.GetCronLogs(lines)
 	if err != nil {
-		http.Error(w, "Failed to get cron logs: "+err.Error(), http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "Failed to get cron logs: "+err.Error())
 		return
 	}
 
@@ -647,8 +628,10 @@ func CronLogsHandler(w http.ResponseWriter, r *http.Request) {
 
 // StaticInfoHandler 处理静态系统信息请求
 func StaticInfoHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if _, _, ok := requireAuth(w, r); !ok {
 		return
 	}
 
