@@ -44,6 +44,12 @@ var (
 	raplTime     time.Time
 	raplLock     sync.Mutex
 
+	// Throttling caches
+	diskUsageCache      []types.DiskInfo
+	inodeUsageCache     []types.InodeInfo
+	diskUsageLastUpdate time.Time
+	diskUsageCacheMu    sync.Mutex
+
 	wsHub = newStatsHub()
 
 	wsClientID uint64
@@ -235,14 +241,10 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Print("upgrade:", err)
 		return
 	}
-	defer c.Close()
+	// Note: c.Close() is handled in readPump/writePump
 
 	// Connection hardening.
-	c.SetReadLimit(wsMaxMessageSize)
-	_ = c.SetReadDeadline(time.Now().Add(wsPongWait))
-	c.SetPongHandler(func(string) error {
-		return c.SetReadDeadline(time.Now().Add(wsPongWait))
-	})
+	// Read limits are set in readPump.
 
 	intervalStr := r.URL.Query().Get("interval")
 	interval, err := strconv.ParseFloat(intervalStr, 64)
@@ -257,149 +259,122 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	clientInterval = clampInterval(clientInterval)
 
 	clientID := atomic.AddUint64(&wsClientID, 1)
-	wsHub.RegisterClient(clientID, clientInterval)
-	defer wsHub.UnregisterClient(clientID)
 
-	wsHub.WaitReady(3 * time.Second)
-
-	// Per-connection topic subscriptions (base always on).
-	subs := map[string]bool{"base": true}
-	var subsMu sync.Mutex
-
-	// Signal writer to push immediately (e.g., after subscription changes).
-	poke := make(chan struct{}, 1)
-	pokeOnce := func() {
-		select {
-		case poke <- struct{}{}:
-		default:
-		}
+	client := &Client{
+		hub:  wsHub,
+		conn: c,
+		send: make(chan []byte, 256),
+		subs: map[string]bool{"base": true},
 	}
 
-	// Reader: handle subscription updates from client.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		tokens := wsMsgBurst
-		lastRefill := time.Now()
-		allowMsg := func() bool {
-			now := time.Now()
-			elapsed := now.Sub(lastRefill).Seconds()
-			if elapsed > 0 {
-				tokens += elapsed * wsMsgRatePerSec
-				if tokens > wsMsgBurst {
-					tokens = wsMsgBurst
-				}
-				lastRefill = now
-			}
-			if tokens < 1 {
-				return false
-			}
-			tokens -= 1
-			return true
-		}
-		for {
-			_, msg, err := c.ReadMessage()
-			if err != nil {
-				return
-			}
-			if !allowMsg() {
-				log.Printf("ws client message rate limit exceeded remote=%q", r.RemoteAddr)
-				return
-			}
-			var req struct {
-				Type   string   `json:"type"`
-				Topics []string `json:"topics"`
-			}
-			if err := json.Unmarshal(msg, &req); err != nil {
-				continue
-			}
-			if req.Type != "set_topics" {
-				continue
-			}
+	wsHub.RegisterClient(client, clientID, clientInterval)
 
-			newSubs := map[string]bool{"base": true}
-			for _, t := range req.Topics {
-				t = strings.TrimSpace(t)
-				switch t {
-				case "processes", "net_detail":
-					newSubs[t] = true
-				}
-			}
+	// Start pumps
+	go client.writePump()
+	go client.readPump(r, clientID)
+}
 
-			subsMu.Lock()
-			oldSubs := subs
-			subs = newSubs
-			subsMu.Unlock()
-
-			// Apply diffs to hub subscriptions.
-			for _, t := range []string{"processes", "net_detail"} {
-				oldOn := oldSubs[t]
-				newOn := newSubs[t]
-				if !oldOn && newOn {
-					wsHub.Subscribe(t)
-				}
-				if oldOn && !newOn {
-					wsHub.Unsubscribe(t)
-				}
-			}
-
-			pokeOnce()
-		}
+// readPump pumps messages from the websocket connection to the hub.
+func (c *Client) readPump(r *http.Request, clientID uint64) {
+	defer func() {
+		c.hub.UnregisterClient(c, clientID)
+		c.conn.Close()
 	}()
 
-	// Writer: push merged stats on interval or after subscription changes.
-	ticker := time.NewTicker(clientInterval)
-	defer ticker.Stop()
-	pingTicker := time.NewTicker(wsPingPeriod)
-	defer pingTicker.Stop()
+	c.conn.SetReadLimit(wsMaxMessageSize)
+	_ = c.conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	c.conn.SetPongHandler(func(string) error {
+		return c.conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	})
+
+	tokens := wsMsgBurst
+	lastRefill := time.Now()
+	allowMsg := func() bool {
+		now := time.Now()
+		elapsed := now.Sub(lastRefill).Seconds()
+		if elapsed > 0 {
+			tokens += elapsed * wsMsgRatePerSec
+			if tokens > wsMsgBurst {
+				tokens = wsMsgBurst
+			}
+			lastRefill = now
+		}
+		if tokens < 1 {
+			return false
+		}
+		tokens -= 1
+		return true
+	}
+
+	for {
+		_, msg, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("error: %v", err)
+			}
+			break
+		}
+		if !allowMsg() {
+			log.Printf("ws client message rate limit exceeded remote=%q", r.RemoteAddr)
+			break
+		}
+
+		var req struct {
+			Type   string   `json:"type"`
+			Topics []string `json:"topics"`
+		}
+		if err := json.Unmarshal(msg, &req); err != nil {
+			continue
+		}
+		if req.Type == "set_topics" {
+			c.mu.Lock()
+			// Reset to base
+			c.subs = map[string]bool{"base": true}
+			for _, t := range req.Topics {
+				t = strings.TrimSpace(t)
+				if t == "processes" || t == "net_detail" {
+					c.subs[t] = true
+					c.hub.Subscribe(t)
+				}
+			}
+			c.mu.Unlock()
+		}
+	}
+}
+
+// writePump pumps messages from the hub to the websocket connection.
+func (c *Client) writePump() {
+	ticker := time.NewTicker(wsPingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
 
 	for {
 		select {
-		case <-ticker.C:
-		case <-poke:
-		case <-pingTicker.C:
-			// Heartbeat (keeps proxies and clients from silently dropping the connection).
-			_ = c.SetWriteDeadline(time.Now().Add(wsWriteWait))
-			if err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(wsWriteWait)); err != nil {
-				log.Println("ws ping:", err)
+		case message, ok := <-c.send:
+			_ = c.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if !ok {
+				// The hub closed the channel.
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			continue
-		case <-done:
-			return
-		}
 
-		base, ok := wsHub.LatestBase()
-		if !ok {
-			continue
-		}
-
-		// Merge optional topics into a legacy Response payload.
-		subsMu.Lock()
-		wantProcesses := subs["processes"]
-		wantNetDetail := subs["net_detail"]
-		subsMu.Unlock()
-
-		if wantNetDetail {
-			if nd, ok := wsHub.LatestNetDetail(); ok {
-				base.Network.Interfaces = nd.Network.Interfaces
-				base.Network.Sockets = nd.Network.Sockets
-				base.Network.ConnectionStates = nd.Network.ConnectionStates
-				base.Network.Errors = nd.Network.Errors
-				base.Network.ListeningPorts = nd.Network.ListeningPorts
-				base.SSHStats = nd.SSHStats
+			w, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
 			}
-		}
-		if wantProcesses {
-			if procs, ok := wsHub.LatestProcesses(); ok {
-				base.Processes = procs
-			}
-		}
+			w.Write(message)
 
-		_ = c.SetWriteDeadline(time.Now().Add(wsWriteWait))
-		if err := c.WriteJSON(base); err != nil {
-			log.Println("write:", err)
-			return
+			if err := w.Close(); err != nil {
+				return
+			}
+
+		case <-ticker.C:
+			_ = c.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -554,41 +529,67 @@ func collectBaseStats() types.Response {
 		useHostfs = true
 	}
 
-	parts, _ := disk.Partitions(false)
-	for _, part := range parts {
-		if strings.Contains(part.Device, "loop") || part.Fstype == "squashfs" {
-			continue
-		}
+	// Throttled Disk Usage Collection (every 10s)
+	// Disk usage (statfs) can be slow on network mounts or under load.
+	// We cache the result and only update it periodically.
+	diskUsageCacheMu.Lock()
+	now := time.Now()
+	if now.Sub(diskUsageLastUpdate) > 10*time.Second {
+		var newDiskInfo []types.DiskInfo
+		var newInodeInfo []types.InodeInfo
 
-		checkPath := part.Mountpoint
-		if useHostfs {
-			checkPath = "/hostfs" + part.Mountpoint
-		}
+		parts, _ := disk.Partitions(false)
+		for _, part := range parts {
+			if strings.Contains(part.Device, "loop") || part.Fstype == "squashfs" {
+				continue
+			}
 
-		u, err := disk.Usage(checkPath)
-		if err == nil {
-			resp.Disk = append(resp.Disk, types.DiskInfo{
-				Device:     part.Device,
-				Mountpoint: part.Mountpoint,
-				Fstype:     part.Fstype,
-				Total:      utils.GetSize(u.Total),
-				Used:       utils.GetSize(u.Used),
-				Free:       utils.GetSize(u.Free),
-				Percent:    utils.Round(u.UsedPercent),
-			})
+			checkPath := part.Mountpoint
+			if useHostfs {
+				checkPath = "/hostfs" + part.Mountpoint
+			}
 
-			// Add inode info
-			if u.InodesTotal > 0 {
-				resp.Inodes = append(resp.Inodes, types.InodeInfo{
+			// Set a timeout for disk usage check to avoid blocking
+			// This is a simple protection; for robust timeout we'd need a goroutine per mount
+			// but that might be overkill. For now, we just rely on the 10s throttle.
+			u, err := disk.Usage(checkPath)
+			if err == nil {
+				newDiskInfo = append(newDiskInfo, types.DiskInfo{
+					Device:     part.Device,
 					Mountpoint: part.Mountpoint,
-					Total:      u.InodesTotal,
-					Used:       u.InodesUsed,
-					Free:       u.InodesFree,
-					Percent:    utils.Round(u.InodesUsedPercent),
+					Fstype:     part.Fstype,
+					Total:      utils.GetSize(u.Total),
+					Used:       utils.GetSize(u.Used),
+					Free:       utils.GetSize(u.Free),
+					Percent:    utils.Round(u.UsedPercent),
 				})
+
+				// Add inode info
+				if u.InodesTotal > 0 {
+					newInodeInfo = append(newInodeInfo, types.InodeInfo{
+						Mountpoint: part.Mountpoint,
+						Total:      u.InodesTotal,
+						Used:       u.InodesUsed,
+						Free:       u.InodesFree,
+						Percent:    utils.Round(u.InodesUsedPercent),
+					})
+				}
 			}
 		}
+		diskUsageCache = newDiskInfo
+		inodeUsageCache = newInodeInfo
+		diskUsageLastUpdate = now
 	}
+	// Use cached values
+	if diskUsageCache != nil {
+		resp.Disk = make([]types.DiskInfo, len(diskUsageCache))
+		copy(resp.Disk, diskUsageCache)
+	}
+	if inodeUsageCache != nil {
+		resp.Inodes = make([]types.InodeInfo, len(inodeUsageCache))
+		copy(resp.Inodes, inodeUsageCache)
+	}
+	diskUsageCacheMu.Unlock()
 
 	// Disk IO
 	ioCounters, _ := disk.IOCounters()

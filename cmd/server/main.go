@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/api/handlers"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
@@ -52,6 +53,11 @@ func main() {
 
 	// 加载告警配置
 	monitoring.LoadAlerts()
+
+	// 初始化静态资源哈希
+	if err := assets.Init(); err != nil {
+		log.Printf("Warning: Failed to initialize assets manager: %v\n", err)
+	}
 
 	// 设置HTTP路由
 	router := handlers.SetupRouter()

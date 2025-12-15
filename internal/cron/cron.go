@@ -161,6 +161,15 @@ func SaveCronJobs(jobs []types.CronJob) error {
 	var newLines []string
 	inManagedBlock := false
 
+	// 检查是否存在 marker
+	hasMarkers := false
+	for _, line := range existingLines {
+		if strings.TrimSpace(line) == startMarker {
+			hasMarkers = true
+			break
+		}
+	}
+
 	// 保留非管理区域的内容
 	for _, line := range existingLines {
 		trimmed := strings.TrimSpace(line)
@@ -173,6 +182,11 @@ func SaveCronJobs(jobs []types.CronJob) error {
 			continue
 		}
 		if !inManagedBlock {
+			// 如果是首次接管（!hasMarkers），且该行看起来像个任务，则跳过（视为已移动到管理块）
+			// 这样可以防止旧任务被保留在外部，导致无法删除
+			if !hasMarkers && !strings.HasPrefix(trimmed, "#") && len(strings.Fields(trimmed)) >= 6 {
+				continue
+			}
 			newLines = append(newLines, line)
 		}
 	}

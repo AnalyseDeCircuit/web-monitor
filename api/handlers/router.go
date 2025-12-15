@@ -2,10 +2,12 @@
 package handlers
 
 import (
+	"html/template"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 )
 
@@ -78,6 +80,27 @@ func SetupRouter() *Router {
 	router.mux.Handle("/manifest.json", fs)
 	router.mux.Handle("/static/", staticFs)
 
+	// 强缓存静态文件服务 (Immutable)
+	// 路径格式: /static-hashed/{hash}/{path...}
+	// 例如: /static-hashed/a1b2c3d4/js/app.js -> ./static/js/app.js
+	router.mux.HandleFunc("/static-hashed/", func(w http.ResponseWriter, r *http.Request) {
+		// 提取真实路径
+		// /static-hashed/a1b2c3d4/js/app.js -> /js/app.js
+		path := r.URL.Path
+		parts := strings.SplitN(strings.TrimPrefix(path, "/static-hashed/"), "/", 2)
+		if len(parts) != 2 {
+			http.NotFound(w, r)
+			return
+		}
+		realPath := parts[1]
+
+		// 设置强缓存头
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+
+		// 服务文件
+		http.ServeFile(w, r, "./static/"+realPath)
+	})
+
 	// 主页
 	router.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -85,13 +108,35 @@ func SetupRouter() *Router {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		http.ServeFile(w, r, "./templates/index.html")
+
+		// 使用模板渲染，注入 asset 函数
+		tmpl, err := template.New("index.html").Funcs(template.FuncMap{
+			"asset": assets.GetHashedPath,
+		}).ParseFiles("./templates/index.html")
+
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		tmpl.Execute(w, nil)
 	})
 
 	// 登录页面
 	router.mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		http.ServeFile(w, r, "./templates/login.html")
+
+		// 使用模板渲染，注入 asset 函数
+		tmpl, err := template.New("login.html").Funcs(template.FuncMap{
+			"asset": assets.GetHashedPath,
+		}).ParseFiles("./templates/login.html")
+
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		tmpl.Execute(w, nil)
 	})
 
 	return router
