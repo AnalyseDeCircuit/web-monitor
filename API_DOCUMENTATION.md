@@ -18,6 +18,12 @@
   - 部分 handler 使用 `http.Error(...)`，会返回 `text/plain` 的错误字符串
   - admin-only 的认证失败通常返回 JSON：`{"error":"..."}`
 
+## 运行配置（环境变量）
+
+- `WS_ALLOWED_ORIGINS`：WebSocket `/ws/stats` 的 Origin 允许列表（逗号分隔）。
+  - 默认不设置时：仅允许同源浏览器连接（无 `Origin` 的非浏览器客户端仍允许）。
+  - 可填写完整 Origin（如 `https://example.com`）或仅 hostname（如 `example.com`）。
+
 ## 认证相关
 
 ### POST /api/login

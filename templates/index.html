@@ -3566,7 +3566,10 @@
         let websocket = null;
         let reconnectTimer = null;
 
-        function connectWebSocket() {
+        function connectWebSocket(options = {}) {
+            const useQueryToken = !!options.useQueryToken;
+            const allowFallback = options.allowFallback !== false;
+
             if (websocket) {
                 // Prevent auto-reconnect from the old socket
                 websocket.onclose = null;
@@ -3587,14 +3590,21 @@
 
             const interval = document.getElementById('interval-select').value;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}`;
+            let wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}`;
+            if (useQueryToken) {
+                wsUrl += `&token=${encodeURIComponent(token)}`;
+            }
 
-            // 通过 Sec-WebSocket-Protocol 传递 Token（避免 URL 泄露）
-            websocket = new WebSocket(wsUrl, ['jwt', token]);
+            // 优先通过 Sec-WebSocket-Protocol 传递 Token（避免 URL 泄露）。
+            // 某些反代/平台可能会剥离该 header；如果握手阶段就断开，则回退到 query token（仅回退一次）。
+            websocket = useQueryToken ? new WebSocket(wsUrl) : new WebSocket(wsUrl, ['jwt', token]);
             const statusDot = document.getElementById('status-dot');
+
+            let opened = false;
 
             websocket.onopen = function() {
                 console.log('WebSocket connected');
+                opened = true;
                 statusDot.classList.add('connected');
             };
 
@@ -3610,8 +3620,14 @@
             websocket.onclose = function() {
                 console.log('WebSocket closed');
                 statusDot.classList.remove('connected');
+
+                if (!opened && allowFallback && !useQueryToken) {
+                    console.warn('WebSocket closed before open; retrying with token in query string');
+                    connectWebSocket({ useQueryToken: true, allowFallback: false });
+                    return;
+                }
                 // Try to reconnect in 3 seconds
-                reconnectTimer = setTimeout(connectWebSocket, 3000);
+                reconnectTimer = setTimeout(() => connectWebSocket({ useQueryToken, allowFallback: false }), 3000);
             };
 
             websocket.onerror = function(err) {

@@ -120,8 +120,33 @@ Web Monitor 通过 Prometheus 暴露丰富的系统指标，包括：
 |--------|--------|------|
 | `PORT` | `8000` | 服务监听端口 |
 | `JWT_SECRET` | 自动生成 | JWT 签名密钥，建议在生产环境设置 |
+| `WS_ALLOWED_ORIGINS` | 空 | WebSocket `/ws/stats` 的 Origin 允许列表（逗号分隔）；用于 Cloudflare/反代/自定义域名场景 |
 | `SSL_CERT_FILE` | 空 | TLS 证书文件路径（启用 HTTPS） |
 | `SSL_KEY_FILE` | 空 | TLS 私钥文件路径（启用 HTTPS） |
+
+#### 生产环境推荐：使用本地 `.env`（不提交到 Git）
+
+本项目已在 `.gitignore` 中忽略 `.env`，你可以在服务器上创建一个本地 `.env` 来放置敏感配置。
+
+- 参考模板：`.env.example`
+- 示例（把域名替换成你自己的）：
+
+```bash
+JWT_SECRET=change-me
+WS_ALLOWED_ORIGINS=https://webmonitor.example.com,webmonitor.example.com
+```
+
+Docker Compose 会自动读取同目录的 `.env` 用于变量注入（无需把域名/密钥写进仓库）。
+
+### Cloudflare CDN / 反向代理注意事项（WebSocket）
+
+你通过 Cloudflare 以 `https://<domain>/` 访问时，浏览器的 WebSocket 会携带 `Origin`。为了避免 CSWSH 风险，服务端默认只允许同源 WebSocket。
+
+如果你看到 WebSocket 连接失败（控制台 403 / Origin 错误），请：
+
+1. 在 `.env` 中设置 `WS_ALLOWED_ORIGINS`（如上示例）
+2. 确保你的反代在转发 WebSocket 时保留 Host/转发 Host（例如设置 `Host`/`X-Forwarded-Host`）
+3. Cloudflare 控制台里确保 WebSockets 功能开启（Network/WebSockets）
 
 ### 数据持久化
 

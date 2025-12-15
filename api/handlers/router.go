@@ -35,8 +35,10 @@ func SetupRouter() *Router {
 	router.mux.HandleFunc("/api/logs", LogsHandler)
 
 	// 监控数据路由
-	router.mux.HandleFunc("/api/info", StaticInfoHandler)        // Static system information for header
-	router.mux.HandleFunc("/api/system/info", SystemInfoHandler) // Real-time monitoring data
+	router.mux.HandleFunc("/api/info", StaticInfoHandler)            // Static system information for header
+	router.mux.HandleFunc("/api/system/info", SystemInfoHandler)     // Real-time monitoring data
+	router.mux.HandleFunc("/api/alerts", AlertsHandler)              // Legacy-compatible alerts config
+	router.mux.HandleFunc("/api/power/profile", PowerProfileHandler) // Legacy-compatible power profile
 	router.mux.HandleFunc("/api/docker/containers", DockerContainersHandler)
 	router.mux.HandleFunc("/api/docker/images", DockerImagesHandler)
 	router.mux.HandleFunc("/api/docker/action", DockerActionHandler)
@@ -69,6 +71,7 @@ func SetupRouter() *Router {
 	router.mux.Handle("/assets/", fs)
 	router.mux.Handle("/css/", fs)
 	router.mux.Handle("/js/", fs)
+	router.mux.Handle("/sw.js", fs)
 
 	// 主页
 	router.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -76,11 +79,13 @@ func SetupRouter() *Router {
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, "./templates/index.html")
 	})
 
 	// 登录页面
 	router.mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, "./templates/login.html")
 	})
 

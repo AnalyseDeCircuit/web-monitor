@@ -14,6 +14,7 @@ services:
       - LANG
       - DATA_DIR=/data
       - JWT_SECRET=${JWT_SECRET}
+      - WS_ALLOWED_ORIGINS=${WS_ALLOWED_ORIGINS}
     volumes:
       - /:/hostfs
       - /sys:/sys

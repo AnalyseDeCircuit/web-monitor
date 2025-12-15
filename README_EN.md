@@ -120,8 +120,29 @@ Data can be collected via the `/metrics` endpoint for integration with Prometheu
 |----------|---------|-------------|
 | `PORT` | `8000` | Service listening port |
 | `JWT_SECRET` | Auto-generated | JWT signing key, recommended to set in production |
+| `WS_ALLOWED_ORIGINS` | Empty | Allowlist for WebSocket `/ws/stats` Origin (comma-separated); useful for Cloudflare / reverse proxy / custom domain |
 | `SSL_CERT_FILE` | Empty | TLS certificate file path (for HTTPS) |
 | `SSL_KEY_FILE` | Empty | TLS private key file path (for HTTPS) |
+
+#### Recommended in production: local `.env` (not committed)
+
+This repo ignores `.env` via `.gitignore`. Create a local `.env` on your server for secrets and site-specific settings.
+
+- Template: `.env.example`
+- Example (replace with your domain):
+
+```bash
+JWT_SECRET=change-me
+WS_ALLOWED_ORIGINS=https://webmonitor.example.com,webmonitor.example.com
+```
+
+Docker Compose will automatically read `.env` in the same directory for variable injection.
+
+### Cloudflare CDN / Reverse Proxy notes (WebSocket)
+
+When accessing through Cloudflare on `https://<domain>/`, browsers send a WebSocket `Origin` header. For safety, the server allows same-origin WebSocket by default.
+
+If your WebSocket connection fails (403 / Origin errors), set `WS_ALLOWED_ORIGINS` in `.env` and ensure your proxy forwards the correct `Host` / `X-Forwarded-Host`. Also ensure Cloudflare WebSockets is enabled.
 
 ### Data Persistence
 

@@ -56,6 +56,10 @@ func isAllowedWebSocketOrigin(r *http.Request) bool {
 		// Non-browser clients often omit Origin.
 		return true
 	}
+	// Optional allowlist override for reverse proxies / custom domains.
+	if allowWebSocketOriginByEnv(origin) {
+		return true
+	}
 	u, err := url.Parse(origin)
 	if err != nil {
 		return false
@@ -84,6 +88,50 @@ func isAllowedWebSocketOrigin(r *http.Request) bool {
 	}
 
 	return originHost == reqHost
+}
+
+func allowWebSocketOriginByEnv(origin string) bool {
+	list := strings.TrimSpace(os.Getenv("WS_ALLOWED_ORIGINS"))
+	if list == "" {
+		return false
+	}
+
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return false
+	}
+
+	u, err := url.Parse(origin)
+	originHost := ""
+	if err == nil {
+		originHost = strings.ToLower(u.Hostname())
+	}
+
+	for _, raw := range strings.Split(list, ",") {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		// Full origin match, e.g. https://example.com
+		if strings.EqualFold(entry, origin) {
+			return true
+		}
+		// Hostname match, e.g. example.com
+		if originHost != "" && strings.EqualFold(entry, originHost) {
+			return true
+		}
+		// If entry is a URL, compare hostname.
+		if strings.Contains(entry, "://") {
+			if eu, err := url.Parse(entry); err == nil {
+				eh := strings.ToLower(eu.Hostname())
+				if eh != "" && originHost != "" && eh == originHost {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func tokenFromWebSocketSubprotocol(r *http.Request) string {
@@ -128,12 +176,14 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		token = r.URL.Query().Get("token")
 	}
 	if token == "" {
+		log.Printf("ws unauthorized: missing token origin=%q host=%q proto=%q remote=%q", r.Header.Get("Origin"), r.Host, r.Header.Get("Sec-WebSocket-Protocol"), r.RemoteAddr)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"Unauthorized"}`))
 		return
 	}
 	if _, err := auth.ValidateJWT(token); err != nil {
+		log.Printf("ws unauthorized: invalid token origin=%q host=%q proto=%q remote=%q err=%v", r.Header.Get("Origin"), r.Host, r.Header.Get("Sec-WebSocket-Protocol"), r.RemoteAddr, err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"Unauthorized"}`))

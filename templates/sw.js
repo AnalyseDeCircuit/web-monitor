@@ -1,9 +1,5 @@
-const CACHE_NAME = 'web-monitor-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json'
-];
+const CACHE_NAME = 'web-monitor-no-cache-v1';
+const urlsToCache = [];
 
 // Installation event - cache files
 self.addEventListener('install', event => {
@@ -33,80 +29,19 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - pass-through (no caching).
 self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
   if (request.method !== 'GET') {
     return;
   }
-
-  // Skip cross-origin requests
   if (url.origin !== location.origin) {
     return;
   }
 
-  // API requests - network first, cache as fallback
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(request)
-        .then(response => {
-          if (!response || response.status !== 200 || response.type === 'error') {
-            return response;
-          }
-          // Clone and cache successful responses
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(request, responseToCache);
-          });
-          return response;
-        })
-        .catch(() => {
-          // Try to serve from cache on network failure
-          return caches.match(request).then(response => {
-            return response || new Response('Offline - data unavailable', {
-              status: 503,
-              statusText: 'Service Unavailable',
-              headers: new Headers({ 'Content-Type': 'text/plain' })
-            });
-          });
-        })
-    );
-    return;
-  }
-
-  // Static resources - cache first, fallback to network
-  event.respondWith(
-    caches.match(request)
-      .then(response => {
-        if (response) {
-          return response;
-        }
-        return fetch(request)
-          .then(response => {
-            if (!response || response.status !== 200 || response.type === 'error') {
-              return response;
-            }
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(request, responseToCache);
-            });
-            return response;
-          });
-      })
-      .catch(() => {
-        // Offline fallback for main page
-        if (request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
-        return new Response('Offline', {
-          status: 503,
-          statusText: 'Service Unavailable'
-        });
-      })
-  );
+  event.respondWith(fetch(request));
 });
 
 // Background sync for future API requests
