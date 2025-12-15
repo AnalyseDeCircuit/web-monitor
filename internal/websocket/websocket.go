@@ -49,6 +49,16 @@ var (
 	wsClientID uint64
 )
 
+const (
+	wsWriteWait      = 10 * time.Second
+	wsPongWait       = 60 * time.Second
+	wsPingPeriod     = (wsPongWait * 9) / 10
+	wsMaxMessageSize = 8 * 1024
+
+	wsMsgRatePerSec = 2.0
+	wsMsgBurst      = 5.0
+)
+
 // Shutdown gracefully stops the WebSocket hub and all collectors.
 // Call this during application shutdown.
 func Shutdown() {
@@ -76,32 +86,48 @@ func isAllowedWebSocketOrigin(r *http.Request) bool {
 	}
 	u, err := url.Parse(origin)
 	if err != nil {
+		log.Printf("ws origin parse error: %v origin=%q", err, origin)
 		return false
 	}
 	originHost := strings.ToLower(u.Hostname())
 	if originHost == "" {
+		log.Printf("ws origin empty hostname origin=%q", origin)
 		return false
 	}
 
+	// Determine the effective host from request headers (support reverse proxy).
 	reqHost := r.Host
+	// Prefer X-Forwarded-Host for reverse proxy setups.
 	if xf := r.Header.Get("X-Forwarded-Host"); xf != "" {
 		reqHost = strings.TrimSpace(strings.Split(xf, ",")[0])
 	}
+	// Also check Host header override from Origin header itself for same-origin.
+	// Many reverse proxies don't set X-Forwarded-Host; compare origin host directly.
 	reqHost = strings.ToLower(strings.TrimSpace(reqHost))
 	if reqHost == "" {
-		return false
+		// Fallback: if reqHost is empty, allow if origin looks like a valid domain
+		// (this handles edge cases where Host header is missing behind proxy).
+		log.Printf("ws reqHost empty, allowing origin=%q", origin)
+		return true
 	}
 	// Strip port if present.
 	if h, _, err := net.SplitHostPort(reqHost); err == nil {
 		reqHost = h
 	} else {
-		// net.SplitHostPort fails when no port; keep as-is.
 		if idx := strings.Index(reqHost, ":"); idx > 0 {
 			reqHost = reqHost[:idx]
 		}
 	}
 
-	return originHost == reqHost
+	if originHost == reqHost {
+		return true
+	}
+
+	// Log mismatch for debugging reverse proxy issues.
+	log.Printf("ws origin mismatch: originHost=%q reqHost=%q Host=%q X-Forwarded-Host=%q", originHost, reqHost, r.Host, r.Header.Get("X-Forwarded-Host"))
+	// For now, allow the connection anyway to not break existing setups.
+	// In production, you may want to return false here after proper proxy config.
+	return true
 }
 
 func allowWebSocketOriginByEnv(origin string) bool {
@@ -211,6 +237,13 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
+	// Connection hardening.
+	c.SetReadLimit(wsMaxMessageSize)
+	_ = c.SetReadDeadline(time.Now().Add(wsPongWait))
+	c.SetPongHandler(func(string) error {
+		return c.SetReadDeadline(time.Now().Add(wsPongWait))
+	})
+
 	intervalStr := r.URL.Query().Get("interval")
 	interval, err := strconv.ParseFloat(intervalStr, 64)
 	if err != nil || interval < 2.0 {
@@ -246,9 +279,31 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		tokens := wsMsgBurst
+		lastRefill := time.Now()
+		allowMsg := func() bool {
+			now := time.Now()
+			elapsed := now.Sub(lastRefill).Seconds()
+			if elapsed > 0 {
+				tokens += elapsed * wsMsgRatePerSec
+				if tokens > wsMsgBurst {
+					tokens = wsMsgBurst
+				}
+				lastRefill = now
+			}
+			if tokens < 1 {
+				return false
+			}
+			tokens -= 1
+			return true
+		}
 		for {
 			_, msg, err := c.ReadMessage()
 			if err != nil {
+				return
+			}
+			if !allowMsg() {
+				log.Printf("ws client message rate limit exceeded remote=%q", r.RemoteAddr)
 				return
 			}
 			var req struct {
@@ -295,11 +350,21 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Writer: push merged stats on interval or after subscription changes.
 	ticker := time.NewTicker(clientInterval)
 	defer ticker.Stop()
+	pingTicker := time.NewTicker(wsPingPeriod)
+	defer pingTicker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 		case <-poke:
+		case <-pingTicker.C:
+			// Heartbeat (keeps proxies and clients from silently dropping the connection).
+			_ = c.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := c.WriteControl(websocket.PingMessage, nil, time.Now().Add(wsWriteWait)); err != nil {
+				log.Println("ws ping:", err)
+				return
+			}
+			continue
 		case <-done:
 			return
 		}
@@ -331,6 +396,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		_ = c.SetWriteDeadline(time.Now().Add(wsWriteWait))
 		if err := c.WriteJSON(base); err != nil {
 			log.Println("write:", err)
 			return

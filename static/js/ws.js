@@ -37,6 +37,14 @@ function connectWebSocket(options = {}) {
         console.log('WebSocket connected');
         opened = true;
         statusDot.classList.add('connected');
+
+        // Subscribe to optional topics so legacy UI sections keep working.
+        // Server-side will ignore unknown topics.
+        try {
+            websocket.send(JSON.stringify({ type: 'set_topics', topics: ['processes', 'net_detail'] }));
+        } catch (e) {
+            console.warn('Failed to send WS subscription message:', e);
+        }
     };
 
     websocket.onmessage = function (event) {

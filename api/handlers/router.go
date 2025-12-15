@@ -4,6 +4,7 @@ package handlers
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 )
@@ -96,9 +97,49 @@ func SetupRouter() *Router {
 	return router
 }
 
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Security headers (defense in depth)
+		// CSP: Allow scripts from self + CDN (Chart.js), inline for legacy compat.
+		// In production, consider removing 'unsafe-inline' and refactoring inline handlers.
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
+				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
+				"font-src 'self' https://fonts.gstatic.com; "+
+				"img-src 'self' data:; "+
+				"connect-src 'self' wss: ws:; "+
+				"frame-ancestors 'none'; "+
+				"base-uri 'self'; "+
+				"form-action 'self'")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func wrapWithAPIAuthorization(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+
+		// Basic request hardening for API endpoints.
+		// Prevent large request bodies from exhausting memory/CPU.
+		if strings.HasPrefix(path, "/api/") {
+			const maxAPIRequestBodyBytes int64 = 2 << 20 // 2 MiB
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch:
+				if r.ContentLength > maxAPIRequestBodyBytes {
+					writeJSONError(w, http.StatusRequestEntityTooLarge, "Request body too large")
+					return
+				}
+				if r.Body != nil {
+					r.Body = http.MaxBytesReader(w, r.Body, maxAPIRequestBodyBytes)
+				}
+			}
+		}
+
 		if strings.HasPrefix(path, "/api/") {
 			// Public endpoints
 			switch path {
@@ -132,10 +173,18 @@ func wrapWithAPIAuthorization(next http.Handler) http.Handler {
 
 // Start 启动HTTP服务器
 func (r *Router) Start(addr string) error {
-	return http.ListenAndServe(addr, wrapWithAPIAuthorization(r.mux))
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           wrapWithAPIAuthorization(r.mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	return server.ListenAndServe()
 }
 
 // Handler 返回包装了授权中间件的 HTTP Handler
 func (r *Router) Handler() http.Handler {
-	return wrapWithAPIAuthorization(r.mux)
+	return securityHeaders(wrapWithAPIAuthorization(r.mux))
 }

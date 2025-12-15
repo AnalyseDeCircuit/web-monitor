@@ -654,9 +654,9 @@ function _renderStatsInternal(data) {
 
                     // Socket Stats
                     if (data.network.sockets) {
-                        document.getElementById('net-tcp-count').innerText = data.network.sockets.tcp;
-                        document.getElementById('net-udp-count').innerText = data.network.sockets.udp;
-                        document.getElementById('net-tcp-tw').innerText = data.network.sockets.tcp_tw;
+                        document.getElementById('net-tcp-count').innerText = data.network.sockets.tcp || 0;
+                        document.getElementById('net-udp-count').innerText = data.network.sockets.udp || 0;
+                        document.getElementById('net-tcp-tw').innerText = data.network.sockets.tcp_tw || 0;
                     }
 
                     // Network Errors & Packet Loss

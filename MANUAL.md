@@ -75,7 +75,90 @@ export JWT_SECRET="your-secure-jwt-secret-key-here"
 docker-compose up -d
 ```
 
-### 2.2 二进制部署
+### 2.2 Docker Socket 安全防护 ⚠️
+
+**重要**: 直接访问 `/var/run/docker.sock` 等同于获得宿主机 root 权限。任何应用程序的 RCE（远程代码执行）漏洞都会直接导致宿主机被完全控制。
+
+#### 推荐的安全配置方案
+
+**方案 1：最小化（生产环境推荐）**
+- 仅挂载读权限的 docker.sock，启用环境变量 `DOCKER_READ_ONLY=true`
+- 此时后端只能查看容器/镜像，**无法执行启动、停止、删除等写操作**
+- 在 docker-compose.yml 中添加：
+  ```yaml
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+  environment:
+    - DOCKER_READ_ONLY=true
+  ```
+- 若确实需要容器管理，改为 `:rw` 并配合其他防护措施
+
+**方案 2：使用 docker 组权限（中等安全）**
+```bash
+# 在宿主机上配置（容器运行前）
+sudo usermod -aG docker web-monitor-user  # 假设以 web-monitor-user 身份运行
+sudo chown :docker /var/run/docker.sock
+sudo chmod 660 /var/run/docker.sock
+```
+- 在 docker-compose.yml 中：
+  ```yaml
+  user: "web-monitor-user"  # 非 root 身份运行
+  ```
+
+**方案 3：使用 Sidecar 代理（最安全）**
+部署一个受控的代理容器（如 socat 或 docker-socket-proxy），限制 API 访问范围：
+```yaml
+version: '3.8'
+services:
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - POST=0  # 禁止写操作（POST/DELETE/PUT）
+    expose:
+      - 2375
+    networks:
+      - internal
+
+  web-monitor-go:
+    # ... 其他配置
+    environment:
+      - DOCKER_HOST=http://docker-socket-proxy:2375
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+```
+
+#### 环境变量控制
+
+本应用支持以下环境变量强制只读模式：
+
+| 环境变量 | 值 | 说明 |
+|---------|-----|------|
+| `DOCKER_READ_ONLY` | `true` | 启用只读模式，所有写操作（start/stop/restart/remove）被拒绝 |
+
+当启用只读模式时，容器 REST API 的写操作（`/api/docker/action`, `/api/docker/image/remove`）将返回 403 错误：
+```json
+{
+  "error": "Docker read-only mode is enabled; action 'start' is not allowed"
+}
+```
+
+#### 部署清单
+
+- [ ] 评估是否真正需要容器/镜像管理功能
+- [ ] 如果需要，选择方案 1（仅读）或方案 3（Sidecar）
+- [ ] 如果使用方案 2，确保以非 root 用户身份运行
+- [ ] 定期审计操作日志（Web Monitor 记录所有 Docker 操作）
+- [ ] 通过 WAF/负载均衡器限制访问范围（仅允许信任的 IP）
+
+### 2.3 二进制部署
 
 适用于无法使用 Docker 的环境。
 
@@ -94,8 +177,8 @@ docker-compose up -d
     # 确保有 root 权限，否则部分监控数据无法获取
     sudo ./web-monitor-go
     
-    # 或指定端口运行
-    PORT=8080 JWT_SECRET="your-secret" sudo ./web-monitor-go
+    # 或指定端口运行（同时启用只读模式）
+    PORT=8080 JWT_SECRET="your-secret" DOCKER_READ_ONLY=true sudo ./web-monitor-go
     ```
 
 ---

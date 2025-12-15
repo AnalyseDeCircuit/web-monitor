@@ -6,22 +6,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
 
 var (
-	dockerClient *http.Client
-	dockerOnce   sync.Once
+	dockerClient       *http.Client
+	dockerOnce         sync.Once
+	dockerReadOnlyMode bool
 )
 
 // getDockerClient 获取Docker客户端
 func getDockerClient() *http.Client {
 	dockerOnce.Do(func() {
+		// Check if read-only mode is enforced via env var.
+		if os.Getenv("DOCKER_READ_ONLY") == "true" {
+			dockerReadOnlyMode = true
+			log.Println("Docker read-only mode enabled: write operations (start/stop/remove) will be blocked")
+		}
+		// Security warning: Direct access to docker.sock grants root-level host access.
+		// For production, consider:
+		// - Running with minimal permissions (docker group, not root)
+		// - Using a sidecar container with limited Docker API access
+		// - Mounting /var/run/docker.sock read-only when possible
+		log.Println("WARNING: Direct docker.sock access detected. Ensure secure deployment configuration.")
 		dockerClient = &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
@@ -85,6 +99,10 @@ func ListImages() ([]types.DockerImage, error) {
 
 // ContainerAction 执行容器操作
 func ContainerAction(containerID, action string) error {
+	// Block write operations in read-only mode.
+	if dockerReadOnlyMode {
+		return fmt.Errorf("Docker read-only mode is enabled; action '%s' is not allowed", action)
+	}
 	var path string
 	method := "POST"
 	switch action {
@@ -118,6 +136,10 @@ func ContainerAction(containerID, action string) error {
 // RemoveImage 删除镜像（默认非强制）。
 // imageRef 可以是镜像 ID（如 sha256:...）或引用（如 repo:tag）。
 func RemoveImage(imageRef string, force bool, noprune bool) error {
+	// Block write operations in read-only mode.
+	if dockerReadOnlyMode {
+		return fmt.Errorf("Docker read-only mode is enabled; image removal is not allowed")
+	}
 	if imageRef == "" {
 		return fmt.Errorf("image reference is required")
 	}

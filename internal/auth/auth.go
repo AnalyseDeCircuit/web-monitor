@@ -3,6 +3,8 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,8 +25,85 @@ var (
 	userDB        *types.UserDatabase
 	userDB_mu     sync.RWMutex
 	loginLimiters = newLoginLimiterStore(1, 5, 10*time.Minute)
+	revokedJWTs   = newRevokedJWTStore(30 * time.Minute)
 	jwtKey        []byte
 )
+
+type revokedJWTStore struct {
+	mu         sync.Mutex
+	items      map[string]time.Time // tokenHash -> expiresAt
+	lastGC     time.Time
+	gcInterval time.Duration
+}
+
+func newRevokedJWTStore(gcInterval time.Duration) *revokedJWTStore {
+	if gcInterval <= 0 {
+		gcInterval = 30 * time.Minute
+	}
+	return &revokedJWTStore{
+		items:      make(map[string]time.Time),
+		lastGC:     time.Now(),
+		gcInterval: gcInterval,
+	}
+}
+
+func (s *revokedJWTStore) revoke(tokenHash string, expiresAt time.Time) {
+	if tokenHash == "" {
+		return
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now.Sub(s.lastGC) >= s.gcInterval {
+		for k, exp := range s.items {
+			if !exp.After(now) {
+				delete(s.items, k)
+			}
+		}
+		s.lastGC = now
+	}
+	s.items[tokenHash] = expiresAt
+}
+
+func (s *revokedJWTStore) isRevoked(tokenHash string) bool {
+	if tokenHash == "" {
+		return false
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	exp, ok := s.items[tokenHash]
+	if !ok {
+		return false
+	}
+	if !exp.After(now) {
+		delete(s.items, tokenHash)
+		return false
+	}
+	return true
+}
+
+func hashToken(tokenString string) string {
+	if strings.TrimSpace(tokenString) == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(tokenString))
+	return hex.EncodeToString(sum[:])
+}
+
+func parseAndValidateJWT(tokenString string) (*jwt.RegisteredClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid token")
+	}
+	return claims, nil
+}
 
 type loginLimiterStore struct {
 	mu         sync.Mutex
@@ -217,16 +296,28 @@ func GenerateJWT(username, role string) (string, error) {
 
 // ValidateJWT 验证JWT令牌并返回声明
 func ValidateJWT(tokenString string) (*jwt.RegisteredClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtKey, nil
-	})
+	claims, err := parseAndValidateJWT(tokenString)
 	if err != nil {
 		return nil, err
 	}
-	if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
-		return claims, nil
+	if revokedJWTs.isRevoked(hashToken(tokenString)) {
+		return nil, fmt.Errorf("token revoked")
 	}
-	return nil, fmt.Errorf("invalid token")
+	return claims, nil
+}
+
+// RevokeJWT marks a JWT string as revoked until its expiration time.
+// This makes logout effective server-side (defense in depth).
+func RevokeJWT(tokenString string) {
+	claims, err := parseAndValidateJWT(tokenString)
+	if err != nil {
+		return
+	}
+	exp := time.Now().Add(24 * time.Hour)
+	if claims.ExpiresAt != nil {
+		exp = claims.ExpiresAt.Time
+	}
+	revokedJWTs.revoke(hashToken(tokenString), exp)
 }
 
 // HashPasswordBcrypt 生成密码哈希

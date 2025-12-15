@@ -110,6 +110,17 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Server-side revoke: mark this JWT as invalid for future requests.
+	// We accept either Authorization Bearer or cookie-based auth.
+	if authHeader := strings.TrimSpace(r.Header.Get("Authorization")); authHeader != "" {
+		parts := strings.Split(authHeader, " ")
+		if len(parts) == 2 && parts[0] == "Bearer" {
+			auth.RevokeJWT(strings.TrimSpace(parts[1]))
+		}
+	} else if cookie, err := r.Cookie("auth_token"); err == nil {
+		auth.RevokeJWT(cookie.Value)
+	}
+
 	// 清理 Cookie（客户端也会清理 localStorage）
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",

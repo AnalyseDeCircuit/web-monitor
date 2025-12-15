@@ -1,14 +1,25 @@
 package websocket
 
 import (
-	"context"
-	"log"
-	"sync"
-	"sync/atomic"
-	"time"
+"context"
+"encoding/json"
+"log"
+"sync"
+"sync/atomic"
+"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+"github.com/gorilla/websocket"
 )
+
+// Client represents a connected WebSocket client.
+type Client struct {
+	hub  *statsHub
+	conn *websocket.Conn
+	send chan []byte
+	subs map[string]bool
+	mu   sync.Mutex
+}
 
 type netDetailSnapshot struct {
 	Network  types.NetInfo
@@ -38,7 +49,7 @@ func newDynamicResponseCollector(collect func() types.Response) *dynamicResponse
 	}
 }
 
-func (c *dynamicResponseCollector) Start(initialInterval time.Duration) {
+func (c *dynamicResponseCollector) Start(initialInterval time.Duration, onUpdate func()) {
 	c.started.Do(func() {
 		if initialInterval <= 0 {
 			initialInterval = 5 * time.Second
@@ -47,6 +58,9 @@ func (c *dynamicResponseCollector) Start(initialInterval time.Duration) {
 			// Prime immediately.
 			c.last.Store(c.collect())
 			close(c.ready)
+			if onUpdate != nil {
+				onUpdate()
+			}
 
 			interval := initialInterval
 			ticker := time.NewTicker(interval)
@@ -59,6 +73,9 @@ func (c *dynamicResponseCollector) Start(initialInterval time.Duration) {
 					return
 				case <-ticker.C:
 					c.last.Store(c.collect())
+					if onUpdate != nil {
+						onUpdate()
+					}
 				case d := <-c.updateCh:
 					if d <= 0 {
 						continue
@@ -240,6 +257,11 @@ type statsHub struct {
 	processes *conditionalCollector[[]types.ProcessInfo]
 	netDetail *conditionalCollector[netDetailSnapshot]
 
+	clients    map[*Client]bool
+	register   chan *Client
+	unregister chan *Client
+	broadcast  chan struct{}
+
 	mu             sync.Mutex
 	clientInterval map[uint64]time.Duration
 	shutdown       bool
@@ -250,10 +272,21 @@ func newStatsHub() *statsHub {
 		base:           newDynamicResponseCollector(collectBaseStats),
 		processes:      newConditionalCollector(15*time.Second, collectProcesses),
 		netDetail:      newConditionalCollector(15*time.Second, collectNetDetail),
+		clients:        make(map[*Client]bool),
+		register:       make(chan *Client),
+		unregister:     make(chan *Client),
+		broadcast:      make(chan struct{}, 1),
 		clientInterval: make(map[uint64]time.Duration),
 	}
 	// Start base immediately with a sane default.
-	h.base.Start(5 * time.Second)
+	// Pass a callback to trigger broadcast on update.
+	h.base.Start(5*time.Second, func() {
+		select {
+		case h.broadcast <- struct{}{}:
+		default:
+		}
+	})
+	go h.run()
 	return h
 }
 
@@ -273,81 +306,180 @@ func (h *statsHub) Shutdown() {
 	h.netDetail.Stop()
 }
 
-func (h *statsHub) RegisterClient(id uint64, interval time.Duration) {
-	interval = clampInterval(interval)
-	h.mu.Lock()
-	h.clientInterval[id] = interval
-	min := minIntervalLocked(h.clientInterval)
-	h.mu.Unlock()
-	h.base.SetInterval(min)
+func (h *statsHub) run() {
+	for {
+		select {
+		case client := <-h.register:
+			h.clients[client] = true
+			// Update interval
+			h.updateInterval()
+		case client := <-h.unregister:
+			if _, ok := h.clients[client]; ok {
+				delete(h.clients, client)
+				close(client.send)
+				h.updateInterval()
+			}
+		case <-h.broadcast:
+			h.broadcastSnapshot()
+		}
+	}
 }
 
-func (h *statsHub) UnregisterClient(id uint64) {
-	h.mu.Lock()
-	delete(h.clientInterval, id)
-	min := minIntervalLocked(h.clientInterval)
-	h.mu.Unlock()
-	if min > 0 {
-		h.base.SetInterval(min)
-	}
+func (h *statsHub) updateInterval() {
+	// Re-calculate min interval based on registered clients (if we tracked their interval in Client struct)
+	// For now, we rely on the external RegisterClient/UnregisterClient calls to update h.clientInterval
+	// But since we moved client management here, we should probably move interval tracking here too.
+	// However, to minimize changes, we'll keep using h.clientInterval which is updated by RegisterClient.
+// Wait, RegisterClient is called by HandleWebSocket.
+}
+
+func (h *statsHub) broadcastSnapshot() {
+base, ok := h.base.Latest()
+if !ok {
+return
+}
+
+// Pre-calculate payloads for 4 combinations:
+// 0: Base
+// 1: Base + Procs
+// 2: Base + Net
+// 3: Base + Procs + Net
+payloads := make([][]byte, 4)
+
+// Helper to merge and marshal
+getPayload := func(idx int) []byte {
+if payloads[idx] != nil {
+return payloads[idx]
+}
+// Clone base to avoid modifying shared state (though we are marshaling immediately)
+// Actually, we need a deep copy if we modify slices/maps.
+// But here we are just assigning to fields.
+// types.Response is a struct. Assigning it copies the struct, but slices/maps are references.
+// We must be careful not to modify the underlying arrays of 'base'.
+// The collectors return fresh data or cached data.
+// We are only assigning to .Processes and .Network fields which are slices/maps.
+// It is safe to assign them to a copy of the struct for marshaling.
+
+data := base // struct copy
+
+if idx&1 != 0 { // Bit 0: Procs
+if procs, ok := h.processes.Latest(); ok {
+data.Processes = procs
+}
+}
+if idx&2 != 0 { // Bit 1: Net
+if nd, ok := h.netDetail.Latest(); ok {
+data.Network.Interfaces = nd.Network.Interfaces
+data.Network.Sockets = nd.Network.Sockets
+data.Network.ConnectionStates = nd.Network.ConnectionStates
+data.Network.Errors = nd.Network.Errors
+data.Network.ListeningPorts = nd.Network.ListeningPorts
+data.SSHStats = nd.SSHStats
+}
+}
+
+b, err := json.Marshal(data)
+if err != nil {
+log.Printf("broadcast marshal error: %v", err)
+return nil
+}
+payloads[idx] = b
+return b
+}
+
+for client := range h.clients {
+client.mu.Lock()
+wantProcs := client.subs["processes"]
+wantNet := client.subs["net_detail"]
+client.mu.Unlock()
+
+idx := 0
+if wantProcs {
+idx |= 1
+}
+if wantNet {
+idx |= 2
+}
+
+payload := getPayload(idx)
+if payload == nil {
+continue
+}
+
+select {
+case client.send <- payload:
+default:
+// Backpressure: drop message if client is too slow
+// log.Printf("ws client slow, dropping frame")
+}
+}
+}
+
+func (h *statsHub) RegisterClient(client *Client, id uint64, interval time.Duration) {
+interval = clampInterval(interval)
+h.mu.Lock()
+h.clientInterval[id] = interval
+min := minIntervalLocked(h.clientInterval)
+h.mu.Unlock()
+h.base.SetInterval(min)
+h.register <- client
+}
+
+func (h *statsHub) UnregisterClient(client *Client, id uint64) {
+h.mu.Lock()
+delete(h.clientInterval, id)
+min := minIntervalLocked(h.clientInterval)
+h.mu.Unlock()
+if min > 0 {
+h.base.SetInterval(min)
+}
+h.unregister <- client
 }
 
 func (h *statsHub) Subscribe(topic string) {
-	switch topic {
-	case "processes":
-		h.processes.Subscribe()
-	case "net_detail":
-		h.netDetail.Subscribe()
-	}
+switch topic {
+case "processes":
+h.processes.Subscribe()
+case "net_detail":
+h.netDetail.Subscribe()
+}
 }
 
 func (h *statsHub) Unsubscribe(topic string) {
-	switch topic {
-	case "processes":
-		h.processes.Unsubscribe()
-	case "net_detail":
-		h.netDetail.Unsubscribe()
-	}
+switch topic {
+case "processes":
+h.processes.Unsubscribe()
+case "net_detail":
+h.netDetail.Unsubscribe()
+}
 }
 
 func (h *statsHub) WaitReady(timeout time.Duration) {
-	h.base.WaitReady(timeout)
-}
-
-func (h *statsHub) LatestBase() (types.Response, bool) {
-	return h.base.Latest()
-}
-
-func (h *statsHub) LatestProcesses() ([]types.ProcessInfo, bool) {
-	return h.processes.Latest()
-}
-
-func (h *statsHub) LatestNetDetail() (netDetailSnapshot, bool) {
-	return h.netDetail.Latest()
+h.base.WaitReady(timeout)
 }
 
 func clampInterval(d time.Duration) time.Duration {
-	if d < 2*time.Second {
-		d = 2 * time.Second
-	}
-	if d > 60*time.Second {
-		d = 60 * time.Second
-	}
-	return d
+if d < 2*time.Second {
+d = 2 * time.Second
+}
+if d > 60*time.Second {
+d = 60 * time.Second
+}
+return d
 }
 
 func minIntervalLocked(m map[uint64]time.Duration) time.Duration {
-	min := time.Duration(0)
-	for _, d := range m {
-		if d <= 0 {
-			continue
-		}
-		if min == 0 || d < min {
-			min = d
-		}
-	}
-	if min == 0 {
-		min = 5 * time.Second
-	}
-	return min
+min := time.Duration(0)
+for _, d := range m {
+if d <= 0 {
+continue
+}
+if min == 0 || d < min {
+min = d
+}
+}
+if min == 0 {
+min = 5 * time.Second
+}
+return min
 }
