@@ -2,11 +2,7 @@
 package network
 
 import (
-	"bufio"
 	"net"
-	"os"
-	"strconv"
-	"strings"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
@@ -102,7 +98,11 @@ func GetNetworkInfo() (types.NetInfo, error) {
 	info.BytesRecv = utils.GetSize(info.RawRecv)
 
 	// Listening Ports
-	info.ListeningPorts = getListeningPorts()
+	if err == nil {
+		info.ListeningPorts = getListeningPorts(conns)
+	} else {
+		info.ListeningPorts = []types.ListeningPort{}
+	}
 
 	return info, nil
 }
@@ -142,89 +142,42 @@ func GetNetworkInterfaces() ([]types.NetworkInterface, error) {
 }
 
 // getListeningPorts 获取监听端口
-func getListeningPorts() []types.ListeningPort {
+func getListeningPorts(conns []gopsutilnet.ConnectionStat) []types.ListeningPort {
 	var ports []types.ListeningPort
+	seen := make(map[int]bool)
 
-	// Try gopsutil first
-	conns, err := gopsutilnet.Connections("tcp")
-	if err == nil {
-		portMap := make(map[int]bool)
-		for _, conn := range conns {
-			if conn.Status == "LISTEN" {
-				port := int(conn.Laddr.Port)
-				if port > 0 && !portMap[port] {
-					portMap[port] = true
-					ports = append(ports, types.ListeningPort{
-						Port:     port,
-						Protocol: "tcp",
-					})
-				}
-			}
+	for _, conn := range conns {
+		port := int(conn.Laddr.Port)
+		if port <= 0 {
+			continue
 		}
 
-		// Also check UDP
-		conns, _ = gopsutilnet.Connections("udp")
-		for _, conn := range conns {
-			if conn.Laddr.Port > 0 {
-				port := int(conn.Laddr.Port)
-				// Check if this port is already in TCP
-				found := false
-				for _, p := range ports {
-					if p.Port == port {
-						found = true
-						break
-					}
-				}
-				if !found {
-					ports = append(ports, types.ListeningPort{
-						Port:     port,
-						Protocol: "udp",
-					})
-				}
+		// TCP Listen
+		if conn.Type == 1 && conn.Status == "LISTEN" {
+			if !seen[port] {
+				seen[port] = true
+				ports = append(ports, types.ListeningPort{
+					Port:     port,
+					Protocol: "tcp",
+				})
 			}
 		}
-
-		return ports
 	}
 
-	// Fallback: parse /proc/net/tcp manually
-	paths := []string{"/hostfs/proc/net/tcp", "/proc/net/tcp"}
-	for _, path := range paths {
-		if file, err := os.Open(path); err == nil {
-			defer file.Close()
-			scanner := bufio.NewScanner(file)
-			portMap := make(map[int]bool)
-
-			for scanner.Scan() {
-				line := scanner.Text()
-				fields := strings.Fields(line)
-				if len(fields) < 4 {
-					continue
-				}
-
-				// Check if LISTEN state (0A in hex)
-				if fields[3] != "0A" {
-					continue
-				}
-
-				// Parse local address field
-				localAddr := fields[1]
-				parts := strings.Split(localAddr, ":")
-				if len(parts) == 2 {
-					portHex := parts[1]
-					if portVal, err := strconv.ParseInt(portHex, 16, 32); err == nil {
-						port := int(portVal)
-						if port > 0 && !portMap[port] {
-							portMap[port] = true
-							ports = append(ports, types.ListeningPort{
-								Port:     port,
-								Protocol: "tcp",
-							})
-						}
-					}
-				}
+	// UDP (Type 2) - UDP sockets are stateless, so just list them
+	for _, conn := range conns {
+		port := int(conn.Laddr.Port)
+		if port <= 0 {
+			continue
+		}
+		if conn.Type == 2 {
+			if !seen[port] {
+				seen[port] = true
+				ports = append(ports, types.ListeningPort{
+					Port:     port,
+					Protocol: "udp",
+				})
 			}
-			break
 		}
 	}
 

@@ -53,3 +53,4 @@ package*.sh
 /templates/*.cache
 main_legacy.go
 todo.md
+cpu.prof

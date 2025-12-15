@@ -50,6 +50,10 @@ var (
 	diskUsageLastUpdate time.Time
 	diskUsageCacheMu    sync.Mutex
 
+	// Process cache
+	processCache   = make(map[int32]*processCacheEntry)
+	processCacheMu sync.Mutex
+
 	wsHub = newStatsHub()
 
 	wsClientID uint64
@@ -728,31 +732,81 @@ func getCPUInfo() types.CPUDetail {
 	return info
 }
 
+type processCacheEntry struct {
+	proc       *process.Process
+	name       string
+	username   string
+	cmdline    string
+	createTime int64
+	ppid       int32
+}
+
 // getAllProcesses 获取所有进程
 func getAllProcesses() []types.ProcessInfo {
-	procs, err := process.Processes()
+	pids, err := process.Pids()
 	if err != nil {
 		return []types.ProcessInfo{}
 	}
 
-	var result []types.ProcessInfo
-	for _, p := range procs {
-		name, _ := p.Name()
-		username, _ := p.Username()
-		if username == "" {
-			if uids, err := p.Uids(); err == nil && len(uids) > 0 {
-				username = fmt.Sprintf("uid:%d", uids[0])
-			} else {
-				username = "unknown"
-			}
-		}
-		numThreads, _ := p.NumThreads()
-		memPercent, _ := p.MemoryPercent()
-		cpuPercent, _ := p.CPUPercent()
-		ppid, _ := p.Ppid()
-		createTime, _ := p.CreateTime() // ms
+	processCacheMu.Lock()
+	defer processCacheMu.Unlock()
 
-		uptimeSec := time.Now().Unix() - (createTime / 1000)
+	seenPids := make(map[int32]bool)
+	var result []types.ProcessInfo
+
+	for _, pid := range pids {
+		seenPids[pid] = true
+
+		entry, exists := processCache[pid]
+		if !exists {
+			proc, err := process.NewProcess(pid)
+			if err != nil {
+				continue
+			}
+
+			// Fetch static info once
+			name, _ := proc.Name()
+			username, _ := proc.Username()
+			if username == "" {
+				if uids, err := proc.Uids(); err == nil && len(uids) > 0 {
+					username = fmt.Sprintf("uid:%d", uids[0])
+				} else {
+					username = "unknown"
+				}
+			}
+			cmdline, _ := proc.Cmdline()
+			createTime, _ := proc.CreateTime()
+			ppid, _ := proc.Ppid()
+
+			entry = &processCacheEntry{
+				proc:       proc,
+				name:       name,
+				username:   username,
+				cmdline:    cmdline,
+				createTime: createTime,
+				ppid:       ppid,
+			}
+			processCache[pid] = entry
+		}
+
+		// Fetch dynamic info
+		cpuPercent, _ := entry.proc.CPUPercent()
+		memPercent, _ := entry.proc.MemoryPercent()
+		numThreads, _ := entry.proc.NumThreads()
+
+		ioRead := "-"
+		ioWrite := "-"
+		if ioCounters, err := entry.proc.IOCounters(); err == nil {
+			ioRead = utils.GetSize(ioCounters.ReadBytes)
+			ioWrite = utils.GetSize(ioCounters.WriteBytes)
+		}
+
+		cwd, _ := entry.proc.Cwd()
+		if cwd == "" {
+			cwd = "-"
+		}
+
+		uptimeSec := time.Now().Unix() - (entry.createTime / 1000)
 		uptimeStr := "-"
 		if uptimeSec < 60 {
 			uptimeStr = fmt.Sprintf("%ds", uptimeSec)
@@ -764,33 +818,27 @@ func getAllProcesses() []types.ProcessInfo {
 			uptimeStr = fmt.Sprintf("%dd", uptimeSec/86400)
 		}
 
-		cmdline, _ := p.Cmdline()
-		cwd, _ := p.Cwd()
-		if cwd == "" {
-			cwd = "-"
-		}
-
-		ioRead := "-"
-		ioWrite := "-"
-		if ioCounters, err := p.IOCounters(); err == nil {
-			ioRead = utils.GetSize(ioCounters.ReadBytes)
-			ioWrite = utils.GetSize(ioCounters.WriteBytes)
-		}
-
 		result = append(result, types.ProcessInfo{
-			PID:           p.Pid,
-			Name:          name,
-			Username:      username,
+			PID:           pid,
+			Name:          entry.name,
+			Username:      entry.username,
 			NumThreads:    numThreads,
 			MemoryPercent: utils.Round(float64(memPercent)),
 			CPUPercent:    utils.Round(cpuPercent),
-			PPID:          ppid,
+			PPID:          entry.ppid,
 			Uptime:        uptimeStr,
-			Cmdline:       cmdline,
+			Cmdline:       entry.cmdline,
 			Cwd:           cwd,
 			IORead:        ioRead,
 			IOWrite:       ioWrite,
 		})
+	}
+
+	// Cleanup dead processes
+	for pid := range processCache {
+		if !seenPids[pid] {
+			delete(processCache, pid)
+		}
 	}
 
 	// Sort by memory percent desc
