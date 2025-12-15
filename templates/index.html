@@ -3587,10 +3587,10 @@
 
             const interval = document.getElementById('interval-select').value;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            // 通过查询参数传递 Token
-            const wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}&token=${encodeURIComponent(token)}`;
-            
-            websocket = new WebSocket(wsUrl);
+            const wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}`;
+
+            // 通过 Sec-WebSocket-Protocol 传递 Token（避免 URL 泄露）
+            websocket = new WebSocket(wsUrl, ['jwt', token]);
             const statusDot = document.getElementById('status-dot');
 
             websocket.onopen = function() {

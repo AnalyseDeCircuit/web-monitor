@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 )
@@ -86,7 +87,41 @@ func SetupRouter() *Router {
 	return router
 }
 
+func wrapWithAPIAuthorization(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/api/") {
+			// Public endpoints
+			switch path {
+			case "/api/login", "/api/validate-password", "/api/health", "/api/metrics", "/api/logout":
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			_, role, ok := requireAuth(w, r)
+			if !ok {
+				return
+			}
+
+			// Admin-only endpoints (defense in depth)
+			adminOnly := false
+			switch path {
+			case "/api/users", "/api/logs", "/api/docker/action", "/api/systemd/action", "/api/power/action", "/api/cron/action", "/api/cron/logs", "/api/process/kill":
+				adminOnly = true
+			case "/api/cron":
+				adminOnly = (r.Method != http.MethodGet)
+			}
+			if adminOnly && role != "admin" {
+				writeJSONError(w, http.StatusForbidden, "Forbidden: Admin access required")
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Start 启动HTTP服务器
 func (r *Router) Start(addr string) error {
-	return http.ListenAndServe(addr, r.mux)
+	return http.ListenAndServe(addr, wrapWithAPIAuthorization(r.mux))
 }

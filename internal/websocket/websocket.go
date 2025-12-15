@@ -5,7 +5,9 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -44,19 +46,86 @@ var (
 // Upgrader WebSocket升级器
 var Upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return isAllowedWebSocketOrigin(r)
 	},
+}
+
+func isAllowedWebSocketOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// Non-browser clients often omit Origin.
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	originHost := strings.ToLower(u.Hostname())
+	if originHost == "" {
+		return false
+	}
+
+	reqHost := r.Host
+	if xf := r.Header.Get("X-Forwarded-Host"); xf != "" {
+		reqHost = strings.TrimSpace(strings.Split(xf, ",")[0])
+	}
+	reqHost = strings.ToLower(strings.TrimSpace(reqHost))
+	if reqHost == "" {
+		return false
+	}
+	// Strip port if present.
+	if h, _, err := net.SplitHostPort(reqHost); err == nil {
+		reqHost = h
+	} else {
+		// net.SplitHostPort fails when no port; keep as-is.
+		if idx := strings.Index(reqHost, ":"); idx > 0 {
+			reqHost = reqHost[:idx]
+		}
+	}
+
+	return originHost == reqHost
+}
+
+func tokenFromWebSocketSubprotocol(r *http.Request) string {
+	h := r.Header.Get("Sec-WebSocket-Protocol")
+	if h == "" {
+		return ""
+	}
+	parts := strings.Split(h, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" || p == "jwt" {
+			continue
+		}
+		if strings.Count(p, ".") == 2 {
+			return p
+		}
+	}
+	// If client sent ["jwt", "<token>"]
+	if len(parts) >= 2 {
+		if strings.TrimSpace(parts[0]) == "jwt" {
+			t := strings.TrimSpace(parts[1])
+			if t != "" {
+				return t
+			}
+		}
+	}
+	return ""
 }
 
 // HandleWebSocket 处理WebSocket连接
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Require JWT for stats websocket.
 	// Frontend passes token via query param, so we accept that.
-	token := r.URL.Query().Get("token")
+	token := ""
+	if cookie, err := r.Cookie("auth_token"); err == nil {
+		token = cookie.Value
+	}
 	if token == "" {
-		if cookie, err := r.Cookie("auth_token"); err == nil {
-			token = cookie.Value
-		}
+		token = tokenFromWebSocketSubprotocol(r)
+	}
+	if token == "" {
+		token = r.URL.Query().Get("token")
 	}
 	if token == "" {
 		w.Header().Set("Content-Type", "application/json")

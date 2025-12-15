@@ -604,10 +604,10 @@ func CronActionHandler(w http.ResponseWriter, r *http.Request) {
 
 // CronLogsHandler 处理Cron日志请求
 func CronLogsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		_, _ = w.Write([]byte("Method not allowed"))
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if _, ok := requireAdmin(w, r); !ok {
 		return
 	}
 

@@ -10,7 +10,7 @@
   - Cookie：`auth_token=<token>`
 - **权限**：
   - `admin-only`：必须是管理员；会返回 `401 Unauthorized`（未登录/Token 无效）或 `403 Forbidden`（非管理员）
-  - 其它接口：当前源码中多数读取接口未强制校验 JWT
+  - 其它接口：当前实现已对大多数 `/api/*` 端点强制校验 JWT（少数公共端点除外，如 `/api/login`、`/api/health`、`/api/metrics`）。
 - **返回格式**：
   - JSON：`application/json`
   - 文本：`text/plain`
@@ -702,9 +702,11 @@ admin-only。
 ...log lines...
 ```
 
-常见错误（text/plain）：
+常见错误（JSON）：
 
-- 500：`Failed to get cron logs: ...`
+- 401：`{ "error": "Unauthorized" }`
+- 403：`{ "error": "Forbidden: Admin access required" }`
+- 500：`{ "error": "Failed to get cron logs: ..." }`
 
 ## 进程管理（admin-only）
 
@@ -763,7 +765,12 @@ Prometheus 指标（Prometheus exposition format）。
 
 - Query 参数：
   - `interval`：秒，范围 `2` 到 `60`（小于 2 会被提升到 2，大于 60 会被限制为 60）
-  - `token`：JWT（前端会附带该参数；也支持 Cookie `auth_token`）
+  - `token`：JWT（兼容支持；更推荐使用 Cookie 或 `Sec-WebSocket-Protocol` 传递 Token）
+
+- Token 传递方式（优先级）：
+  1. Cookie：`auth_token=<token>`
+  2. `Sec-WebSocket-Protocol`：客户端可使用 `new WebSocket(url, ['jwt', token])`
+  3. Query：`?token=<token>`（仅为兼容保留）
 
 服务端推送消息为 `types.Response`（示例字段结构）：
 
