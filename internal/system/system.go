@@ -4,7 +4,6 @@ package system
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
@@ -137,7 +136,7 @@ func getKernelVersion() string {
 	}
 
 	for _, path := range paths {
-		data, err := ioutil.ReadFile(path)
+		data, err := os.ReadFile(path)
 		if err == nil {
 			fields := strings.Fields(string(data))
 			if len(fields) >= 3 {
@@ -195,7 +194,7 @@ func getAvailableShells() []string {
 	}
 
 	for _, p := range paths {
-		data, err := ioutil.ReadFile(p)
+		data, err := os.ReadFile(p)
 		if err != nil {
 			continue
 		}

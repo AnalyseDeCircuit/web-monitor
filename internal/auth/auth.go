@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -113,7 +112,7 @@ func InitUserDatabase() error {
 	}
 	log.Printf("Reading users from %s...\n", usersFilePath)
 
-	data, err := ioutil.ReadFile(usersFilePath)
+	data, err := os.ReadFile(usersFilePath)
 	if err != nil {
 		log.Printf("Users file not found, creating default: %v\n", err)
 		// 创建默认用户数据库
@@ -140,7 +139,7 @@ func InitUserDatabase() error {
 		}
 
 		log.Println("Writing to file...")
-		if err := ioutil.WriteFile(usersFilePath, jsonData, 0600); err != nil {
+		if err := os.WriteFile(usersFilePath, jsonData, 0600); err != nil {
 			log.Printf("Error writing users file: %v\n", err)
 			return err
 		}
@@ -172,7 +171,7 @@ func SaveUserDatabase() error {
 	dataDir := getDataDir()
 	usersFilePath := filepath.Join(dataDir, "users.json")
 	log.Printf("Writing to %s...\n", usersFilePath)
-	if err := ioutil.WriteFile(usersFilePath, data, 0600); err != nil {
+	if err := os.WriteFile(usersFilePath, data, 0600); err != nil {
 		log.Printf("Error writing users file: %v\n", err)
 		return err
 	}

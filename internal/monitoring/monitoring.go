@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -26,7 +26,7 @@ func LoadAlerts() {
 	alertMutex.Lock()
 	defer alertMutex.Unlock()
 
-	data, err := ioutil.ReadFile("/data/alerts.json")
+	data, err := os.ReadFile("/data/alerts.json")
 	if err != nil {
 		// Default config
 		alertConfig = types.AlertConfig{
@@ -49,7 +49,7 @@ func SaveAlerts() error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile("/data/alerts.json", data, 0666)
+	return os.WriteFile("/data/alerts.json", data, 0666)
 }
 
 // CheckAlerts 检查告警条件

@@ -3,7 +3,6 @@ package network
 import (
 	"bufio"
 	"encoding/hex"
-	"io/ioutil"
 	stdnet "net"
 	"os"
 	"os/exec"
@@ -106,7 +105,7 @@ func GetSSHStats() types.SSHStats {
 		if path == "" {
 			continue
 		}
-		if content, err := ioutil.ReadFile(path); err == nil {
+		if content, err := os.ReadFile(path); err == nil {
 			lines := strings.Split(strings.TrimSpace(string(content)), "\n")
 			if len(lines) > 0 {
 				stats.HistorySize = len(lines)
@@ -154,7 +153,7 @@ func checkPort22Open() bool {
 
 	// Method 3: /proc/net/tcp (if mounted from host or using host net)
 	// Port 22 is 0016 in hex. State 0A is LISTEN.
-	content, err := ioutil.ReadFile("/proc/net/tcp")
+	content, err := os.ReadFile("/proc/net/tcp")
 	if err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
@@ -171,7 +170,7 @@ func checkPort22Open() bool {
 	}
 
 	// Method 4: /hostfs/proc/net/tcp (if mounted)
-	content, err = ioutil.ReadFile("/hostfs/proc/net/tcp")
+	content, err = os.ReadFile("/hostfs/proc/net/tcp")
 	if err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
@@ -209,7 +208,7 @@ func getSSHConnectionCount() int {
 }
 
 func countSSHConnectionsFromProc(path string) int {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return 0
 	}
@@ -425,7 +424,7 @@ func getSSHSessionsFromHostProc() []types.SSHSession {
 }
 
 func readProcArg0(cmdlinePath string) (string, bool) {
-	data, err := ioutil.ReadFile(cmdlinePath)
+	data, err := os.ReadFile(cmdlinePath)
 	if err != nil || len(data) == 0 {
 		return "", false
 	}
@@ -476,7 +475,7 @@ func buildSSHRemoteIPByInode() map[string]string {
 }
 
 func mergeSSHRemoteIPByInode(dst map[string]string, path string, isV6 bool) {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}
@@ -572,9 +571,9 @@ func findRemoteIPForPID(pid int, remoteIPByInode map[string]string) string {
 }
 
 func getHostBootTimeUnix() int64 {
-	content, err := ioutil.ReadFile("/hostfs/proc/stat")
+	content, err := os.ReadFile("/hostfs/proc/stat")
 	if err != nil {
-		content, err = ioutil.ReadFile("/proc/stat")
+		content, err = os.ReadFile("/proc/stat")
 		if err != nil {
 			return 0
 		}
@@ -612,7 +611,7 @@ func procStartTimeRFC3339(pid int, bootTimeUnix int64, clkTck int64) (string, bo
 		return "", false
 	}
 	statPath := "/hostfs/proc/" + strconv.Itoa(pid) + "/stat"
-	data, err := ioutil.ReadFile(statPath)
+	data, err := os.ReadFile(statPath)
 	if err != nil {
 		return "", false
 	}

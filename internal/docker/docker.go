@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -108,7 +108,7 @@ func ContainerAction(containerID, action string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("Docker error %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -139,7 +139,7 @@ func RemoveImage(imageRef string, force bool, noprune bool) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("Docker error %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -179,7 +179,7 @@ func GetContainerLogs(containerID string, lines int) (string, error) {
 		return "", fmt.Errorf("Docker API error: %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read logs: %v", err)
 	}

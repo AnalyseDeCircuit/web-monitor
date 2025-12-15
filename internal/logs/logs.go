@@ -3,8 +3,8 @@ package logs
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -51,12 +51,12 @@ func saveOpLogs() {
 	}
 
 	// 忽略错误，日志保存失败不应影响主流程
-	_ = ioutil.WriteFile("/data/operations.json", data, 0666)
+	_ = os.WriteFile("/data/operations.json", data, 0666)
 }
 
 // LoadOpLogs 加载日志
 func LoadOpLogs() {
-	data, err := ioutil.ReadFile("/data/operations.json")
+	data, err := os.ReadFile("/data/operations.json")
 	if err != nil {
 		return
 	}
