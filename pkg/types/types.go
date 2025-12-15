@@ -2,6 +2,8 @@
 package types
 
 import (
+	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -279,6 +281,82 @@ type ProcessInfo struct {
 	IORead        string        `json:"io_read"`
 	IOWrite       string        `json:"io_write"`
 	Children      []ProcessInfo `json:"children,omitempty"`
+}
+
+// MarshalJSON 自定义序列化以提高性能，避免反射开销
+func (p ProcessInfo) MarshalJSON() ([]byte, error) {
+	// 预分配缓冲区，估算大小以减少扩容
+	buf := make([]byte, 0, 512)
+	buf = append(buf, '{')
+
+	// PID
+	buf = append(buf, `"pid":`...)
+	buf = strconv.AppendInt(buf, int64(p.PID), 10)
+
+	// Name
+	buf = append(buf, `,"name":`...)
+	nameBytes, _ := json.Marshal(p.Name)
+	buf = append(buf, nameBytes...)
+
+	// Username
+	buf = append(buf, `,"username":`...)
+	userBytes, _ := json.Marshal(p.Username)
+	buf = append(buf, userBytes...)
+
+	// NumThreads
+	buf = append(buf, `,"num_threads":`...)
+	buf = strconv.AppendInt(buf, int64(p.NumThreads), 10)
+
+	// MemoryPercent
+	buf = append(buf, `,"memory_percent":`...)
+	buf = strconv.AppendFloat(buf, p.MemoryPercent, 'f', -1, 64)
+
+	// CPUPercent
+	buf = append(buf, `,"cpu_percent":`...)
+	buf = strconv.AppendFloat(buf, p.CPUPercent, 'f', -1, 64)
+
+	// PPID
+	buf = append(buf, `,"ppid":`...)
+	buf = strconv.AppendInt(buf, int64(p.PPID), 10)
+
+	// Uptime
+	buf = append(buf, `,"uptime":`...)
+	uptimeBytes, _ := json.Marshal(p.Uptime)
+	buf = append(buf, uptimeBytes...)
+
+	// Cmdline
+	buf = append(buf, `,"cmdline":`...)
+	cmdBytes, _ := json.Marshal(p.Cmdline)
+	buf = append(buf, cmdBytes...)
+
+	// Cwd
+	buf = append(buf, `,"cwd":`...)
+	cwdBytes, _ := json.Marshal(p.Cwd)
+	buf = append(buf, cwdBytes...)
+
+	// IORead
+	buf = append(buf, `,"io_read":`...)
+	ioReadBytes, _ := json.Marshal(p.IORead)
+	buf = append(buf, ioReadBytes...)
+
+	// IOWrite
+	buf = append(buf, `,"io_write":`...)
+	ioWriteBytes, _ := json.Marshal(p.IOWrite)
+	buf = append(buf, ioWriteBytes...)
+
+	// Children (omitempty)
+	if len(p.Children) > 0 {
+		buf = append(buf, `,"children":`...)
+		// 这里会递归调用 ProcessInfo.MarshalJSON
+		childrenBytes, err := json.Marshal(p.Children)
+		if err != nil {
+			return nil, err
+		}
+		buf = append(buf, childrenBytes...)
+	}
+
+	buf = append(buf, '}')
+	return buf, nil
 }
 
 // --- Docker相关类型 ---

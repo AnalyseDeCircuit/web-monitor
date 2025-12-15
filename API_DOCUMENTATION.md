@@ -1,4 +1,4 @@
-# Web Monitor API 文档（以源码为准）
+# Web Monitor API 文档（v1.5）
 
 本文档根据当前项目源码生成（以 `api/handlers/router.go` 注册的路由为准）。示例与字段名尽量严格匹配当前 handler / 公共类型定义。
 
@@ -845,7 +845,23 @@ Prometheus 指标（Prometheus exposition format）。
     "ssh_process_memory": 0
   },
   "boot_time": "",
-  "processes": [],
+  "processes": [
+    {
+      "pid": 1234,
+      "name": "web-monitor-go",
+      "username": "root",
+      "num_threads": 12,
+      "memory_percent": 0.5,
+      "cpu_percent": 0.1,
+      "ppid": 1,
+      "uptime": "2h30m",
+      "cmdline": "/usr/local/bin/web-monitor-go",
+      "cwd": "/usr/local/bin",
+      "io_read": "10 MB",
+      "io_write": "5 MB",
+      "children": []
+    }
+  ],
   "gpu": []
 }
 ```

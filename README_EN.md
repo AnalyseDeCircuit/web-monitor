@@ -17,6 +17,18 @@ A lightweight, high-performance Linux server monitoring and management dashboard
 *   **Power Management**: View and adjust system power performance modes (requires hardware support).
 *   **GPU Monitoring**: Supports NVIDIA, AMD, Intel GPU temperature, usage, and memory monitoring.
 
+## ⚡ Performance & Optimization
+
+This project has undergone deep performance tuning to ensure minimal resource usage while providing rich features:
+
+*   **Ultra-low Resource Usage**: Deeply optimized via pprof profiling to significantly reduce CPU and memory footprint.
+*   **Zero External Dependencies**: All static assets (Font Awesome, Chart.js, JetBrains Mono) are **fully localized**. Works perfectly in intranet/offline environments without CDN issues.
+*   **Efficient Collection**:
+    *   **Smart Caching**: Implemented caching for static process info (cmdline, start time) to avoid repetitive `/proc` filesystem reads.
+    *   **Object Pooling**: Optimized network and process collection logic to reuse objects, reducing GC pressure and system calls.
+*   **High-Performance Serialization**: Manually implemented `MarshalJSON` for hot paths (e.g., process lists) to bypass reflection overhead, boosting performance with large datasets.
+*   **Static Asset Optimization**: Implemented file fingerprinting and aggressive caching strategies (`Cache-Control: immutable`) for faster frontend loading.
+
 ## 🚀 Quick Start (Docker Compose)
 
 This is the recommended deployment method, pre-configured for full functionality.
