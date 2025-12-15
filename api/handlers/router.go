@@ -69,10 +69,13 @@ func SetupRouter() *Router {
 
 	// 静态文件服务
 	fs := http.FileServer(http.Dir("./templates"))
+	staticFs := http.StripPrefix("/static/", http.FileServer(http.Dir("./static")))
 	router.mux.Handle("/assets/", fs)
 	router.mux.Handle("/css/", fs)
 	router.mux.Handle("/js/", fs)
 	router.mux.Handle("/sw.js", fs)
+	router.mux.Handle("/manifest.json", fs)
+	router.mux.Handle("/static/", staticFs)
 
 	// 主页
 	router.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
