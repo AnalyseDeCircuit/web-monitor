@@ -3,6 +3,7 @@ package collectors
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -14,8 +15,9 @@ import (
 
 // ProcessCollector 采集进程信息
 type ProcessCollector struct {
-	cache   map[int32]*processCacheEntry
-	cacheMu sync.Mutex
+	cache       map[int32]*processCacheEntry
+	cacheMu     sync.Mutex
+	maxCacheSize int
 }
 
 type processCacheEntry struct {
@@ -30,13 +32,36 @@ type processCacheEntry struct {
 // NewProcessCollector 创建进程采集器
 func NewProcessCollector() *ProcessCollector {
 	return &ProcessCollector{
-		cache: make(map[int32]*processCacheEntry),
+		cache:        make(map[int32]*processCacheEntry),
+		maxCacheSize: 1000, // 限制最大缓存进程数
 	}
 }
 
 func (c *ProcessCollector) Name() string {
 	return "processes"
 }
+
+// CleanupCache removes old entries and enforces size limit
+func (c *ProcessCollector) CleanupCache(seenPids map[int32]bool) {
+	if len(c.cache) <= c.maxCacheSize {
+		return
+	}
+
+	// If cache is too large, keep only processes that still exist
+	log.Printf("Process cache too large (%d entries), cleaning up...", len(c.cache))
+
+	// Remove entries for processes that no longer exist
+	removed := 0
+	for pid := range c.cache {
+		if !seenPids[pid] {
+			delete(c.cache, pid)
+			removed++
+		}
+	}
+
+	log.Printf("Process cache cleanup: removed %d entries, remaining %d", removed, len(c.cache))
+}
+
 
 func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 	pids, err := process.Pids()
@@ -141,6 +166,9 @@ func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 			delete(c.cache, pid)
 		}
 	}
+
+	// Check if cache needs cleanup due to size
+	c.CleanupCache(seenPids)
 
 	// Sort by memory percent desc
 	sort.Slice(result, func(i, j int) bool {

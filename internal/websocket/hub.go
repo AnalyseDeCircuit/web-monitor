@@ -26,6 +26,7 @@ type dynamicResponseCollector struct {
 	cancel   context.CancelFunc
 	updateCh chan time.Duration
 	last     atomic.Value // stores types.Response
+	wg       sync.WaitGroup // waits for goroutine to exit
 }
 
 func newDynamicResponseCollector(collect func() types.Response) *dynamicResponseCollector {
@@ -44,7 +45,9 @@ func (c *dynamicResponseCollector) Start(initialInterval time.Duration) {
 		if initialInterval <= 0 {
 			initialInterval = 5 * time.Second
 		}
+		c.wg.Add(1)
 		go func() {
+			defer c.wg.Done()
 			// Prime immediately.
 			c.last.Store(c.collect())
 			close(c.ready)
@@ -79,7 +82,10 @@ func (c *dynamicResponseCollector) Start(initialInterval time.Duration) {
 func (c *dynamicResponseCollector) Stop() {
 	if c.cancel != nil {
 		c.cancel()
+		c.cancel = nil
 	}
+	// Wait for goroutine to finish
+	c.wg.Wait()
 }
 
 func (c *dynamicResponseCollector) SetInterval(d time.Duration) {
@@ -121,14 +127,15 @@ type conditionalCollector[T any] struct {
 	interval time.Duration
 	collect  func() T
 
-	mu       sync.Mutex
-	subs     int
-	running  bool
-	ctx      context.Context
-	cancel   context.CancelFunc
-	ready    chan struct{}
-	last     atomic.Value // stores T
+	mu sync.Mutex
+	subs    int
+	running bool
+	ctx     context.Context
+	cancel  context.CancelFunc
+	ready   chan struct{}
+	last    atomic.Value // stores T
 	shutdown bool         // permanent shutdown flag
+	wg sync.WaitGroup // waits for goroutine to exit
 }
 
 func newConditionalCollector[T any](interval time.Duration, collect func() T) *conditionalCollector[T] {
@@ -156,6 +163,7 @@ func (c *conditionalCollector[T]) Subscribe() {
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
 	go func() {
+		defer c.wg.Done()
 		// Prime immediately.
 		c.last.Store(c.collect())
 		close(c.ready)
@@ -172,6 +180,7 @@ func (c *conditionalCollector[T]) Subscribe() {
 			}
 		}
 	}()
+	c.wg.Add(1)
 }
 
 func (c *conditionalCollector[T]) Unsubscribe() {
@@ -193,17 +202,25 @@ func (c *conditionalCollector[T]) Unsubscribe() {
 	}
 }
 
+// Stop permanently stops the collector and prevents future subscriptions.
 func (c *conditionalCollector[T]) Stop() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.shutdown = true
 	c.subs = 0
+	var running bool
+	var cancel context.CancelFunc
 	if c.running {
+		running = true
 		c.running = false
-		if c.cancel != nil {
-			c.cancel()
-			c.cancel = nil
-		}
+		cancel = c.cancel
+		c.cancel = nil
+	}
+	c.mu.Unlock()
+
+	if running && cancel != nil {
+		cancel()
+		// Wait for goroutine to finish
+		c.wg.Wait()
 	}
 }
 
@@ -310,7 +327,7 @@ func newStatsHub() *statsHub {
 	return h
 }
 
-// Shutdown gracefully stops all collectors
+// Shutdown gracefully stops all collectors and waits for them to finish
 func (h *statsHub) Shutdown() {
 	h.mu.Lock()
 	if h.shutdown {
@@ -320,10 +337,20 @@ func (h *statsHub) Shutdown() {
 	h.shutdown = true
 	h.mu.Unlock()
 
-	log.Println("statsHub: shutting down all collectors")
+	log.Println("statsHub: shutting down all collectors...")
+	log.Println("statsHub: stopping base collector...")
 	h.base.Stop()
+	log.Println("statsHub: base collector stopped")
+
+	log.Println("statsHub: stopping processes collector...")
 	h.processes.Stop()
+	log.Println("statsHub: processes collector stopped")
+
+	log.Println("statsHub: stopping netDetail collector...")
 	h.netDetail.Stop()
+	log.Println("statsHub: netDetail collector stopped")
+
+	log.Println("statsHub: all collectors have been stopped successfully")
 }
 
 func (h *statsHub) RegisterClient(id uint64, interval time.Duration) {
