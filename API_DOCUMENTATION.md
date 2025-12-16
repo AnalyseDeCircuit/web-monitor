@@ -27,20 +27,6 @@
   - 默认不设置时：仅允许同源浏览器连接（无 `Origin` 的非浏览器客户端仍允许）。
   - 可填写完整 Origin（如 `https://example.com`）或仅 hostname（如 `example.com`）。
 
-- Docker 相关：
-  - `DOCKER_HOST`：Docker Engine API 地址（例如 `tcp://127.0.0.1:2375` 或 `unix:///var/run/docker.sock`）。
-  - `DOCKER_READ_ONLY`：只读模式（`true` 时拒绝 start/stop/restart/remove/prune 等写操作）。
-  - `DOCKER_SOCK`：仅供本仓库的 `docker-socket-proxy` sidecar 使用：宿主机 docker.sock 路径（rootless 场景覆盖默认）。
-
-- 性能调优（可选）：
-  - `PROCESS_IO_REFRESH`：进程列表中 `io_read/io_write` 的刷新周期（默认 `30s`；支持 `60s` 或 `60` 表示 60 秒）。
-  - `PROCESS_CWD_REFRESH`：进程列表中 `cwd` 的刷新周期（默认 `60s`）。
-  - `WS_PROCESSES_INTERVAL`：WebSocket 可选主题 `processes` 的服务端采集周期（默认 `15s`）。
-  - `WS_PROCESSES_TIMEOUT`：采集 `processes` 的超时上限（默认 `3s`）。
-  - `WS_NET_DETAIL_INTERVAL`：WebSocket 可选主题 `net_detail` 的服务端采集周期（默认 `15s`）。
-  - `WS_NET_DETAIL_TIMEOUT`：采集 `net_detail` 的超时上限（默认 `3s`）。
-  - `WS_SSH_TIMEOUT`：采集 SSH 统计的超时上限（默认 `3s`）。
-
 ## 认证相关
 
 ### POST /api/login

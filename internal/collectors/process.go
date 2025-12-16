@@ -3,9 +3,7 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,9 +16,6 @@ import (
 type ProcessCollector struct {
 	cache   map[int32]*processCacheEntry
 	cacheMu sync.Mutex
-
-	ioRefresh  time.Duration
-	cwdRefresh time.Duration
 }
 
 type processCacheEntry struct {
@@ -30,21 +25,12 @@ type processCacheEntry struct {
 	cmdline    string
 	createTime int64
 	ppid       int32
-
-	ioRead       string
-	ioWrite      string
-	lastIOUpdate time.Time
-
-	cwd           string
-	lastCwdUpdate time.Time
 }
 
 // NewProcessCollector 创建进程采集器
 func NewProcessCollector() *ProcessCollector {
 	return &ProcessCollector{
-		cache:      make(map[int32]*processCacheEntry),
-		ioRefresh:  envDuration("PROCESS_IO_REFRESH", 30*time.Second),
-		cwdRefresh: envDuration("PROCESS_CWD_REFRESH", 60*time.Second),
+		cache: make(map[int32]*processCacheEntry),
 	}
 }
 
@@ -57,24 +43,19 @@ func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 	if err != nil {
 		return []types.ProcessInfo{}
 	}
-	now := time.Now()
 
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
 
-	seenPids := make(map[int32]bool, len(pids))
-	result := make([]types.ProcessInfo, 0, len(pids))
-	canceled := false
+	seenPids := make(map[int32]bool)
+	var result []types.ProcessInfo
 
 	for _, pid := range pids {
 		// Check context cancellation periodically
 		select {
 		case <-ctx.Done():
-			canceled = true
+			return result
 		default:
-		}
-		if canceled {
-			break
 		}
 
 		seenPids[pid] = true
@@ -107,9 +88,6 @@ func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 				cmdline:    cmdline,
 				createTime: createTime,
 				ppid:       ppid,
-				ioRead:     "-",
-				ioWrite:    "-",
-				cwd:        "-",
 			}
 			c.cache[pid] = entry
 		}
@@ -119,29 +97,19 @@ func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 		memPercent, _ := entry.proc.MemoryPercent()
 		numThreads, _ := entry.proc.NumThreads()
 
-		// IO counters: expensive on large process counts, refresh less frequently.
-		if c.ioRefresh > 0 && now.Sub(entry.lastIOUpdate) >= c.ioRefresh {
-			if ioCounters, err := entry.proc.IOCounters(); err == nil {
-				entry.ioRead = utils.GetSize(ioCounters.ReadBytes)
-				entry.ioWrite = utils.GetSize(ioCounters.WriteBytes)
-			} else {
-				entry.ioRead = "-"
-				entry.ioWrite = "-"
-			}
-			entry.lastIOUpdate = now
+		ioRead := "-"
+		ioWrite := "-"
+		if ioCounters, err := entry.proc.IOCounters(); err == nil {
+			ioRead = utils.GetSize(ioCounters.ReadBytes)
+			ioWrite = utils.GetSize(ioCounters.WriteBytes)
 		}
 
-		// Cwd: can be expensive (readlink) and often unchanged.
-		if c.cwdRefresh > 0 && now.Sub(entry.lastCwdUpdate) >= c.cwdRefresh {
-			cwd, _ := entry.proc.Cwd()
-			if cwd == "" {
-				cwd = "-"
-			}
-			entry.cwd = cwd
-			entry.lastCwdUpdate = now
+		cwd, _ := entry.proc.Cwd()
+		if cwd == "" {
+			cwd = "-"
 		}
 
-		uptimeSec := now.Unix() - (entry.createTime / 1000)
+		uptimeSec := time.Now().Unix() - (entry.createTime / 1000)
 		uptimeStr := "-"
 		if uptimeSec < 60 {
 			uptimeStr = fmt.Sprintf("%ds", uptimeSec)
@@ -163,18 +131,16 @@ func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 			PPID:          entry.ppid,
 			Uptime:        uptimeStr,
 			Cmdline:       entry.cmdline,
-			Cwd:           entry.cwd,
-			IORead:        entry.ioRead,
-			IOWrite:       entry.ioWrite,
+			Cwd:           cwd,
+			IORead:        ioRead,
+			IOWrite:       ioWrite,
 		})
 	}
 
 	// Cleanup dead processes
-	if !canceled {
-		for pid := range c.cache {
-			if !seenPids[pid] {
-				delete(c.cache, pid)
-			}
+	for pid := range c.cache {
+		if !seenPids[pid] {
+			delete(c.cache, pid)
 		}
 	}
 
@@ -184,27 +150,4 @@ func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 	})
 
 	return result
-}
-
-func envDuration(name string, def time.Duration) time.Duration {
-	v := strings.TrimSpace(os.Getenv(name))
-	if v == "" {
-		return def
-	}
-	// Allow plain seconds like "30".
-	allDigits := true
-	for i := 0; i < len(v); i++ {
-		if v[i] < '0' || v[i] > '9' {
-			allDigits = false
-			break
-		}
-	}
-	if allDigits {
-		v += "s"
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil || d <= 0 {
-		return def
-	}
-	return d
 }

@@ -104,14 +104,6 @@ export JWT_SECRET="your-secure-jwt-secret-key-here"
 docker compose up -d
 ```
 
-如需调整环境变量（例如 `DOCKER_HOST` / `DOCKER_READ_ONLY` 或性能相关可调项），可使用示例文件：
-
-```bash
-cp .env.example .env
-# 按需编辑 .env
-docker compose --env-file .env up -d
-```
-
 ### 2.2 Docker Socket 安全防护 ⚠️
 
 **重要**: 直接访问 `/var/run/docker.sock` 等同于获得宿主机 root 权限。任何应用程序的 RCE（远程代码执行）漏洞都会直接导致宿主机被完全控制。
@@ -187,20 +179,6 @@ networks:
 | `DOCKER_READ_ONLY` | `true` | 启用只读模式，所有写操作（start/stop/restart/remove）被拒绝 |
 | `DOCKER_HOST` | `tcp://127.0.0.1:2375`（Compose 默认） | Docker Engine API 地址（推荐走本地 proxy） |
 | `DOCKER_SOCK` | 为空 | 仅供 `docker-socket-proxy` 使用：宿主机 docker.sock 的路径（rootless 场景覆盖默认） |
-
-#### 性能相关环境变量（可选）
-
-这些参数用于在“进程多/系统繁忙”时降低采集开销、减少 `web-monitor-go` 的 CPU 尖峰。
-
-| 环境变量 | 默认值 | 说明 |
-|---------|--------|------|
-| `PROCESS_IO_REFRESH` | `30s` | 进程列表里 `io_read/io_write` 的刷新周期（支持写 `60s` 或 `60` 表示 60 秒） |
-| `PROCESS_CWD_REFRESH` | `60s` | 进程列表里 `cwd` 的刷新周期（支持写 `60s` 或 `60`） |
-| `WS_PROCESSES_INTERVAL` | `15s` | WebSocket 可选主题 `processes` 的服务端采集周期（越大越省 CPU） |
-| `WS_PROCESSES_TIMEOUT` | `3s` | WebSocket 采集 `processes` 的超时上限（避免偶发卡顿拉长 CPU 尖峰） |
-| `WS_NET_DETAIL_INTERVAL` | `15s` | WebSocket 可选主题 `net_detail` 的服务端采集周期 |
-| `WS_NET_DETAIL_TIMEOUT` | `3s` | WebSocket 采集 `net_detail` 的超时上限 |
-| `WS_SSH_TIMEOUT` | `3s` | WebSocket 采集 SSH 统计的超时上限（在 `net_detail` 快照里使用） |
 
 当启用只读模式时，容器 REST API 的写操作（`/api/docker/action`, `/api/docker/image/remove`）将返回 403 错误：
 ```json
@@ -504,10 +482,10 @@ docker cp web-monitor-go:/data ./backup/
 **Q: 如何升级到新版本？**
 ```bash
 # 停止并删除旧容器
-docker compose down
+docker-compose down
 
 # 拉取新镜像或重新构建
-docker compose build --pull
+docker-compose build --pull
 
 # 启动新容器
 docker compose up -d
