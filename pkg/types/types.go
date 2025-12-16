@@ -257,6 +257,7 @@ type SSHStats struct {
 	OOMRiskProcesses []ProcessInfo  `json:"oom_risk_processes"`
 	FailedLogins     int            `json:"failed_logins"`
 	SSHProcessMemory float64        `json:"ssh_process_memory"`
+	SSHProcessRSS    string         `json:"ssh_process_rss,omitempty"`
 }
 
 // SSHSession SSH会话信息
@@ -273,6 +274,7 @@ type ProcessInfo struct {
 	Username      string        `json:"username"`
 	NumThreads    int32         `json:"num_threads"`
 	MemoryPercent float64       `json:"memory_percent"`
+	MemoryRSS     string        `json:"memory_rss,omitempty"`
 	CPUPercent    float64       `json:"cpu_percent"`
 	PPID          int32         `json:"ppid"`
 	Uptime        string        `json:"uptime"`
@@ -310,6 +312,13 @@ func (p ProcessInfo) MarshalJSON() ([]byte, error) {
 	// MemoryPercent
 	buf = append(buf, `,"memory_percent":`...)
 	buf = strconv.AppendFloat(buf, p.MemoryPercent, 'f', -1, 64)
+
+	// MemoryRSS (omitempty)
+	if p.MemoryRSS != "" {
+		buf = append(buf, `,"memory_rss":`...)
+		memRSSBytes, _ := json.Marshal(p.MemoryRSS)
+		buf = append(buf, memRSSBytes...)
+	}
 
 	// CPUPercent
 	buf = append(buf, `,"cpu_percent":`...)

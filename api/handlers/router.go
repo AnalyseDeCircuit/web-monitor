@@ -68,6 +68,9 @@ func SetupRouter() *Router {
 	router.mux.HandleFunc("/api/process/io", ProcessIOHandler)     // 懒加载进程 IO 数据
 	router.mux.HandleFunc("/api/process/kill", ProcessKillHandler) // 仅管理员
 
+	// SSH stats (manual refresh)
+	router.mux.HandleFunc("/api/ssh/stats", SSHStatsHandler)
+
 	// WebSocket路由
 	router.mux.HandleFunc("/ws/stats", websocket.HandleWebSocket)
 

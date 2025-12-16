@@ -1,34 +1,36 @@
 // Authentication helpers
-function checkAuthentication() {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-        window.location.href = '/login';
-        return false;
+async function checkAuthentication() {
+    // Auth is cookie-based (HttpOnly). JS cannot read it.
+    // Validate by calling a lightweight authenticated endpoint.
+    try {
+        const res = await fetch('/api/info', { cache: 'no-store' });
+        if (res && res.status === 401) {
+            window.location.href = '/login';
+            return false;
+        }
+        return true;
+    } catch (err) {
+        // Network errors should not hard-redirect; allow UI to load.
+        console.warn('Auth check failed (network?):', err);
+        return true;
     }
-    return token;
 }
 
+// Backward compatibility: token-based auth is disabled.
 function getAuthToken() {
-    return localStorage.getItem('auth_token');
+    return null;
 }
 
 async function logout() {
-    const token = getAuthToken();
-    if (token) {
-        try {
-            await fetch('/api/logout', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-        } catch (err) {
-            console.error('Logout error:', err);
-        }
+    try {
+        await fetch('/api/logout', {
+            method: 'POST',
+        });
+    } catch (err) {
+        console.error('Logout error:', err);
     }
 
     try {
-        localStorage.removeItem('auth_token');
         localStorage.removeItem('username');
         localStorage.removeItem('role');
     } catch (_) {}
@@ -39,7 +41,6 @@ async function logout() {
 // Intercept fetch to attach auth header for API requests
 const originalFetch = window.fetch;
 window.fetch = function (...args) {
-    const token = getAuthToken();
     let options = args[1] || {};
     if (!options.headers) {
         options.headers = {};
@@ -49,8 +50,16 @@ window.fetch = function (...args) {
         ? args[0]
         : (args[0] && args[0].url) ? args[0].url : '';
 
-    if (token && (url.includes('/api/') || url.includes('/ws/'))) {
-        options.headers['Authorization'] = `Bearer ${token}`;
+    // Ensure same-origin requests carry cookies (default, but keep explicit).
+    try {
+        const resolved = new URL(url || '', window.location.href);
+        if (resolved.origin === window.location.origin) {
+            if (!options.credentials) {
+                options.credentials = 'same-origin';
+            }
+        }
+    } catch (_) {
+        // If URL parsing fails (e.g. empty), do nothing.
     }
 
     args[1] = options;
@@ -58,7 +67,6 @@ window.fetch = function (...args) {
     return originalFetch.apply(window, args).then((res) => {
         if (res && res.status === 401) {
             try {
-                localStorage.removeItem('auth_token');
                 localStorage.removeItem('username');
                 localStorage.removeItem('role');
             } catch (_) {}

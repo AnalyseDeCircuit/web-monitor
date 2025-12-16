@@ -23,9 +23,6 @@ function updateWebSocketTopics(topics) {
 }
 
 function connectWebSocket(options = {}) {
-    const useQueryToken = !!options.useQueryToken;
-    const allowFallback = options.allowFallback !== false;
-
     if (websocket) {
         websocket.onclose = null;
         websocket.close();
@@ -35,21 +32,12 @@ function connectWebSocket(options = {}) {
         reconnectTimer = null;
     }
 
-    const token = getAuthToken();
-    if (!token) {
-        console.warn('No auth token, redirecting to login');
-        window.location.href = '/login';
-        return;
-    }
-
     const interval = document.getElementById('interval-select').value;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}`;
-    if (useQueryToken) {
-        wsUrl += `&token=${encodeURIComponent(token)}`;
-    }
+    const wsUrl = `${protocol}//${window.location.host}/ws/stats?interval=${interval}`;
 
-    websocket = useQueryToken ? new WebSocket(wsUrl) : new WebSocket(wsUrl, ['jwt', token]);
+    // Cookie-based auth (HttpOnly). Browser will include same-origin cookies automatically.
+    websocket = new WebSocket(wsUrl);
     const statusDot = document.getElementById('status-dot');
 
     let opened = false;
@@ -80,13 +68,7 @@ function connectWebSocket(options = {}) {
         console.log('WebSocket closed');
         statusDot.classList.remove('connected');
 
-        if (!opened && allowFallback && !useQueryToken) {
-            console.warn('WebSocket closed before open; retrying with token in query string');
-            connectWebSocket({ useQueryToken: true, allowFallback: false });
-            return;
-        }
-
-        reconnectTimer = setTimeout(() => connectWebSocket({ useQueryToken, allowFallback: false }), 3000);
+        reconnectTimer = setTimeout(() => connectWebSocket(), 3000);
     };
 
     websocket.onerror = function (err) {

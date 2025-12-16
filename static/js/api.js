@@ -540,11 +540,7 @@ async function handleResetPassword(username) {
     const newPassword = prompt(`Set a new password for ${username}:`);
     if (!newPassword) return;
 
-    const token = getAuthToken();
     const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
 
     try {
         const response = await fetch('/api/password', {
@@ -684,9 +680,7 @@ function checkRole() {
 }
 
 function loadPowerProfile() {
-    fetch('/api/power/profile', {
-        headers: { Authorization: `Bearer ${getAuthToken()}` },
-    })
+    fetch('/api/power/profile')
         .then((res) => res.json())
         .then((data) => {
             if (data.error || !data.available || data.available.length === 0) {
@@ -751,7 +745,6 @@ function setPowerProfile(profile) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${getAuthToken()}`,
         },
         body: JSON.stringify({ profile: profile }),
     })
@@ -766,9 +759,7 @@ function setPowerProfile(profile) {
 }
 
 function loadAlerts() {
-    fetch('/api/alerts', {
-        headers: { Authorization: `Bearer ${getAuthToken()}` },
-    })
+    fetch('/api/alerts')
         .then((res) => res.json())
         .then((data) => {
             document.getElementById('alert-enabled').checked = data.enabled;
@@ -793,7 +784,6 @@ function saveAlerts() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${getAuthToken()}`,
         },
         body: JSON.stringify(config),
     })

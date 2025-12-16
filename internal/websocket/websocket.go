@@ -189,7 +189,8 @@ func tokenFromWebSocketSubprotocol(r *http.Request) string {
 // HandleWebSocket 处理WebSocket连接
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Require JWT for stats websocket.
-	// Frontend passes token via query param, so we accept that.
+	// Frontend uses HttpOnly cookie-based auth. We keep subprotocol/query support
+	// for legacy/non-browser clients, but cookie is preferred.
 	token := ""
 	if cookie, err := r.Cookie("auth_token"); err == nil {
 		token = cookie.Value
@@ -258,6 +259,17 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 // readPump pumps messages from the websocket connection to the hub.
 func (c *Client) readPump(r *http.Request, clientID uint64) {
 	defer func() {
+		// Ensure we decrement hub subscription ref-counts even if the
+		// connection drops without sending a final set_topics.
+		c.mu.Lock()
+		for t := range c.subs {
+			if t != "base" {
+				c.hub.Unsubscribe(t)
+			}
+		}
+		c.subs = map[string]bool{"base": true}
+		c.mu.Unlock()
+
 		close(c.done) // signal dataPump and writePump to stop
 		c.hub.UnregisterClient(clientID)
 		c.conn.Close()

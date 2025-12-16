@@ -15,124 +15,388 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
-	"github.com/shirou/gopsutil/v3/process"
 )
 
 var (
-	sshStatsCache    types.SSHStats
-	lastSSHTime      time.Time
+	sshConnCache     sshConnCacheEntry
+	sshMemCache      sshMemCacheEntry
+	sshAuthCache     sshAuthCacheEntry
+	sshIdentityCache sshIdentityCacheEntry
 	sshAuthLogOffset int64
 	sshAuthCounters  = map[string]int{"publickey": 0, "password": 0, "other": 0, "failed": 0}
 	sshStatsLock     sync.Mutex
 	clkTckCache      int64
+	hostMemTotalOnce sync.Once
+	hostMemTotalByte uint64
+)
+
+type sshConnCacheEntry struct {
+	updatedAt    time.Time
+	status       string
+	connections  int
+	sessions     []types.SSHSession
+	hasEverBuilt bool
+}
+
+type sshMemCacheEntry struct {
+	updatedAt    time.Time
+	processMem   float64
+	processRSS   string
+	oomProcs     []types.ProcessInfo
+	hasEverBuilt bool
+}
+
+type sshAuthCacheEntry struct {
+	updatedAt       time.Time
+	authMethods     map[string]int
+	failedLogins    int
+	lastLogSize     int64
+	lastLogModTime  time.Time
+	lastChangeCheck time.Time
+	hasEverBuilt    bool
+}
+
+type sshIdentityCacheEntry struct {
+	updatedAt    time.Time
+	hostKey      string
+	historySize  int
+	hasEverBuilt bool
+}
+
+const (
+	sshTTLConnections = 60 * time.Second
+	sshTTLMem         = 60 * time.Second
+	sshTTLAuth        = 300 * time.Second
+	sshTTLIdentity    = 1 * time.Hour
+	sshAuthMinGap     = 15 * time.Second
 )
 
 // GetSSHStats 获取SSH统计信息
 func GetSSHStats() types.SSHStats {
+	return GetSSHStatsWithOptions(false)
+}
+
+// GetSSHStatsWithOptions returns SSH stats with independent TTLs for sub-parts.
+// When force is true, all parts are refreshed immediately.
+func GetSSHStatsWithOptions(force bool) types.SSHStats {
 	sshStatsLock.Lock()
 	defer sshStatsLock.Unlock()
 
-	if time.Since(lastSSHTime) < 120*time.Second && sshStatsCache.Status != "" {
-		return sshStatsCache
-	}
+	now := time.Now()
 
-	stats := types.SSHStats{
-		Status:      "Stopped",
-		AuthMethods: make(map[string]int),
-	}
+	// A) Connections / sessions / status
+	if force || !sshConnCache.hasEverBuilt || now.Sub(sshConnCache.updatedAt) > sshTTLConnections {
+		status := "Stopped"
+		if checkPort22Open() {
+			status = "Running"
+		}
 
-	// Check SSH Status (port 22)
-	// Try netstat first, then ss, then check /proc/net/tcp
-	if checkPort22Open() {
-		stats.Status = "Running"
-	}
+		connections := 0
+		var sessions []types.SSHSession
 
-	// Connections
-	procSessions := getSSHSessionsFromHostProc()
-	if len(procSessions) > 0 {
-		stats.Sessions = procSessions
-		stats.Connections = len(procSessions)
-	} else {
-		whoSessions := getSSHSessionsFromWho()
-		if len(whoSessions) > 0 {
-			stats.Sessions = whoSessions
-			stats.Connections = len(whoSessions)
+		procSessions := getSSHSessionsFromHostProc()
+		if len(procSessions) > 0 {
+			sessions = procSessions
+			connections = len(procSessions)
 		} else {
-			stats.Connections = getSSHConnectionCount()
+			whoSessions := getSSHSessionsFromWho()
+			if len(whoSessions) > 0 {
+				sessions = whoSessions
+				connections = len(whoSessions)
+			} else {
+				connections = getSSHConnectionCount()
+			}
+		}
+
+		sshConnCache = sshConnCacheEntry{
+			updatedAt:    now,
+			status:       status,
+			connections:  connections,
+			sessions:     sessions,
+			hasEverBuilt: true,
 		}
 	}
 
-	// Auth Logs (Incremental)
-	updateSSHAuthStats()
-	stats.AuthMethods = make(map[string]int)
-	for k, v := range sshAuthCounters {
-		stats.AuthMethods[k] = v
-	}
-	stats.FailedLogins = sshAuthCounters["failed"]
+	// B) sshd memory / oom list
+	if force || !sshMemCache.hasEverBuilt || now.Sub(sshMemCache.updatedAt) > sshTTLMem {
+		totalMem := getHostMemTotalBytes()
+		var totalRSS uint64
+		processMem := 0.0
+		oom := make([]types.ProcessInfo, 0)
 
-	// Host Key Fingerprint
-	// Try multiple key types and generate fingerprint using pure Go
-	keyFiles := []string{
-		config.HostPath("/etc/ssh/ssh_host_ed25519_key.pub"),
-		config.HostPath("/etc/ssh/ssh_host_rsa_key.pub"),
-		config.HostPath("/etc/ssh/ssh_host_ecdsa_key.pub"),
-	}
-	for _, keyFile := range keyFiles {
-		if fp := computeSSHKeyFingerprint(keyFile); fp != "" {
-			stats.HostKey = fp
-			break
+		for _, pid := range listSSHDpidsFromHostProc() {
+			rssBytes, ok := readProcVmRSSBytes(pid)
+			if !ok {
+				continue
+			}
+			totalRSS += rssBytes
+
+			memPercent := 0.0
+			if totalMem > 0 {
+				memPercent = (float64(rssBytes) * 100.0) / float64(totalMem)
+				processMem += memPercent
+			}
+
+			if memPercent > 1.0 { // keep existing threshold semantics
+				oom = append(oom, types.ProcessInfo{
+					PID:           pid,
+					Name:          "sshd",
+					MemoryPercent: float64(int(memPercent*10)) / 10.0,
+					MemoryRSS:     utils.GetSize(rssBytes),
+				})
+			}
+		}
+
+		processRSS := ""
+		if totalRSS > 0 {
+			processRSS = utils.GetSize(totalRSS)
+		}
+
+		sshMemCache = sshMemCacheEntry{
+			updatedAt:    now,
+			processMem:   processMem,
+			processRSS:   processRSS,
+			oomProcs:     oom,
+			hasEverBuilt: true,
 		}
 	}
 
-	// History Size (known_hosts) - count entries from known_hosts files on host
-	knownHostsPaths := []string{
-		"/root/.ssh/known_hosts",
-		config.HostPath("/root/.ssh/known_hosts"),
-		os.ExpandEnv("$HOME/.ssh/known_hosts"),
-	}
-	globPatterns := []string{
-		"/home/*/.ssh/known_hosts",
-		config.HostPath("/home/*/.ssh/known_hosts"),
-	}
-	for _, pattern := range globPatterns {
-		if matches, err := filepath.Glob(pattern); err == nil {
-			knownHostsPaths = append(knownHostsPaths, matches...)
+	// C) auth log / failed logins
+	if force || shouldRefreshSSHAuthLocked(now) {
+		updateSSHAuthStats()
+
+		methods := make(map[string]int, len(sshAuthCounters))
+		for k, v := range sshAuthCounters {
+			methods[k] = v
+		}
+
+		logSize, logMtime := statSSHAuthLogLocked()
+		sshAuthCache = sshAuthCacheEntry{
+			updatedAt:       now,
+			authMethods:     methods,
+			failedLogins:    sshAuthCounters["failed"],
+			lastLogSize:     logSize,
+			lastLogModTime:  logMtime,
+			lastChangeCheck: now,
+			hasEverBuilt:    true,
 		}
 	}
-	for _, path := range knownHostsPaths {
-		if path == "" {
-			continue
+
+	// D) host identity (hostkey + known_hosts count)
+	if force || !sshIdentityCache.hasEverBuilt || now.Sub(sshIdentityCache.updatedAt) > sshTTLIdentity {
+		hostKey := ""
+		keyFiles := []string{
+			config.HostPath("/etc/ssh/ssh_host_ed25519_key.pub"),
+			config.HostPath("/etc/ssh/ssh_host_rsa_key.pub"),
+			config.HostPath("/etc/ssh/ssh_host_ecdsa_key.pub"),
 		}
-		if content, err := os.ReadFile(path); err == nil {
-			lines := strings.Split(strings.TrimSpace(string(content)), "\n")
-			if len(lines) > 0 {
-				stats.HistorySize = len(lines)
+		for _, keyFile := range keyFiles {
+			if fp := computeSSHKeyFingerprint(keyFile); fp != "" {
+				hostKey = fp
 				break
 			}
 		}
-	}
 
-	// OOM Risk Processes (sshd)
-	procs, _ := process.Processes()
-	for _, p := range procs {
-		name, _ := p.Name()
-		if name == "sshd" {
-			memPercent, _ := p.MemoryPercent()
-			if memPercent > 1.0 { // Only show if > 1%
-				stats.OOMRiskProcesses = append(stats.OOMRiskProcesses, types.ProcessInfo{
-					PID:           p.Pid,
-					Name:          name,
-					MemoryPercent: float64(int(memPercent*10)) / 10.0,
-				})
+		historySize := 0
+		knownHostsPaths := []string{
+			"/root/.ssh/known_hosts",
+			config.HostPath("/root/.ssh/known_hosts"),
+			os.ExpandEnv("$HOME/.ssh/known_hosts"),
+		}
+		globPatterns := []string{
+			"/home/*/.ssh/known_hosts",
+			config.HostPath("/home/*/.ssh/known_hosts"),
+		}
+		for _, pattern := range globPatterns {
+			if matches, err := filepath.Glob(pattern); err == nil {
+				knownHostsPaths = append(knownHostsPaths, matches...)
 			}
-			stats.SSHProcessMemory += float64(memPercent)
+		}
+		for _, p := range knownHostsPaths {
+			if p == "" {
+				continue
+			}
+			if content, err := os.ReadFile(p); err == nil {
+				lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+				if len(lines) > 0 {
+					historySize = len(lines)
+					break
+				}
+			}
+		}
+
+		sshIdentityCache = sshIdentityCacheEntry{
+			updatedAt:    now,
+			hostKey:      hostKey,
+			historySize:  historySize,
+			hasEverBuilt: true,
 		}
 	}
 
-	sshStatsCache = stats
-	lastSSHTime = time.Now()
+	// Assemble final view
+	stats := types.SSHStats{
+		Status:           sshConnCache.status,
+		Connections:      sshConnCache.connections,
+		Sessions:         sshConnCache.sessions,
+		AuthMethods:      sshAuthCache.authMethods,
+		HostKey:          sshIdentityCache.hostKey,
+		HistorySize:      sshIdentityCache.historySize,
+		OOMRiskProcesses: sshMemCache.oomProcs,
+		FailedLogins:     sshAuthCache.failedLogins,
+		SSHProcessMemory: sshMemCache.processMem,
+		SSHProcessRSS:    sshMemCache.processRSS,
+	}
+
+	if stats.AuthMethods == nil {
+		stats.AuthMethods = map[string]int{}
+	}
+	if stats.Sessions == nil {
+		stats.Sessions = []types.SSHSession{}
+	}
+	if stats.OOMRiskProcesses == nil {
+		stats.OOMRiskProcesses = []types.ProcessInfo{}
+	}
+
 	return stats
+}
+
+func statSSHAuthLogLocked() (int64, time.Time) {
+	path := config.HostPath("/var/log/auth.log")
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, time.Time{}
+	}
+	return fi.Size(), fi.ModTime()
+}
+
+func shouldRefreshSSHAuthLocked(now time.Time) bool {
+	if !sshAuthCache.hasEverBuilt {
+		return true
+	}
+	if now.Sub(sshAuthCache.updatedAt) > sshTTLAuth {
+		return true
+	}
+
+	// Optional early refresh if auth.log changed, but throttle.
+	if now.Sub(sshAuthCache.lastChangeCheck) < sshAuthMinGap {
+		return false
+	}
+	sshAuthCache.lastChangeCheck = now
+
+	logSize, logMtime := statSSHAuthLogLocked()
+	if logSize == 0 && logMtime.IsZero() {
+		return false
+	}
+	if logSize != sshAuthCache.lastLogSize {
+		return true
+	}
+	if !logMtime.Equal(sshAuthCache.lastLogModTime) {
+		return true
+	}
+	return false
+}
+
+func listSSHDpidsFromHostProc() []int32 {
+	entries, err := os.ReadDir(config.GlobalConfig.HostProc)
+	if err != nil {
+		return nil
+	}
+
+	seen := make(map[int32]bool)
+	pids := make([]int32, 0, 8)
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue
+		}
+		pidInt, err := strconv.Atoi(ent.Name())
+		if err != nil || pidInt <= 0 {
+			continue
+		}
+		pid := int32(pidInt)
+		arg0, ok := readProcArg0(filepath.Join(config.GlobalConfig.HostProc, ent.Name(), "cmdline"))
+		if !ok {
+			continue
+		}
+
+		// arg0 can be "sshd", "/usr/sbin/sshd", or session form "sshd: user@pts/0".
+		if strings.HasPrefix(arg0, "sshd:") || filepath.Base(arg0) == "sshd" {
+			if !seen[pid] {
+				seen[pid] = true
+				pids = append(pids, pid)
+			}
+		}
+	}
+
+	return pids
+}
+
+func getHostMemTotalBytes() uint64 {
+	hostMemTotalOnce.Do(func() {
+		paths := []string{
+			filepath.Join(config.GlobalConfig.HostProc, "meminfo"),
+			"/proc/meminfo",
+		}
+		for _, p := range paths {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				continue
+			}
+			lines := strings.Split(string(b), "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if !strings.HasPrefix(line, "MemTotal:") {
+					continue
+				}
+				fields := strings.Fields(line)
+				// MemTotal: 16367420 kB
+				if len(fields) < 2 {
+					continue
+				}
+				v, err := strconv.ParseUint(fields[1], 10, 64)
+				if err != nil {
+					continue
+				}
+				hostMemTotalByte = v * 1024
+				return
+			}
+		}
+	})
+	return hostMemTotalByte
+}
+
+// readProcVmRSSBytes reads VmRSS from /proc/<pid>/status (host proc if configured).
+// VmRSS is reported in kB (KiB); we convert it to bytes.
+func readProcVmRSSBytes(pid int32) (uint64, bool) {
+	statusPath := filepath.Join(config.GlobalConfig.HostProc, strconv.Itoa(int(pid)), "status")
+	b, err := os.ReadFile(statusPath)
+	if err != nil {
+		// Fallback to container proc for non-host mode
+		statusPath = filepath.Join("/proc", strconv.Itoa(int(pid)), "status")
+		b, err = os.ReadFile(statusPath)
+		if err != nil {
+			return 0, false
+		}
+	}
+	lines := strings.Split(string(b), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "VmRSS:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		// VmRSS:     123456 kB
+		if len(fields) < 2 {
+			return 0, false
+		}
+		v, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return v * 1024, true
+	}
+	return 0, false
 }
 
 // computeSSHKeyFingerprint computes SHA256 fingerprint from SSH public key file

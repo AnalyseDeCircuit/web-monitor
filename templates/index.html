@@ -665,6 +665,11 @@
     <!-- SSH Page -->
     <div id="page-ssh" class="page">
         <div class="grid-container">
+            <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end;">
+                <button id="ssh-refresh-btn" class="sort-btn" title="Refresh SSH stats">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
             <!-- SSH Status Cards -->
             <div class="card" style="grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                 <div style="background: rgba(76, 175, 80, 0.1); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent-memory);">

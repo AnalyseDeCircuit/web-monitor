@@ -42,6 +42,14 @@ function getSensorItemKey(item) {
             if (!container) return;
 
             container.querySelectorAll('[data-sensor-key]').forEach(el => {
+				// Avoid attaching duplicate listeners on every render.
+				if (el.dataset && el.dataset.dndBound === '1') {
+					return;
+				}
+				if (el.dataset) {
+					el.dataset.dndBound = '1';
+				}
+
                 el.addEventListener('dragstart', (e) => {
                     const key = el.getAttribute('data-sensor-key');
                     if (!key) return;
@@ -991,124 +999,165 @@ function _renderStatsInternal(data) {
 
             // SSH Page Rendering (always update, not just when page is active)
             if (data.ssh_stats) {
-                const ssh = data.ssh_stats;
-
-                // SSH Status
-                const statusEl = document.getElementById('ssh-status');
-                if (statusEl) {
-                    statusEl.innerText = ssh.status || 'Unknown';
-                    statusEl.style.color = 
-                        ssh.status === 'Running' ? 'var(--accent-memory)' : '#ff4757';
-                }
-
-                // SSH Connections
-                const connEl = document.getElementById('ssh-connections');
-                if (connEl) connEl.innerText = ssh.connections || 0;
-
-                // SSH Memory
-                const memEl = document.getElementById('ssh-memory');
-                if (memEl) memEl.innerText = 
-                    ssh.ssh_process_memory ? ssh.ssh_process_memory.toFixed(2) + '%' : '-';
-
-                // Failed Logins
-                const failedEl = document.getElementById('ssh-failed-logins');
-                if (failedEl) failedEl.innerText = ssh.failed_logins || 0;
-
-                // Active Sessions
-                const sessContainer = document.getElementById('ssh-sessions');
-                if (sessContainer) {
-                    if (!ssh.sessions || ssh.sessions.length === 0) {
-                        sessContainer.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">No active sessions</div>';
-                    } else {
-                        sessContainer.innerHTML = '';
-                        ssh.sessions.forEach(session => {
-                            const div = document.createElement('div');
-                            div.className = 'process-item level-0';
-                            div.style.padding = '12px';
-                            div.style.background = 'rgba(255,255,255,0.05)';
-                            div.style.borderRadius = '6px';
-                            
-                            // Convert UTC time to local time (same as General page)
-                            let displayTime = session.started;
-                            if (session.started && session.started !== '-' && session.started !== 0) {
-                                try {
-                                    const date = new Date(typeof session.started === 'number' ? session.started : session.started);
-                                    displayTime = date.toLocaleString();
-                                } catch (e) {
-                                    displayTime = session.started;
-                                }
-                            }
-                            
-                            div.innerHTML = `
-                                <div class="process-name">${session.user}@${session.ip}</div>
-                                <div class="process-meta">Connected: ${displayTime}</div>
-                            `;
-                            sessContainer.appendChild(div);
-                        });
-                    }
-                }
-
-                // Auth Methods
-                const authContainer = document.getElementById('ssh-auth-methods');
-                if (authContainer && ssh.auth_methods) {
-                    authContainer.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                            <span style="color: var(--text-dim);">Public Key</span>
-                            <span style="font-weight: bold; color: var(--accent-network);">${ssh.auth_methods.publickey || 0}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                            <span style="color: var(--text-dim);">Password</span>
-                            <span style="font-weight: bold; color: var(--accent-disk);">${ssh.auth_methods.password || 0}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-                            <span style="color: var(--text-dim);">Other Methods</span>
-                            <span style="font-weight: bold; color: var(--accent-cpu);">${ssh.auth_methods.other || 0}</span>
-                        </div>
-                    `;
-                }
-
-                // Host Key Fingerprint
-                const hostKeyEl = document.getElementById('ssh-hostkey');
-                if (hostKeyEl) hostKeyEl.innerText = ssh.hostkey_fingerprint || '-';
-
-                // Known Hosts
-                const historyEl = document.getElementById('ssh-history');
-                if (historyEl) {
-                    if (ssh.history_size !== undefined && ssh.history_size !== null) {
-                        historyEl.innerText = `${ssh.history_size} entries`;
-                    } else {
-                        historyEl.innerText = '-';
-                    }
-                }
-
-                // OOM Risk Processes
-                const oomContainer = document.getElementById('ssh-oom-processes');
-                if (oomContainer) {
-                    if (!ssh.oom_risk_processes || ssh.oom_risk_processes.length === 0) {
-                        oomContainer.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">All processes within safe memory range</div>';
-                    } else {
-                        oomContainer.innerHTML = '';
-                        ssh.oom_risk_processes.forEach(proc => {
-                            const div = document.createElement('div');
-                            div.style.padding = '12px';
-                            div.style.background = 'rgba(255,107,107,0.1)';
-                            div.style.borderRadius = '6px';
-                            div.style.borderLeft = '4px solid #FF6B6B';
-                            div.innerHTML = `
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <div style="font-weight: bold;">${proc.name}</div>
-                                        <div style="font-size: 0.85rem; color: var(--text-dim);">PID: ${proc.pid}</div>
-                                    </div>
-                                    <div style="font-size: 1.2rem; font-weight: bold; color: #FF6B6B;">${proc.memory}%</div>
-                                </div>
-                            `;
-                            oomContainer.appendChild(div);
-                        });
-                    }
-                }
+                renderSSHStats(data.ssh_stats);
             }
         }
     }
+
+function renderSSHStats(ssh) {
+            if (!ssh) return;
+
+            // SSH Status
+            const statusEl = document.getElementById('ssh-status');
+            if (statusEl) {
+                statusEl.innerText = ssh.status || 'Unknown';
+                statusEl.style.color =
+                    ssh.status === 'Running' ? 'var(--accent-memory)' : '#ff4757';
+            }
+
+            // SSH Connections
+            const connEl = document.getElementById('ssh-connections');
+            if (connEl) connEl.innerText = ssh.connections || 0;
+
+            // SSH Memory
+            const memEl = document.getElementById('ssh-memory');
+            if (memEl) {
+                if (ssh.ssh_process_rss) {
+                    memEl.innerText = ssh.ssh_process_rss;
+                } else {
+                    memEl.innerText = ssh.ssh_process_memory ? ssh.ssh_process_memory.toFixed(2) + '%' : '-';
+                }
+            }
+
+            // Failed Logins
+            const failedEl = document.getElementById('ssh-failed-logins');
+            if (failedEl) failedEl.innerText = ssh.failed_logins || 0;
+
+            // Active Sessions
+            const sessContainer = document.getElementById('ssh-sessions');
+            if (sessContainer) {
+                if (!ssh.sessions || ssh.sessions.length === 0) {
+                    sessContainer.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">No active sessions</div>';
+                } else {
+                    sessContainer.innerHTML = '';
+                    ssh.sessions.forEach(session => {
+                        const div = document.createElement('div');
+                        div.className = 'process-item level-0';
+                        div.style.padding = '12px';
+                        div.style.background = 'rgba(255,255,255,0.05)';
+                        div.style.borderRadius = '6px';
+
+                        // Convert UTC time to local time (same as General page)
+                        let displayTime = session.started;
+                        if (session.started && session.started !== '-' && session.started !== 0) {
+                            try {
+                                const date = new Date(typeof session.started === 'number' ? session.started : session.started);
+                                displayTime = date.toLocaleString();
+                            } catch (e) {
+                                displayTime = session.started;
+                            }
+                        }
+
+                        div.innerHTML = `
+                            <div class="process-name">${session.user}@${session.ip}</div>
+                            <div class="process-meta">Connected: ${displayTime}</div>
+                        `;
+                        sessContainer.appendChild(div);
+                    });
+                }
+            }
+
+            // Auth Methods
+            const authContainer = document.getElementById('ssh-auth-methods');
+            if (authContainer && ssh.auth_methods) {
+                authContainer.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <span style="color: var(--text-dim);">Public Key</span>
+                        <span style="font-weight: bold; color: var(--accent-network);">${ssh.auth_methods.publickey || 0}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <span style="color: var(--text-dim);">Password</span>
+                        <span style="font-weight: bold; color: var(--accent-disk);">${ssh.auth_methods.password || 0}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                        <span style="color: var(--text-dim);">Other Methods</span>
+                        <span style="font-weight: bold; color: var(--accent-cpu);">${ssh.auth_methods.other || 0}</span>
+                    </div>
+                `;
+            }
+
+            // Host Key Fingerprint
+            const hostKeyEl = document.getElementById('ssh-hostkey');
+            if (hostKeyEl) hostKeyEl.innerText = ssh.hostkey_fingerprint || '-';
+
+            // Known Hosts
+            const historyEl = document.getElementById('ssh-history');
+            if (historyEl) {
+                if (ssh.history_size !== undefined && ssh.history_size !== null) {
+                    historyEl.innerText = `${ssh.history_size} entries`;
+                } else {
+                    historyEl.innerText = '-';
+                }
+            }
+
+            // OOM Risk Processes
+            const oomContainer = document.getElementById('ssh-oom-processes');
+            if (oomContainer) {
+                if (!ssh.oom_risk_processes || ssh.oom_risk_processes.length === 0) {
+                    oomContainer.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">All processes within safe memory range</div>';
+                } else {
+                    oomContainer.innerHTML = '';
+                    ssh.oom_risk_processes.forEach(proc => {
+                        const div = document.createElement('div');
+                        div.style.padding = '12px';
+                        div.style.background = 'rgba(255,107,107,0.1)';
+                        div.style.borderRadius = '6px';
+                        div.style.borderLeft = '4px solid #FF6B6B';
+                        const memText = proc.memory_rss
+                            || (proc.memory_percent !== undefined && proc.memory_percent !== null
+                                ? proc.memory_percent.toFixed(1) + '%'
+                                : (proc.memory !== undefined && proc.memory !== null ? proc.memory + '%' : '-'));
+                        div.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: bold;">${proc.name}</div>
+                                    <div style="font-size: 0.85rem; color: var(--text-dim);">PID: ${proc.pid}</div>
+                                </div>
+                                <div style="font-size: 1.2rem; font-weight: bold; color: #FF6B6B;">${memText}</div>
+                            </div>
+                        `;
+                        oomContainer.appendChild(div);
+                    });
+                }
+            }
+        }
+
+async function refreshSSHStats(force = true) {
+            const btn = document.getElementById('ssh-refresh-btn');
+            if (btn) btn.disabled = true;
+            try {
+                const url = force ? '/api/ssh/stats?force=1' : '/api/ssh/stats';
+                const res = await fetch(url);
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                const payload = await res.json();
+                const ssh = payload.ssh_stats || payload;
+                renderSSHStats(ssh);
+            } catch (e) {
+                console.warn('Failed to refresh SSH stats:', e);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+window.addEventListener('DOMContentLoaded', function () {
+            const btn = document.getElementById('ssh-refresh-btn');
+            if (!btn) return;
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                refreshSSHStats(true);
+            });
+        });
 
         // 注：认证/登出/fetch 拦截等逻辑已迁移到 static/js/auth.js 与 static/js/app.js。

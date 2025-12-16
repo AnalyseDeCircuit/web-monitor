@@ -303,12 +303,11 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    // 保存 Token 到 localStorage
-                    localStorage.setItem('auth_token', data.token);
-                    localStorage.setItem('username', data.username);
-                    localStorage.setItem('role', data.role);
-                    // 同时保存 Token 到 Cookie（后端验证使用）
-                    document.cookie = `auth_token=${data.token}; path=/; max-age=86400`;
+                    // 保存非敏感的展示信息（不保存 token）。鉴权统一使用后端下发的 HttpOnly Cookie。
+                    try {
+                        localStorage.setItem('username', data.username);
+                        localStorage.setItem('role', data.role);
+                    } catch (_) {}
                     success.style.display = 'block';
                     setTimeout(() => {
                         window.location.href = '/';
