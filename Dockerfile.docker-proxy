@@ -1,0 +1,13 @@
+# Lightweight Docker API proxy (allowlist) for web-monitor
+FROM golang:1.23-bookworm AS builder
+WORKDIR /src
+COPY go.mod .
+COPY vendor ./vendor
+COPY . .
+ENV CGO_ENABLED=0 GO111MODULE=on GOOS=linux GOARCH=amd64
+RUN go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/docker-proxy ./cmd/dockerproxy
+
+FROM scratch
+COPY --from=builder /out/docker-proxy /docker-proxy
+EXPOSE 2375
+ENTRYPOINT ["/docker-proxy"]
