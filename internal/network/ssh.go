@@ -2,10 +2,11 @@ package network
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	stdnet "net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -69,21 +70,16 @@ func GetSSHStats() types.SSHStats {
 	stats.FailedLogins = sshAuthCounters["failed"]
 
 	// Host Key Fingerprint
-	// Try multiple key types and generate fingerprint
+	// Try multiple key types and generate fingerprint using pure Go
 	keyFiles := []string{
 		"/hostfs/etc/ssh/ssh_host_ed25519_key.pub",
 		"/hostfs/etc/ssh/ssh_host_rsa_key.pub",
 		"/hostfs/etc/ssh/ssh_host_ecdsa_key.pub",
 	}
 	for _, keyFile := range keyFiles {
-		// Check if file exists
-		if _, err := os.Stat(keyFile); err == nil {
-			// Generate fingerprint using ssh-keygen
-			cmd := exec.Command("ssh-keygen", "-lf", keyFile)
-			if out, err := cmd.Output(); err == nil {
-				stats.HostKey = strings.TrimSpace(string(out))
-				break
-			}
+		if fp := computeSSHKeyFingerprint(keyFile); fp != "" {
+			stats.HostKey = fp
+			break
 		}
 	}
 
@@ -137,8 +133,79 @@ func GetSSHStats() types.SSHStats {
 	return stats
 }
 
+// computeSSHKeyFingerprint computes SHA256 fingerprint from SSH public key file
+// Returns format like "SHA256:xxxx (ED25519)" or empty string on error
+func computeSSHKeyFingerprint(keyFile string) string {
+	content, err := os.ReadFile(keyFile)
+	if err != nil {
+		return ""
+	}
+
+	line := strings.TrimSpace(string(content))
+	parts := strings.Fields(line)
+	if len(parts) < 2 {
+		return ""
+	}
+
+	// Format: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... comment"
+	keyType := parts[0]
+	keyData := parts[1]
+
+	// Decode base64 key data
+	decoded, err := base64.StdEncoding.DecodeString(keyData)
+	if err != nil {
+		return ""
+	}
+
+	// Compute SHA256 hash
+	hash := sha256.Sum256(decoded)
+	fingerprint := base64.StdEncoding.EncodeToString(hash[:])
+	// Remove trailing '=' padding for display
+	fingerprint = strings.TrimRight(fingerprint, "=")
+
+	// Determine key type name
+	typeName := ""
+	switch {
+	case strings.Contains(keyType, "ed25519"):
+		typeName = "ED25519"
+	case strings.Contains(keyType, "rsa"):
+		typeName = "RSA"
+	case strings.Contains(keyType, "ecdsa"):
+		typeName = "ECDSA"
+	default:
+		typeName = strings.ToUpper(strings.TrimPrefix(keyType, "ssh-"))
+	}
+
+	// Estimate key size (simplified)
+	keySize := len(decoded) * 8
+	if typeName == "ED25519" {
+		keySize = 256
+	} else if typeName == "RSA" {
+		// RSA key size is encoded in the key itself; rough estimate
+		keySize = (len(decoded) - 30) * 8 / 2
+		// Round to common sizes
+		if keySize > 3500 {
+			keySize = 4096
+		} else if keySize > 2500 {
+			keySize = 3072
+		} else {
+			keySize = 2048
+		}
+	} else if typeName == "ECDSA" {
+		if len(decoded) > 100 {
+			keySize = 521
+		} else if len(decoded) > 80 {
+			keySize = 384
+		} else {
+			keySize = 256
+		}
+	}
+
+	return "SHA256:" + fingerprint + " (" + typeName + ")"
+}
+
 func checkPort22Open() bool {
-	// Method 1: /proc/net/tcp (fastest, no exec)
+	// Read /proc/net/tcp directly (no exec needed)
 	// Port 22 is 0016 in hex. State 0A is LISTEN.
 	checkProc := func(path string) bool {
 		content, err := os.ReadFile(path)
@@ -160,25 +227,11 @@ func checkPort22Open() bool {
 		return false
 	}
 
-	if checkProc("/proc/net/tcp") || checkProc("/hostfs/proc/net/tcp") {
-		return true
-	}
-
-	// Method 2: ss (fallback)
-	cmd := exec.Command("ss", "-tuln")
-	out, err := cmd.Output()
-	if err == nil && strings.Contains(string(out), ":22 ") {
-		return true
-	}
-
-	// Method 3: netstat (fallback)
-	cmd = exec.Command("netstat", "-tuln")
-	out, err = cmd.Output()
-	if err == nil && strings.Contains(string(out), ":22 ") {
-		return true
-	}
-
-	return false
+	// Check both host and container proc
+	return checkProc("/hostfs/proc/net/tcp") ||
+		checkProc("/proc/net/tcp") ||
+		checkProc("/hostfs/proc/net/tcp6") ||
+		checkProc("/proc/net/tcp6")
 }
 
 func getSSHConnectionCount() int {
@@ -268,61 +321,120 @@ func updateSSHAuthStats() {
 }
 
 func getSSHSessionsFromWho() []types.SSHSession {
-	// mimic legacy behavior, only remote sessions with valid IPs
-	cmd := exec.Command("chroot", "/hostfs", "who")
-	out, err := cmd.Output()
+	// Read utmp directly instead of calling 'who' command
+	// utmp file contains login records
+	utmpPaths := []string{
+		"/hostfs/var/run/utmp",
+		"/var/run/utmp",
+	}
+
+	var sessions []types.SSHSession
+	for _, utmpPath := range utmpPaths {
+		records := parseUtmpFile(utmpPath)
+		if len(records) > 0 {
+			for _, r := range records {
+				// Only include remote sessions with valid IPs
+				parsed := stdnet.ParseIP(r.IP)
+				if parsed == nil || parsed.IsLoopback() {
+					continue
+				}
+				sessions = append(sessions, types.SSHSession{
+					User:      r.User,
+					IP:        r.IP,
+					LoginTime: r.LoginTime,
+				})
+			}
+			break
+		}
+	}
+	return sessions
+}
+
+// utmpRecord represents a login record from utmp
+type utmpRecord struct {
+	User      string
+	Line      string
+	Host      string
+	IP        string
+	LoginTime string
+}
+
+// parseUtmpFile reads and parses the utmp binary file
+// utmp format on Linux (x86_64): struct utmp is 384 bytes
+func parseUtmpFile(path string) []utmpRecord {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
 
-	lines := strings.Split(string(out), "\n")
-	var sessions []types.SSHSession
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	const utmpSize = 384 // struct utmp size on x86_64 Linux
+	var records []utmpRecord
+
+	for i := 0; i+utmpSize <= len(data); i += utmpSize {
+		record := data[i : i+utmpSize]
+
+		// ut_type is at offset 0, 4 bytes (int32)
+		utType := int(record[0]) | int(record[1])<<8 | int(record[2])<<16 | int(record[3])<<24
+
+		// USER_PROCESS = 7 (normal user login)
+		if utType != 7 {
 			continue
 		}
 
-		parts := strings.Fields(line)
-		if len(parts) < 5 {
+		// ut_line is at offset 8, 32 bytes (char[32])
+		line := strings.TrimRight(string(record[8:40]), "\x00")
+
+		// ut_user is at offset 44, 32 bytes (char[32])
+		user := strings.TrimRight(string(record[44:76]), "\x00")
+
+		// ut_host is at offset 76, 256 bytes (char[256])
+		host := strings.TrimRight(string(record[76:332]), "\x00")
+
+		// ut_tv (timeval) is at offset 340
+		// tv_sec is int32 on 32-bit, int64 on 64-bit, but utmp uses int32
+		tvSec := int64(record[340]) | int64(record[341])<<8 | int64(record[342])<<16 | int64(record[343])<<24
+
+		// Skip if no host (local login like tty2, seat0, etc.)
+		if host == "" {
 			continue
 		}
 
-		user := parts[0]
-		startedStr := parts[2] + " " + parts[3]
-
-		// Try to parse time and convert to ISO 8601 (UTC)
-		// who output format: YYYY-01-02 15:04
-		if t, err := time.ParseInLocation("2006-01-02 15:04", startedStr, time.Local); err == nil {
-			startedStr = t.UTC().Format(time.RFC3339)
+		// Try to extract IP from host
+		ip := host
+		// If host contains ':', it might be "hostname:display" format
+		if colonIdx := strings.Index(host, ":"); colonIdx > 0 {
+			ip = host[:colonIdx]
 		}
 
-		// Extract IP from fields with parentheses, only valid IPs
-		ip := ""
-		for _, part := range parts {
-			if strings.HasPrefix(part, "(") && strings.HasSuffix(part, ")") {
-				candidate := part[1 : len(part)-1]
-				parsed := stdnet.ParseIP(candidate)
-				if parsed == nil {
-					continue
-				}
-				if parsed.IsLoopback() {
-					continue
-				}
-				ip = candidate
-				break
-			}
+		// Check if it's a valid IP
+		parsedIP := stdnet.ParseIP(ip)
+		if parsedIP == nil {
+			// Host might be a hostname, not an IP
+			// For remote SSH sessions, the host field usually contains the IP
+			continue
 		}
 
-		if ip != "" {
-			sessions = append(sessions, types.SSHSession{
-				User:      user,
-				IP:        ip,
-				LoginTime: startedStr,
-			})
-		}
+		loginTime := time.Unix(tvSec, 0).UTC().Format(time.RFC3339)
+
+		records = append(records, utmpRecord{
+			User:      user,
+			Line:      line,
+			Host:      host,
+			IP:        ip,
+			LoginTime: loginTime,
+		})
 	}
-	return sessions
+
+	return records
+}
+
+// Convert utmpRecord to SSHSession (used internally)
+func (r utmpRecord) toSSHSession() types.SSHSession {
+	return types.SSHSession{
+		User:      r.User,
+		IP:        r.IP,
+		LoginTime: r.LoginTime,
+	}
 }
 
 func getSSHSessionsFromHostProc() []types.SSHSession {
@@ -580,19 +692,11 @@ func getClockTicksPerSecond() int64 {
 	if clkTckCache > 0 {
 		return clkTckCache
 	}
-	cmd := exec.Command("getconf", "CLK_TCK")
-	out, err := cmd.Output()
-	if err != nil {
-		clkTckCache = 100
-		return 100
-	}
-	v, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
-	if err != nil || v <= 0 {
-		clkTckCache = 100
-		return 100
-	}
-	clkTckCache = v
-	return v
+	// On Linux, CLK_TCK is almost always 100.
+	// We can read it from /proc/self/auxv or just use the constant.
+	// Reading auxv is more correct but complex; 100 is the standard default.
+	clkTckCache = 100
+	return 100
 }
 
 func procStartTimeRFC3339(pid int, bootTimeUnix int64, clkTck int64) (string, bool) {

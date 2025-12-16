@@ -2,17 +2,12 @@
 package websocket
 
 import (
-	"bufio"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
-	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,40 +15,10 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/gpu"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/gorilla/websocket"
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/host"
-	"github.com/shirou/gopsutil/v3/load"
-	"github.com/shirou/gopsutil/v3/mem"
-	gopsutilnet "github.com/shirou/gopsutil/v3/net"
-	"github.com/shirou/gopsutil/v3/process"
 )
 
 var (
-	cpuTempHistory = make([]float64, 0, 300)
-	memHistory     = make([]float64, 0, 300)
-	historyMutex   sync.Mutex
-
-	raplReadings = make(map[string]uint64)
-	raplTime     time.Time
-	raplLock     sync.Mutex
-
-	// Throttling caches
-	diskUsageCache      []types.DiskInfo
-	inodeUsageCache     []types.InodeInfo
-	diskUsageLastUpdate time.Time
-	diskUsageCacheMu    sync.Mutex
-
-	// Process cache
-	processCache   = make(map[int32]*processCacheEntry)
-	processCacheMu sync.Mutex
-
 	wsHub = newStatsHub()
 
 	wsClientID uint64
@@ -68,6 +33,16 @@ const (
 	wsMsgRatePerSec = 2.0
 	wsMsgBurst      = 5.0
 )
+
+// Client 代表一个 WebSocket 客户端连接
+type Client struct {
+	hub  *statsHub
+	conn *websocket.Conn
+	send chan []byte
+	done chan struct{} // closed when connection ends
+	subs map[string]bool
+	mu   sync.Mutex
+}
 
 // Shutdown gracefully stops the WebSocket hub and all collectors.
 // Call this during application shutdown.
@@ -268,20 +243,23 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		hub:  wsHub,
 		conn: c,
 		send: make(chan []byte, 256),
+		done: make(chan struct{}),
 		subs: map[string]bool{"base": true},
 	}
 
-	wsHub.RegisterClient(client, clientID, clientInterval)
+	wsHub.RegisterClient(clientID, clientInterval)
 
 	// Start pumps
 	go client.writePump()
 	go client.readPump(r, clientID)
+	go client.dataPump(clientInterval)
 }
 
 // readPump pumps messages from the websocket connection to the hub.
 func (c *Client) readPump(r *http.Request, clientID uint64) {
 	defer func() {
-		c.hub.UnregisterClient(c, clientID)
+		close(c.done) // signal dataPump and writePump to stop
+		c.hub.UnregisterClient(clientID)
 		c.conn.Close()
 	}()
 
@@ -356,6 +334,8 @@ func (c *Client) writePump() {
 
 	for {
 		select {
+		case <-c.done:
+			return
 		case message, ok := <-c.send:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 			if !ok {
@@ -383,689 +363,72 @@ func (c *Client) writePump() {
 	}
 }
 
-// collectBaseStats 收集基础系统统计信息（不包含高成本数据：进程列表/网络明细/SSH）。
-func collectBaseStats() types.Response {
-	var resp types.Response
+// dataPump periodically fetches data from hub and sends to client
+func (c *Client) dataPump(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
-	// Ensure JSON shape stability (avoid null maps/slices in frontend).
-	resp.Fans = []interface{}{}
-	resp.Disk = []types.DiskInfo{}
-	resp.DiskIO = map[string]types.DiskIOInfo{}
-	resp.Inodes = []types.InodeInfo{}
-	resp.Processes = []types.ProcessInfo{}
-	resp.GPU = []types.GPUDetail{}
-	resp.Network.Interfaces = map[string]types.Interface{}
-	resp.Network.Sockets = map[string]int{}
-	resp.Network.ConnectionStates = map[string]int{}
-	resp.Network.Errors = map[string]uint64{}
-	resp.Network.ListeningPorts = []types.ListeningPort{}
-	resp.SSHStats = types.SSHStats{
-		Sessions:         []types.SSHSession{},
-		AuthMethods:      map[string]int{},
-		OOMRiskProcesses: []types.ProcessInfo{},
-	}
+	// Wait for hub to be ready
+	c.hub.WaitReady(5 * time.Second)
 
-	// CPU
-	cpuPercent, _ := cpu.Percent(0, false)
-	if len(cpuPercent) > 0 {
-		resp.CPU.Percent = utils.Round(cpuPercent[0])
-	}
+	// Send initial data immediately
+	c.sendData()
 
-	perCore, _ := cpu.Percent(0, true)
-	resp.CPU.PerCore = make([]float64, len(perCore))
-	for i, v := range perCore {
-		resp.CPU.PerCore[i] = utils.Round(v)
-	}
-
-	resp.CPU.Info = getCPUInfo()
-
-	// Load Avg
-	if avg, err := load.Avg(); err == nil {
-		resp.CPU.LoadAvg = []float64{utils.Round(avg.Load1), utils.Round(avg.Load5), utils.Round(avg.Load15)}
-	}
-
-	// CPU Stats
-	stats := getCPUStats()
-	resp.CPU.Stats = map[string]uint64{
-		"ctx_switches":    stats["ctx_switches"],
-		"interrupts":      stats["interrupts"],
-		"soft_interrupts": stats["soft_interrupts"],
-		"syscalls":        stats["syscalls"],
-	}
-
-	// CPU Times
-	if times, err := cpu.Times(false); err == nil && len(times) > 0 {
-		t := times[0]
-		total := t.User + t.System + t.Idle + t.Nice + t.Iowait + t.Irq + t.Softirq + t.Steal + t.Guest + t.GuestNice
-		if total <= 0 {
-			total = 1
-		}
-		resp.CPU.Times = map[string]float64{
-			"user":    utils.Round((t.User / total) * 100),
-			"system":  utils.Round((t.System / total) * 100),
-			"idle":    utils.Round((t.Idle / total) * 100),
-			"iowait":  utils.Round((t.Iowait / total) * 100),
-			"irq":     utils.Round((t.Irq / total) * 100),
-			"softirq": utils.Round((t.Softirq / total) * 100),
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-ticker.C:
+			c.sendData()
 		}
 	}
-
-	// CPU Freq
-	resp.CPU.Freq = getCPUFreq()
-
-	// Sensors
-	resp.Sensors = getSensors()
-
-	// Power
-	resp.Power = getPower()
-
-	// Update temp history
-	historyMutex.Lock()
-	currentTemp := 0.0
-	if sensors, ok := resp.Sensors.(map[string][]interface{}); ok {
-		count := 0.0
-		sum := 0.0
-		for _, list := range sensors {
-			for _, item := range list {
-				if m, ok := item.(map[string]interface{}); ok {
-					if t, ok := m["current"].(float64); ok && t > 0 {
-						sum += t
-						count++
-					}
-				}
-			}
-		}
-		if count > 0 {
-			currentTemp = utils.Round(sum / count)
-		}
-	}
-
-	if len(cpuTempHistory) >= 300 {
-		copy(cpuTempHistory, cpuTempHistory[1:])
-		cpuTempHistory = cpuTempHistory[:len(cpuTempHistory)-1]
-	}
-	cpuTempHistory = append(cpuTempHistory, currentTemp)
-	resp.CPU.TempHistory = make([]float64, len(cpuTempHistory))
-	copy(resp.CPU.TempHistory, cpuTempHistory)
-	historyMutex.Unlock()
-
-	// Memory
-	v, _ := mem.VirtualMemory()
-	resp.Memory = types.MemInfo{
-		Total:     utils.GetSize(v.Total),
-		Used:      utils.GetSize(v.Used),
-		Free:      utils.GetSize(v.Free),
-		Percent:   utils.Round(v.UsedPercent),
-		Available: utils.GetSize(v.Available),
-		Buffers:   utils.GetSize(v.Buffers),
-		Cached:    utils.GetSize(v.Cached),
-		Shared:    utils.GetSize(v.Shared),
-		Active:    utils.GetSize(v.Active),
-		Inactive:  utils.GetSize(v.Inactive),
-		Slab:      utils.GetSize(v.Slab),
-	}
-
-	// Update memory history
-	historyMutex.Lock()
-	if len(memHistory) >= 300 {
-		copy(memHistory, memHistory[1:])
-		memHistory = memHistory[:len(memHistory)-1]
-	}
-	memHistory = append(memHistory, v.UsedPercent)
-	resp.Memory.History = make([]float64, len(memHistory))
-	copy(resp.Memory.History, memHistory)
-	historyMutex.Unlock()
-
-	// Swap
-	s, _ := mem.SwapMemory()
-	resp.Swap = types.SwapInfo{
-		Total:   utils.GetSize(s.Total),
-		Used:    utils.GetSize(s.Used),
-		Free:    utils.GetSize(s.Free),
-		Percent: utils.Round(s.UsedPercent),
-		Sin:     utils.GetSize(s.Sin),
-		Sout:    utils.GetSize(s.Sout),
-	}
-
-	// Disk - use hostfs if available
-	useHostfs := false
-	if _, err := os.Stat("/hostfs"); err == nil {
-		useHostfs = true
-	}
-
-	// Throttled Disk Usage Collection (every 10s)
-	// Disk usage (statfs) can be slow on network mounts or under load.
-	// We cache the result and only update it periodically.
-	diskUsageCacheMu.Lock()
-	now := time.Now()
-	if now.Sub(diskUsageLastUpdate) > 10*time.Second {
-		var newDiskInfo []types.DiskInfo
-		var newInodeInfo []types.InodeInfo
-
-		parts, _ := disk.Partitions(false)
-		for _, part := range parts {
-			if strings.Contains(part.Device, "loop") || part.Fstype == "squashfs" {
-				continue
-			}
-
-			checkPath := part.Mountpoint
-			if useHostfs {
-				checkPath = "/hostfs" + part.Mountpoint
-			}
-
-			// Set a timeout for disk usage check to avoid blocking
-			// This is a simple protection; for robust timeout we'd need a goroutine per mount
-			// but that might be overkill. For now, we just rely on the 10s throttle.
-			u, err := disk.Usage(checkPath)
-			if err == nil {
-				newDiskInfo = append(newDiskInfo, types.DiskInfo{
-					Device:     part.Device,
-					Mountpoint: part.Mountpoint,
-					Fstype:     part.Fstype,
-					Total:      utils.GetSize(u.Total),
-					Used:       utils.GetSize(u.Used),
-					Free:       utils.GetSize(u.Free),
-					Percent:    utils.Round(u.UsedPercent),
-				})
-
-				// Add inode info
-				if u.InodesTotal > 0 {
-					newInodeInfo = append(newInodeInfo, types.InodeInfo{
-						Mountpoint: part.Mountpoint,
-						Total:      u.InodesTotal,
-						Used:       u.InodesUsed,
-						Free:       u.InodesFree,
-						Percent:    utils.Round(u.InodesUsedPercent),
-					})
-				}
-			}
-		}
-		diskUsageCache = newDiskInfo
-		inodeUsageCache = newInodeInfo
-		diskUsageLastUpdate = now
-	}
-	// Use cached values
-	if diskUsageCache != nil {
-		resp.Disk = make([]types.DiskInfo, len(diskUsageCache))
-		copy(resp.Disk, diskUsageCache)
-	}
-	if inodeUsageCache != nil {
-		resp.Inodes = make([]types.InodeInfo, len(inodeUsageCache))
-		copy(resp.Inodes, inodeUsageCache)
-	}
-	diskUsageCacheMu.Unlock()
-
-	// Disk IO
-	ioCounters, _ := disk.IOCounters()
-	if ioCounters != nil {
-		resp.DiskIO = make(map[string]types.DiskIOInfo)
-		for name, io := range ioCounters {
-			resp.DiskIO[name] = types.DiskIOInfo{
-				ReadBytes:  utils.GetSize(io.ReadBytes),
-				WriteBytes: utils.GetSize(io.WriteBytes),
-				ReadCount:  io.ReadCount,
-				WriteCount: io.WriteCount,
-				ReadTime:   io.ReadTime,
-				WriteTime:  io.WriteTime,
-			}
-		}
-	}
-
-	// Network
-	netIO, _ := gopsutilnet.IOCounters(false)
-	if len(netIO) > 0 {
-		resp.Network.BytesSent = utils.GetSize(netIO[0].BytesSent)
-		resp.Network.BytesRecv = utils.GetSize(netIO[0].BytesRecv)
-		resp.Network.RawSent = netIO[0].BytesSent
-		resp.Network.RawRecv = netIO[0].BytesRecv
-	}
-
-	// SSH (cached internally; keep it in base so UI stays correct on all pages)
-	resp.SSHStats = network.GetSSHStats()
-	if resp.SSHStats.AuthMethods == nil {
-		resp.SSHStats.AuthMethods = map[string]int{}
-	}
-	if resp.SSHStats.Sessions == nil {
-		resp.SSHStats.Sessions = []types.SSHSession{}
-	}
-	if resp.SSHStats.OOMRiskProcesses == nil {
-		resp.SSHStats.OOMRiskProcesses = []types.ProcessInfo{}
-	}
-
-	// GPU (internally cached)
-	resp.GPU = gpu.GetGPUInfo()
-
-	// Boot Time
-	bootTime, _ := host.BootTime()
-	bt := time.Unix(int64(bootTime), 0)
-	resp.BootTime = bt.Format("2006/01/02 15:04:05")
-
-	// Check alerts (disk percent is computed elsewhere)
-	monitoring.CheckAlerts(resp.CPU.Percent, resp.Memory.Percent, 0)
-
-	return resp
 }
 
-func collectProcesses() []types.ProcessInfo {
-	procs := getAllProcesses()
-	if procs == nil {
-		return []types.ProcessInfo{}
+// sendData fetches latest data from hub and sends to client
+func (c *Client) sendData() {
+	c.mu.Lock()
+	subs := make(map[string]bool)
+	for k, v := range c.subs {
+		subs[k] = v
 	}
-	return procs
-}
+	c.mu.Unlock()
 
-func collectNetDetail() netDetailSnapshot {
-	// Keep maps non-nil for frontend.
-	out := netDetailSnapshot{
-		Network: types.NetInfo{
-			Interfaces:       map[string]types.Interface{},
-			Sockets:          map[string]int{},
-			ConnectionStates: map[string]int{},
-			Errors:           map[string]uint64{},
-			ListeningPorts:   []types.ListeningPort{},
-		},
-		SSHStats: types.SSHStats{
-			Sessions:         []types.SSHSession{},
-			AuthMethods:      map[string]int{},
-			OOMRiskProcesses: []types.ProcessInfo{},
-		},
+	// Build response based on subscriptions
+	resp, ok := c.hub.LatestBase()
+	if !ok {
+		return
 	}
 
-	if netInfo, err := network.GetNetworkInfo(); err == nil {
-		out.Network.ConnectionStates = netInfo.ConnectionStates
-		out.Network.Sockets = netInfo.Sockets
-		out.Network.Interfaces = netInfo.Interfaces
-		out.Network.Errors = netInfo.Errors
-		out.Network.ListeningPorts = netInfo.ListeningPorts
-	}
-
-	out.SSHStats = network.GetSSHStats()
-	// Ensure non-nil nested fields.
-	if out.SSHStats.AuthMethods == nil {
-		out.SSHStats.AuthMethods = map[string]int{}
-	}
-	if out.SSHStats.Sessions == nil {
-		out.SSHStats.Sessions = []types.SSHSession{}
-	}
-	if out.SSHStats.OOMRiskProcesses == nil {
-		out.SSHStats.OOMRiskProcesses = []types.ProcessInfo{}
-	}
-
-	return out
-}
-
-// getCPUInfo 获取CPU信息
-func getCPUInfo() types.CPUDetail {
-	info := types.CPUDetail{
-		Model:        "Unknown",
-		Architecture: runtime.GOARCH,
-		Cores:        0,
-		Threads:      0,
-		MaxFreq:      0,
-		MinFreq:      0,
-	}
-
-	info.Cores, _ = cpu.Counts(false)
-	info.Threads, _ = cpu.Counts(true)
-
-	// Read CPU model from /proc/cpuinfo
-	paths := []string{"/hostfs/proc/cpuinfo", "/proc/cpuinfo"}
-	for _, path := range paths {
-		if file, err := os.Open(path); err == nil {
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if strings.HasPrefix(line, "model name") {
-					parts := strings.Split(line, ":")
-					if len(parts) > 1 {
-						info.Model = strings.TrimSpace(parts[1])
-						file.Close()
-						return info
-					}
-				}
-			}
-			file.Close()
-			break
+	// Add processes if subscribed
+	if subs["processes"] {
+		if procs, ok := c.hub.LatestProcesses(); ok {
+			resp.Processes = procs
 		}
 	}
 
-	return info
-}
+	// Add network detail if subscribed
+	if subs["net_detail"] {
+		if netDetail, ok := c.hub.LatestNetDetail(); ok {
+			// Merge network detail into base network data (preserve BytesSent/BytesRecv/RawSent/RawRecv)
+			resp.Network.Interfaces = netDetail.Network.Interfaces
+			resp.Network.Sockets = netDetail.Network.Sockets
+			resp.Network.ConnectionStates = netDetail.Network.ConnectionStates
+			resp.Network.Errors = netDetail.Network.Errors
+			resp.Network.ListeningPorts = netDetail.Network.ListeningPorts
+			resp.SSHStats = netDetail.SSHStats
+		}
+	}
 
-type processCacheEntry struct {
-	proc       *process.Process
-	name       string
-	username   string
-	cmdline    string
-	createTime int64
-	ppid       int32
-}
-
-// getAllProcesses 获取所有进程
-func getAllProcesses() []types.ProcessInfo {
-	pids, err := process.Pids()
+	data, err := json.Marshal(resp)
 	if err != nil {
-		return []types.ProcessInfo{}
+		log.Printf("dataPump: marshal error: %v", err)
+		return
 	}
 
-	processCacheMu.Lock()
-	defer processCacheMu.Unlock()
-
-	seenPids := make(map[int32]bool)
-	var result []types.ProcessInfo
-
-	for _, pid := range pids {
-		seenPids[pid] = true
-
-		entry, exists := processCache[pid]
-		if !exists {
-			proc, err := process.NewProcess(pid)
-			if err != nil {
-				continue
-			}
-
-			// Fetch static info once
-			name, _ := proc.Name()
-			username, _ := proc.Username()
-			if username == "" {
-				if uids, err := proc.Uids(); err == nil && len(uids) > 0 {
-					username = fmt.Sprintf("uid:%d", uids[0])
-				} else {
-					username = "unknown"
-				}
-			}
-			cmdline, _ := proc.Cmdline()
-			createTime, _ := proc.CreateTime()
-			ppid, _ := proc.Ppid()
-
-			entry = &processCacheEntry{
-				proc:       proc,
-				name:       name,
-				username:   username,
-				cmdline:    cmdline,
-				createTime: createTime,
-				ppid:       ppid,
-			}
-			processCache[pid] = entry
-		}
-
-		// Fetch dynamic info
-		cpuPercent, _ := entry.proc.CPUPercent()
-		memPercent, _ := entry.proc.MemoryPercent()
-		numThreads, _ := entry.proc.NumThreads()
-
-		ioRead := "-"
-		ioWrite := "-"
-		if ioCounters, err := entry.proc.IOCounters(); err == nil {
-			ioRead = utils.GetSize(ioCounters.ReadBytes)
-			ioWrite = utils.GetSize(ioCounters.WriteBytes)
-		}
-
-		cwd, _ := entry.proc.Cwd()
-		if cwd == "" {
-			cwd = "-"
-		}
-
-		uptimeSec := time.Now().Unix() - (entry.createTime / 1000)
-		uptimeStr := "-"
-		if uptimeSec < 60 {
-			uptimeStr = fmt.Sprintf("%ds", uptimeSec)
-		} else if uptimeSec < 3600 {
-			uptimeStr = fmt.Sprintf("%dm", uptimeSec/60)
-		} else if uptimeSec < 86400 {
-			uptimeStr = fmt.Sprintf("%dh", uptimeSec/3600)
-		} else {
-			uptimeStr = fmt.Sprintf("%dd", uptimeSec/86400)
-		}
-
-		result = append(result, types.ProcessInfo{
-			PID:           pid,
-			Name:          entry.name,
-			Username:      entry.username,
-			NumThreads:    numThreads,
-			MemoryPercent: utils.Round(float64(memPercent)),
-			CPUPercent:    utils.Round(cpuPercent),
-			PPID:          entry.ppid,
-			Uptime:        uptimeStr,
-			Cmdline:       entry.cmdline,
-			Cwd:           cwd,
-			IORead:        ioRead,
-			IOWrite:       ioWrite,
-		})
+	// Non-blocking send to avoid blocking if client is slow
+	select {
+	case c.send <- data:
+	default:
+		// Channel full, skip this update
 	}
-
-	// Cleanup dead processes
-	for pid := range processCache {
-		if !seenPids[pid] {
-			delete(processCache, pid)
-		}
-	}
-
-	// Sort by memory percent desc
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].MemoryPercent > result[j].MemoryPercent
-	})
-
-	// Return all processes
-	return result
-}
-
-func getCPUStats() map[string]uint64 {
-	stats := make(map[string]uint64)
-	paths := []string{"/hostfs/proc/stat", "/proc/stat"}
-
-	for _, path := range paths {
-		if file, err := os.Open(path); err == nil {
-			defer file.Close()
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := scanner.Text()
-				parts := strings.Fields(line)
-				if len(parts) < 2 {
-					continue
-				}
-
-				key := parts[0]
-				val, _ := strconv.ParseUint(parts[1], 10, 64)
-
-				switch key {
-				case "ctxt":
-					stats["ctx_switches"] = val
-				case "intr":
-					stats["interrupts"] = val
-				case "softirq":
-					stats["soft_interrupts"] = val
-				}
-			}
-			break
-		}
-	}
-	stats["syscalls"] = 0
-	return stats
-}
-
-func getCPUFreq() types.CPUFreq {
-	freq := types.CPUFreq{
-		Avg:     0,
-		PerCore: []float64{},
-	}
-
-	var realFreqs []float64
-	paths := []string{"/hostfs/proc/cpuinfo", "/proc/cpuinfo"}
-
-	for _, path := range paths {
-		if file, err := os.Open(path); err == nil {
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if strings.Contains(line, "cpu MHz") {
-					parts := strings.Split(line, ":")
-					if len(parts) > 1 {
-						valStr := strings.TrimSpace(parts[1])
-						val, err := strconv.ParseFloat(valStr, 64)
-						if err == nil {
-							realFreqs = append(realFreqs, utils.Round(val))
-						}
-					}
-				}
-			}
-			file.Close()
-			break
-		}
-	}
-
-	if len(realFreqs) > 0 {
-		freq.PerCore = realFreqs
-		sum := 0.0
-		for _, f := range realFreqs {
-			sum += f
-		}
-		freq.Avg = utils.Round(sum / float64(len(realFreqs)))
-	}
-
-	return freq
-}
-
-func getSensors() interface{} {
-	sensors := make(map[string][]interface{})
-	if temps, err := host.SensorsTemperatures(); err == nil {
-		for _, t := range temps {
-			sensors[t.SensorKey] = append(sensors[t.SensorKey], map[string]interface{}{
-				"label":    t.SensorKey,
-				"current":  t.Temperature,
-				"high":     t.High,
-				"critical": t.Critical,
-			})
-		}
-	}
-	return sensors
-}
-
-func getPower() interface{} {
-	powerStatus := make(map[string]interface{})
-
-	// 尝试从 /sys 或 /hostfs/sys 读取电池/适配器实时功耗
-	basePaths := []string{"/hostfs/sys/class/power_supply", "/sys/class/power_supply"}
-	foundConsumption := false
-	for _, basePath := range basePaths {
-		if _, err := os.Stat(basePath); err != nil {
-			continue
-		}
-
-		entries, _ := os.ReadDir(basePath)
-		for _, e := range entries {
-			supplyPath := filepath.Join(basePath, e.Name())
-
-			// 优先使用 power_now（微瓦）
-			if content, err := os.ReadFile(filepath.Join(supplyPath, "power_now")); err == nil {
-				if pNow, err := strconv.ParseFloat(strings.TrimSpace(string(content)), 64); err == nil {
-					powerStatus["consumption_watts"] = utils.Round(pNow / 1000000.0)
-					foundConsumption = true
-					break
-				}
-			}
-
-			// 其次使用 voltage_now * current_now（纳瓦转换为瓦）
-			vBytes, err1 := os.ReadFile(filepath.Join(supplyPath, "voltage_now"))
-			cBytes, err2 := os.ReadFile(filepath.Join(supplyPath, "current_now"))
-			if err1 == nil && err2 == nil {
-				vNow, _ := strconv.ParseFloat(strings.TrimSpace(string(vBytes)), 64)
-				cNow, _ := strconv.ParseFloat(strings.TrimSpace(string(cBytes)), 64)
-				powerStatus["consumption_watts"] = utils.Round((vNow * cNow) / 1e12)
-				foundConsumption = true
-				break
-			}
-		}
-		if foundConsumption {
-			break
-		}
-	}
-
-	// RAPL (Intel Power) – 计算 CPU 等域的功耗并暴露 rapl 映射
-	raplLock.Lock()
-	defer raplLock.Unlock()
-
-	raplBasePaths := []string{"/hostfs/sys/class/powercap", "/sys/class/powercap"}
-	now := time.Now()
-	raplDomains := make(map[string]float64)
-	totalWatts := 0.0
-	hasNewReading := false
-
-	for _, basePath := range raplBasePaths {
-		matches, err := filepath.Glob(filepath.Join(basePath, "intel-rapl:*"))
-		if err != nil || len(matches) == 0 {
-			continue
-		}
-
-		for _, domainPath := range matches {
-			nameFile := filepath.Join(domainPath, "name")
-			nameBytes, err := os.ReadFile(nameFile)
-			if err != nil {
-				continue
-			}
-			name := strings.TrimSpace(string(nameBytes))
-
-			energyFile := filepath.Join(domainPath, "energy_uj")
-			maxEnergyFile := filepath.Join(domainPath, "max_energy_range_uj")
-
-			energyBytes, err := os.ReadFile(energyFile)
-			if err != nil {
-				continue
-			}
-			energyUj, parseErr := strconv.ParseUint(strings.TrimSpace(string(energyBytes)), 10, 64)
-			if parseErr != nil {
-				continue
-			}
-
-			if lastEnergy, ok := raplReadings[domainPath]; ok && !raplTime.IsZero() {
-				dt := now.Sub(raplTime).Seconds()
-				if dt > 0 {
-					var de uint64
-					if energyUj >= lastEnergy {
-						de = energyUj - lastEnergy
-					} else {
-						// 处理计数器回绕
-						var maxRange uint64
-						if maxBytes, err := os.ReadFile(maxEnergyFile); err == nil {
-							maxRange, _ = strconv.ParseUint(strings.TrimSpace(string(maxBytes)), 10, 64)
-						}
-						if maxRange > 0 {
-							de = (maxRange - lastEnergy) + energyUj
-						} else {
-							de = 0
-						}
-					}
-
-					if de > 0 {
-						watts := (float64(de) / 1000000.0) / dt
-						if watts < 0 {
-							watts = 0
-						}
-						// 记录每个 RAPL 域的功耗
-						raplDomains[name] = utils.Round(watts)
-						// 汇总 package 域作为总功耗
-						if strings.HasPrefix(strings.ToLower(name), "package") {
-							totalWatts += watts
-						}
-					}
-				}
-			}
-
-			raplReadings[domainPath] = energyUj
-			hasNewReading = true
-		}
-	}
-
-	if hasNewReading {
-		raplTime = now
-	}
-	if totalWatts > 0 {
-		// 如果电池没有提供 consumption_watts，则使用 RAPL 计算的总功耗
-		powerStatus["consumption_watts"] = utils.Round(totalWatts)
-	}
-	if len(raplDomains) > 0 {
-		powerStatus["rapl"] = raplDomains
-	}
-
-	return powerStatus
 }

@@ -47,6 +47,7 @@ func (s *MonitoringService) GetSystemMetrics() (*types.SystemMetrics, error) {
 
 // getRealSystemMetrics 获取实时系统指标
 func (s *MonitoringService) getRealSystemMetrics() (*types.SystemMetrics, error) {
+
 	// CPU使用率
 	cpuPercent, err := cpu.Percent(0, false)
 	if err != nil {
