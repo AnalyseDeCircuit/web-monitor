@@ -2,11 +2,11 @@ package collectors
 
 import (
 	"context"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/shirou/gopsutil/v3/disk"
@@ -46,12 +46,6 @@ func (c *DiskCollector) Collect(ctx context.Context) interface{} {
 		IO:     make(map[string]types.DiskIOInfo),
 	}
 
-	// Check for hostfs
-	useHostfs := false
-	if _, err := os.Stat("/hostfs"); err == nil {
-		useHostfs = true
-	}
-
 	// Throttled disk usage collection (expensive operation)
 	c.cacheMu.Lock()
 	now := time.Now()
@@ -74,10 +68,7 @@ func (c *DiskCollector) Collect(ctx context.Context) interface{} {
 			default:
 			}
 
-			checkPath := part.Mountpoint
-			if useHostfs {
-				checkPath = "/hostfs" + part.Mountpoint
-			}
+			checkPath := config.HostPath(part.Mountpoint)
 
 			u, err := disk.Usage(checkPath)
 			if err == nil {

@@ -2,14 +2,14 @@
 package systemd
 
 import (
-	"bufio"
-	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
 
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/coreos/go-systemd/v22/dbus"
 )
 
 var (
@@ -21,28 +21,31 @@ func ListServices() ([]types.ServiceInfo, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	// 使用 chroot /hostfs 在宿主机环境中执行 systemctl
-	cmd := exec.Command("chroot", "/hostfs", "systemctl", "list-units", "--type=service", "--all", "--no-pager", "--no-legend")
-	output, err := cmd.Output()
+	// Use NewSystemConnectionContext to force using the system bus (and respect DBUS_SYSTEM_BUS_ADDRESS)
+	// instead of falling back to the private socket which might not be mounted.
+	conn, err := dbus.NewSystemConnectionContext(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("failed to list services: %v", err)
+		return nil, fmt.Errorf("failed to connect to systemd dbus: %v", err)
+	}
+	defer conn.Close()
+
+	units, err := conn.ListUnits()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list units: %v", err)
 	}
 
 	var services []types.ServiceInfo
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		line := scanner.Text()
-		fields := strings.Fields(line)
-		if len(fields) < 5 {
+	for _, unit := range units {
+		if !strings.HasSuffix(unit.Name, ".service") {
 			continue
 		}
 
 		service := types.ServiceInfo{
-			Unit:        fields[0],
-			Load:        fields[1],
-			Active:      fields[2],
-			Sub:         fields[3],
-			Description: fields[4],
+			Unit:        unit.Name,
+			Load:        unit.LoadState,
+			Active:      unit.ActiveState,
+			Sub:         unit.SubState,
+			Description: unit.Description,
 		}
 		services = append(services, service)
 	}
@@ -55,30 +58,43 @@ func ServiceAction(serviceName, action string) error {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	var args []string
+	conn, err := dbus.NewSystemConnectionContext(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to connect to systemd dbus: %v", err)
+	}
+	defer conn.Close()
+
+	ch := make(chan string)
+	var jobId int
+	var jobErr error
+
 	switch action {
 	case "start":
-		args = []string{"start", serviceName}
+		jobId, jobErr = conn.StartUnit(serviceName, "replace", ch)
 	case "stop":
-		args = []string{"stop", serviceName}
+		jobId, jobErr = conn.StopUnit(serviceName, "replace", ch)
 	case "restart":
-		args = []string{"restart", serviceName}
+		jobId, jobErr = conn.RestartUnit(serviceName, "replace", ch)
 	case "reload":
-		args = []string{"reload", serviceName}
+		jobId, jobErr = conn.ReloadUnit(serviceName, "replace", ch)
 	case "enable":
-		args = []string{"enable", serviceName}
+		_, _, err := conn.EnableUnitFiles([]string{serviceName}, false, false)
+		return err
 	case "disable":
-		args = []string{"disable", serviceName}
+		_, err := conn.DisableUnitFiles([]string{serviceName}, false)
+		return err
 	default:
 		return fmt.Errorf("invalid action: %s", action)
 	}
 
-	// 使用 chroot /hostfs 执行 systemctl
-	fullArgs := append([]string{"/hostfs", "systemctl"}, args...)
-	cmd := exec.Command("chroot", fullArgs...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to %s service %s: %v\nOutput: %s", action, serviceName, err, string(output))
+	if jobErr != nil {
+		return fmt.Errorf("failed to %s service %s: %v", action, serviceName, jobErr)
+	}
+
+	// Wait for job completion
+	result := <-ch
+	if result != "done" {
+		return fmt.Errorf("job %d failed with result: %s", jobId, result)
 	}
 
 	return nil
@@ -89,21 +105,20 @@ func GetServiceStatus(serviceName string) (map[string]string, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	cmd := exec.Command("chroot", "/hostfs", "systemctl", "show", serviceName, "--no-pager")
-	output, err := cmd.Output()
+	conn, err := dbus.New()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get service status: %v", err)
+		return nil, fmt.Errorf("failed to connect to systemd dbus: %v", err)
+	}
+	defer conn.Close()
+
+	props, err := conn.GetUnitProperties(serviceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get unit properties: %v", err)
 	}
 
 	status := make(map[string]string)
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if idx := strings.Index(line, "="); idx != -1 {
-			key := strings.TrimSpace(line[:idx])
-			value := strings.TrimSpace(line[idx+1:])
-			status[key] = value
-		}
+	for k, v := range props {
+		status[k] = fmt.Sprintf("%v", v)
 	}
 
 	return status, nil
@@ -128,34 +143,21 @@ func GetSystemStatus() (map[string]interface{}, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
+	conn, err := dbus.New()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to systemd dbus: %v", err)
+	}
+	defer conn.Close()
+
 	status := make(map[string]interface{})
 
-	// System uptime
-	cmd := exec.Command("systemctl", "show", "--property=SystemState", "--property=SystemStartTimestamp", "--no-pager")
-	output, err := cmd.Output()
-	if err == nil {
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		for scanner.Scan() {
-			line := scanner.Text()
-			if idx := strings.Index(line, "="); idx != -1 {
-				key := strings.TrimSpace(line[:idx])
-				value := strings.TrimSpace(line[idx+1:])
-				status[key] = value
-			}
-		}
-	}
-
 	// Failed services
-	cmd = exec.Command("systemctl", "list-units", "--state=failed", "--no-pager", "--no-legend")
-	output, err = cmd.Output()
+	units, err := conn.ListUnits()
 	if err == nil {
 		var failed []string
-		scanner := bufio.NewScanner(bytes.NewReader(output))
-		for scanner.Scan() {
-			line := scanner.Text()
-			fields := strings.Fields(line)
-			if len(fields) > 0 {
-				failed = append(failed, fields[0])
+		for _, unit := range units {
+			if unit.ActiveState == "failed" && strings.HasSuffix(unit.Name, ".service") {
+				failed = append(failed, unit.Name)
 			}
 		}
 		status["FailedServices"] = failed
@@ -169,11 +171,11 @@ func ReloadSystemd() error {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	cmd := exec.Command("systemctl", "daemon-reload")
-	output, err := cmd.CombinedOutput()
+	conn, err := dbus.New()
 	if err != nil {
-		return fmt.Errorf("failed to reload systemd: %v\nOutput: %s", err, string(output))
+		return fmt.Errorf("failed to connect to systemd dbus: %v", err)
 	}
+	defer conn.Close()
 
-	return nil
+	return conn.Reload()
 }

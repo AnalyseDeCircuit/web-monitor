@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -130,7 +131,7 @@ func (c *CPUCollector) getCPUInfo() types.CPUDetail {
 	info.Cores, _ = cpu.Counts(false)
 	info.Threads, _ = cpu.Counts(true)
 
-	paths := []string{"/hostfs/proc/cpuinfo", "/proc/cpuinfo"}
+	paths := []string{config.HostPath("/proc/cpuinfo"), "/proc/cpuinfo"}
 	for _, path := range paths {
 		if file, err := os.Open(path); err == nil {
 			scanner := bufio.NewScanner(file)
@@ -155,7 +156,7 @@ func (c *CPUCollector) getCPUInfo() types.CPUDetail {
 
 func (c *CPUCollector) getCPUStats() map[string]uint64 {
 	stats := make(map[string]uint64)
-	paths := []string{"/hostfs/proc/stat", "/proc/stat"}
+	paths := []string{config.HostPath("/proc/stat"), "/proc/stat"}
 
 	for _, path := range paths {
 		if file, err := os.Open(path); err == nil {
@@ -194,7 +195,7 @@ func (c *CPUCollector) getCPUFreq() types.CPUFreq {
 	}
 
 	var realFreqs []float64
-	paths := []string{"/hostfs/proc/cpuinfo", "/proc/cpuinfo"}
+	paths := []string{config.HostPath("/proc/cpuinfo"), "/proc/cpuinfo"}
 
 	for _, path := range paths {
 		if file, err := os.Open(path); err == nil {

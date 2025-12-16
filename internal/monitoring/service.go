@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/cache"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
@@ -64,7 +65,10 @@ func (s *MonitoringService) getRealSystemMetrics() (*types.SystemMetrics, error)
 	// 注意：如果设置了 HOST_PROC 等环境变量，gopsutil 可能会自动处理，
 	// 但 disk.Usage 需要明确的路径。
 	// 如果在容器内，/hostfs 是宿主机的根。
-	diskPath := "/hostfs"
+	diskPath := config.Load().HostFS
+	if diskPath == "" {
+		diskPath = "/"
+	}
 	// 检查 /hostfs 是否存在，不存在则回退到 /
 	// 这里简单假设如果 Usage("/hostfs") 成功则存在
 	diskInfo, err := disk.Usage(diskPath)
@@ -108,10 +112,7 @@ func (s *MonitoringService) getRealSystemMetrics() (*types.SystemMetrics, error)
 			// But Usage() needs a path accessible to the container.
 			// If p.Mountpoint is /mnt/data, we need to check /hostfs/mnt/data
 
-			checkPath := p.Mountpoint
-			if diskPath == "/hostfs" {
-				checkPath = "/hostfs" + p.Mountpoint
-			}
+			checkPath := config.HostPath(p.Mountpoint)
 
 			usage, err := disk.Usage(checkPath)
 			if err != nil {

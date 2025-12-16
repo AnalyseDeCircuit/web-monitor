@@ -13,6 +13,7 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/api/handlers"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
@@ -22,20 +23,19 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Starting web-monitor server...")
 
-	// 配置 gopsutil 使用宿主机环境（如果挂载了 /hostfs）
-	if _, err := os.Stat("/hostfs"); err == nil {
-		log.Println("Detected /hostfs, configuring gopsutil to use host resources...")
-		os.Setenv("HOST_PROC", "/hostfs/proc")
-		os.Setenv("HOST_SYS", "/hostfs/sys")
-		os.Setenv("HOST_ETC", "/hostfs/etc")
-		os.Setenv("HOST_VAR", "/hostfs/var")
-		os.Setenv("HOST_RUN", "/hostfs/run")
-		os.Setenv("HOST_DEV", "/hostfs/dev")
-
-		// 同时也设置 gopsutil 特定的环境变量
-		// 注意：gopsutil v3 使用 common.EnvMap 来查找环境变量，但通常也会读取系统环境变量
-		// 为了保险起见，我们也可以尝试直接设置 common 包的变量（如果它是导出的）
-		// 但 gopsutil 通常通过环境变量工作。
+	// 加载全局配置
+	cfg := config.Load()
+	if cfg.HostFS != "" {
+		log.Printf("Configured to use HostFS at: %s", cfg.HostFS)
+		// 配置 gopsutil 使用宿主机环境
+		os.Setenv("HOST_PROC", cfg.HostProc)
+		os.Setenv("HOST_SYS", cfg.HostSys)
+		os.Setenv("HOST_ETC", cfg.HostEtc)
+		os.Setenv("HOST_VAR", cfg.HostVar)
+		os.Setenv("HOST_RUN", cfg.HostRun)
+		// os.Setenv("HOST_DEV", cfg.HostDev) // Config struct doesn't have HostDev yet, maybe add it or ignore if not used
+	} else {
+		log.Println("Running in Bare Metal mode (no HostFS)")
 	}
 
 	// 初始化用户数据库

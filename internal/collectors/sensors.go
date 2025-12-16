@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/shirou/gopsutil/v3/host"
 )
@@ -62,7 +63,7 @@ func (c *PowerCollector) Collect(ctx context.Context) interface{} {
 	powerStatus := make(map[string]interface{})
 
 	// Try to read battery/adapter power consumption
-	basePaths := []string{"/hostfs/sys/class/power_supply", "/sys/class/power_supply"}
+	basePaths := []string{config.HostPath("/sys/class/power_supply"), "/sys/class/power_supply"}
 	foundConsumption := false
 	for _, basePath := range basePaths {
 		if _, err := os.Stat(basePath); err != nil {
@@ -102,7 +103,7 @@ func (c *PowerCollector) Collect(ctx context.Context) interface{} {
 	c.raplMu.Lock()
 	defer c.raplMu.Unlock()
 
-	raplBasePaths := []string{"/hostfs/sys/class/powercap", "/sys/class/powercap"}
+	raplBasePaths := []string{config.HostPath("/sys/class/powercap"), "/sys/class/powercap"}
 	now := time.Now()
 	raplDomains := make(map[string]float64)
 	totalWatts := 0.0

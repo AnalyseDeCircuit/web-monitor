@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	stdnet "net"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/shirou/gopsutil/v3/process"
 )
@@ -72,9 +74,9 @@ func GetSSHStats() types.SSHStats {
 	// Host Key Fingerprint
 	// Try multiple key types and generate fingerprint using pure Go
 	keyFiles := []string{
-		"/hostfs/etc/ssh/ssh_host_ed25519_key.pub",
-		"/hostfs/etc/ssh/ssh_host_rsa_key.pub",
-		"/hostfs/etc/ssh/ssh_host_ecdsa_key.pub",
+		config.HostPath("/etc/ssh/ssh_host_ed25519_key.pub"),
+		config.HostPath("/etc/ssh/ssh_host_rsa_key.pub"),
+		config.HostPath("/etc/ssh/ssh_host_ecdsa_key.pub"),
 	}
 	for _, keyFile := range keyFiles {
 		if fp := computeSSHKeyFingerprint(keyFile); fp != "" {
@@ -86,12 +88,12 @@ func GetSSHStats() types.SSHStats {
 	// History Size (known_hosts) - count entries from known_hosts files on host
 	knownHostsPaths := []string{
 		"/root/.ssh/known_hosts",
-		"/hostfs/root/.ssh/known_hosts",
+		config.HostPath("/root/.ssh/known_hosts"),
 		os.ExpandEnv("$HOME/.ssh/known_hosts"),
 	}
 	globPatterns := []string{
 		"/home/*/.ssh/known_hosts",
-		"/hostfs/home/*/.ssh/known_hosts",
+		config.HostPath("/home/*/.ssh/known_hosts"),
 	}
 	for _, pattern := range globPatterns {
 		if matches, err := filepath.Glob(pattern); err == nil {
@@ -228,9 +230,9 @@ func checkPort22Open() bool {
 	}
 
 	// Check both host and container proc
-	return checkProc("/hostfs/proc/net/tcp") ||
+	return checkProc(config.HostPath("/proc/net/tcp")) ||
 		checkProc("/proc/net/tcp") ||
-		checkProc("/hostfs/proc/net/tcp6") ||
+		checkProc(config.HostPath("/proc/net/tcp6")) ||
 		checkProc("/proc/net/tcp6")
 }
 
@@ -238,13 +240,13 @@ func getSSHConnectionCount() int {
 	// Check /proc/net/tcp and tcp6 for port 22 connections
 	count := 0
 	// Try host proc first if available
-	if c := countSSHConnectionsFromProc("/hostfs/proc/net/tcp"); c > 0 {
+	if c := countSSHConnectionsFromProc(config.HostPath("/proc/net/tcp")); c > 0 {
 		count += c
 	} else if c := countSSHConnectionsFromProc("/proc/net/tcp"); c > 0 {
 		count += c
 	}
 
-	if c := countSSHConnectionsFromProc("/hostfs/proc/net/tcp6"); c > 0 {
+	if c := countSSHConnectionsFromProc(config.HostPath("/proc/net/tcp6")); c > 0 {
 		count += c
 	} else if c := countSSHConnectionsFromProc("/proc/net/tcp6"); c > 0 {
 		count += c
@@ -277,7 +279,7 @@ func countSSHConnectionsFromProc(path string) int {
 }
 
 func updateSSHAuthStats() {
-	logPath := "/hostfs/var/log/auth.log"
+	logPath := config.HostPath("/var/log/auth.log")
 	file, err := os.Open(logPath)
 	if err != nil {
 		return
@@ -324,7 +326,7 @@ func getSSHSessionsFromWho() []types.SSHSession {
 	// Read utmp directly instead of calling 'who' command
 	// utmp file contains login records
 	utmpPaths := []string{
-		"/hostfs/var/run/utmp",
+		config.HostPath("/var/run/utmp"),
 		"/var/run/utmp",
 	}
 
@@ -373,8 +375,9 @@ func parseUtmpFile(path string) []utmpRecord {
 	for i := 0; i+utmpSize <= len(data); i += utmpSize {
 		record := data[i : i+utmpSize]
 
-		// ut_type is at offset 0, 4 bytes (int32)
-		utType := int(record[0]) | int(record[1])<<8 | int(record[2])<<16 | int(record[3])<<24
+		// ut_type is a 16-bit value at offset 0 in glibc's struct utmp.
+		// Reading it as 32-bit can mix in ut_pid bytes and cause incorrect filtering.
+		utType := int(binary.LittleEndian.Uint16(record[0:2]))
 
 		// USER_PROCESS = 7 (normal user login)
 		if utType != 7 {
@@ -390,9 +393,7 @@ func parseUtmpFile(path string) []utmpRecord {
 		// ut_host is at offset 76, 256 bytes (char[256])
 		host := strings.TrimRight(string(record[76:332]), "\x00")
 
-		// ut_tv (timeval) is at offset 340
-		// tv_sec is int32 on 32-bit, int64 on 64-bit, but utmp uses int32
-		tvSec := int64(record[340]) | int64(record[341])<<8 | int64(record[342])<<16 | int64(record[343])<<24
+		loginTime := extractUtmpLoginTimeRFC3339(record)
 
 		// Skip if no host (local login like tty2, seat0, etc.)
 		if host == "" {
@@ -414,8 +415,6 @@ func parseUtmpFile(path string) []utmpRecord {
 			continue
 		}
 
-		loginTime := time.Unix(tvSec, 0).UTC().Format(time.RFC3339)
-
 		records = append(records, utmpRecord{
 			User:      user,
 			Line:      line,
@@ -426,6 +425,32 @@ func parseUtmpFile(path string) []utmpRecord {
 	}
 
 	return records
+}
+
+func extractUtmpLoginTimeRFC3339(record []byte) string {
+	// utmp record layouts vary (time32/time64), so probe common offsets.
+	// If none look plausible, return "-".
+	candidates := []int{340, 344, 336, 352}
+	now := time.Now().UTC()
+	min := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	max := now.Add(48 * time.Hour)
+
+	for _, off := range candidates {
+		if off < 0 || off+4 > len(record) {
+			continue
+		}
+		ts := int64(binary.LittleEndian.Uint32(record[off : off+4]))
+		if ts <= 0 {
+			continue
+		}
+		t := time.Unix(ts, 0).UTC()
+		if t.Before(min) || t.After(max) {
+			continue
+		}
+		return t.Format(time.RFC3339)
+	}
+
+	return "-"
 }
 
 // Convert utmpRecord to SSHSession (used internally)
@@ -445,7 +470,7 @@ func getSSHSessionsFromHostProc() []types.SSHSession {
 		return nil
 	}
 
-	entries, err := os.ReadDir("/hostfs/proc")
+	entries, err := os.ReadDir(config.GlobalConfig.HostProc)
 	if err != nil {
 		return nil
 	}
@@ -460,7 +485,7 @@ func getSSHSessionsFromHostProc() []types.SSHSession {
 			continue
 		}
 
-		arg0, ok := readProcArg0("/hostfs/proc/" + ent.Name() + "/cmdline")
+		arg0, ok := readProcArg0(filepath.Join(config.GlobalConfig.HostProc, ent.Name(), "cmdline"))
 		if !ok {
 			continue
 		}
@@ -557,13 +582,13 @@ func parseSSHDUser(arg0 string) string {
 
 func buildSSHRemoteIPByInode() map[string]string {
 	remoteIPByInode := make(map[string]string)
-	for _, p := range []string{"/hostfs/proc/net/tcp", "/proc/net/tcp"} {
+	for _, p := range []string{config.HostPath("/proc/net/tcp"), "/proc/net/tcp"} {
 		mergeSSHRemoteIPByInode(remoteIPByInode, p, false)
 		if len(remoteIPByInode) > 0 {
 			break
 		}
 	}
-	for _, p := range []string{"/hostfs/proc/net/tcp6", "/proc/net/tcp6"} {
+	for _, p := range []string{config.HostPath("/proc/net/tcp6"), "/proc/net/tcp6"} {
 		mergeSSHRemoteIPByInode(remoteIPByInode, p, true)
 	}
 	return remoteIPByInode
@@ -642,12 +667,13 @@ func parseProcNetIP(addrPort string, isV6 bool) (string, bool) {
 }
 
 func findRemoteIPForPID(pid int, remoteIPByInode map[string]string) string {
-	fds, err := os.ReadDir("/hostfs/proc/" + strconv.Itoa(pid) + "/fd")
+	fdPath := filepath.Join(config.GlobalConfig.HostProc, strconv.Itoa(pid), "fd")
+	fds, err := os.ReadDir(fdPath)
 	if err != nil {
 		return ""
 	}
 	for _, fd := range fds {
-		link, err := os.Readlink("/hostfs/proc/" + strconv.Itoa(pid) + "/fd/" + fd.Name())
+		link, err := os.Readlink(filepath.Join(fdPath, fd.Name()))
 		if err != nil {
 			continue
 		}
@@ -666,7 +692,7 @@ func findRemoteIPForPID(pid int, remoteIPByInode map[string]string) string {
 }
 
 func getHostBootTimeUnix() int64 {
-	content, err := os.ReadFile("/hostfs/proc/stat")
+	content, err := os.ReadFile(filepath.Join(config.GlobalConfig.HostProc, "stat"))
 	if err != nil {
 		content, err = os.ReadFile("/proc/stat")
 		if err != nil {
@@ -703,7 +729,7 @@ func procStartTimeRFC3339(pid int, bootTimeUnix int64, clkTck int64) (string, bo
 	if bootTimeUnix <= 0 || clkTck <= 0 {
 		return "", false
 	}
-	statPath := "/hostfs/proc/" + strconv.Itoa(pid) + "/stat"
+	statPath := filepath.Join(config.GlobalConfig.HostProc, strconv.Itoa(pid), "stat")
 	data, err := os.ReadFile(statPath)
 	if err != nil {
 		return "", false

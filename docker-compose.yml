@@ -6,7 +6,13 @@ services:
       dockerfile: Dockerfile
     image: web-monitor-go:latest
     container_name: web-monitor-go
-    privileged: true
+    # privileged: true
+    cap_add:
+      - SYS_PTRACE        # 读取 /proc 进程信息
+      - DAC_READ_SEARCH   # 读取任意文件 (如 /var/log/auth.log)
+      - SYS_CHROOT        # 执行 chroot (用于 Cron 管理)
+    security_opt:
+      - apparmor=unconfined
     network_mode: host
     pid: host
     environment:
@@ -15,6 +21,15 @@ services:
       - DATA_DIR=/data
       - JWT_SECRET=${JWT_SECRET}
       - WS_ALLOWED_ORIGINS=${WS_ALLOWED_ORIGINS}
+      # Host Filesystem Configuration
+      - HOST_FS=/hostfs
+      - HOST_PROC=/hostfs/proc
+      - HOST_SYS=/hostfs/sys
+      - HOST_ETC=/hostfs/etc
+      - HOST_VAR=/hostfs/var
+      - HOST_RUN=/hostfs/run
+      # Systemd D-Bus Connection
+      - DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
       # NVIDIA GPU Support (Dynamic)
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
@@ -24,6 +39,7 @@ services:
       - /proc:/proc
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/utmp:/var/run/utmp:ro
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
       - web-monitor-data:/data

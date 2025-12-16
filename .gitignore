@@ -54,3 +54,4 @@ package*.sh
 main_legacy.go
 todo.md
 cpu.prof
+REFACTOR_PLAN.md

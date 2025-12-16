@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
@@ -150,7 +151,7 @@ func getNvidiaGPUInfo() []types.GPUDetail {
 				// Try to read process name from /proc
 				if nameBytes, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", p.Pid)); err == nil {
 					procName = strings.TrimSpace(string(nameBytes))
-				} else if nameBytes, err := os.ReadFile(fmt.Sprintf("/hostfs/proc/%d/comm", p.Pid)); err == nil {
+				} else if nameBytes, err := os.ReadFile(filepath.Join(config.GlobalConfig.HostProc, strconv.Itoa(int(p.Pid)), "comm")); err == nil {
 					procName = strings.TrimSpace(string(nameBytes))
 				}
 
@@ -181,7 +182,7 @@ func getNvidiaGPUInfo() []types.GPUDetail {
 				procName := "unknown"
 				if nameBytes, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", p.Pid)); err == nil {
 					procName = strings.TrimSpace(string(nameBytes))
-				} else if nameBytes, err := os.ReadFile(fmt.Sprintf("/hostfs/proc/%d/comm", p.Pid)); err == nil {
+				} else if nameBytes, err := os.ReadFile(filepath.Join(config.GlobalConfig.HostProc, strconv.Itoa(int(p.Pid)), "comm")); err == nil {
 					procName = strings.TrimSpace(string(nameBytes))
 				}
 
@@ -347,7 +348,7 @@ func checkNvidiaSmi() bool {
 		"nvidia-smi",
 		"/usr/bin/nvidia-smi",
 		"/usr/local/bin/nvidia-smi",
-		"/hostfs/usr/bin/nvidia-smi",
+		config.HostPath("/usr/bin/nvidia-smi"),
 	}
 	for _, p := range paths {
 		if _, err := exec.LookPath(p); err == nil {
@@ -658,8 +659,8 @@ func lookupPCIName(vendorID, deviceID string) string {
 		"/usr/share/hwdata/pci.ids",
 		"/usr/share/pci.ids",
 		"/usr/share/misc/pci.ids",
-		"/hostfs/usr/share/hwdata/pci.ids",
-		"/hostfs/usr/share/misc/pci.ids",
+		config.HostPath("/usr/share/hwdata/pci.ids"),
+		config.HostPath("/usr/share/misc/pci.ids"),
 		// Compressed paths
 		"/usr/share/misc/pci.ids.gz",
 		"/usr/share/pci.ids.gz",

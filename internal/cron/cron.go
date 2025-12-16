@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
 
@@ -23,7 +24,12 @@ func ListCronJobs() ([]types.CronJob, error) {
 	cronMutex.Lock()
 	defer cronMutex.Unlock()
 
-	cmd := exec.Command("chroot", "/hostfs", "crontab", "-l")
+	var cmd *exec.Cmd
+	if config.Load().HostFS != "" {
+		cmd = exec.Command("chroot", config.Load().HostFS, "crontab", "-l")
+	} else {
+		cmd = exec.Command("crontab", "-l")
+	}
 	output, err := cmd.CombinedOutput()
 
 	// If no crontab exists, it returns exit code 1, which is fine, just return empty list
@@ -140,7 +146,12 @@ func SaveCronJobs(jobs []types.CronJob) error {
 	defer cronMutex.Unlock()
 
 	// 1. 读取现有 crontab
-	cmdRead := exec.Command("chroot", "/hostfs", "crontab", "-l")
+	var cmdRead *exec.Cmd
+	if config.Load().HostFS != "" {
+		cmdRead = exec.Command("chroot", config.Load().HostFS, "crontab", "-l")
+	} else {
+		cmdRead = exec.Command("crontab", "-l")
+	}
 	output, err := cmdRead.CombinedOutput()
 
 	var existingLines []string
@@ -208,7 +219,12 @@ func SaveCronJobs(jobs []types.CronJob) error {
 	newLines = append(newLines, "") // Ensure trailing newline
 
 	// 4. 写入新的 crontab
-	cmdWrite := exec.Command("chroot", "/hostfs", "crontab", "-")
+	var cmdWrite *exec.Cmd
+	if config.Load().HostFS != "" {
+		cmdWrite = exec.Command("chroot", config.Load().HostFS, "crontab", "-")
+	} else {
+		cmdWrite = exec.Command("crontab", "-")
+	}
 	cmdWrite.Stdin = strings.NewReader(strings.Join(newLines, "\n"))
 	output, err = cmdWrite.CombinedOutput()
 	if err != nil {
