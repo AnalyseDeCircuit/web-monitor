@@ -37,7 +37,15 @@
 2.  在项目根目录下运行：
 
 ```bash
-docker-compose up -d
+docker compose up -d
+```
+
+如需自定义环境变量（包括 Docker 连接方式、只读模式以及性能相关可调项），可使用示例文件：
+
+```bash
+cp .env.example .env
+# 按需编辑 .env
+docker compose --env-file .env up -d
 ```
 
 3.  访问浏览器：`http://<服务器IP>:38080`
@@ -158,6 +166,13 @@ Web Monitor 通过 Prometheus 暴露丰富的系统指标，包括：
 | `DOCKER_HOST` | `tcp://127.0.0.1:2375`（Compose 默认） | Docker Engine API 地址（推荐走本地 proxy；也可用 `unix:///var/run/docker.sock`） |
 | `DOCKER_SOCK` | 空 | 仅供 `docker-socket-proxy` 使用：宿主机 docker.sock 路径（用于 rootless 场景覆盖默认） |
 | `DOCKER_READ_ONLY` | `false` | 启用只读模式：拒绝 Docker 写操作（start/stop/restart/remove/prune 等） |
+| `PROCESS_IO_REFRESH` | `30s` | 进程列表里 `io_read/io_write` 的刷新周期（降低采集开销；支持写 `60s` 或 `60` 表示 60 秒） |
+| `PROCESS_CWD_REFRESH` | `60s` | 进程列表里 `cwd` 的刷新周期（降低采集开销；支持写 `60s` 或 `60`） |
+| `WS_PROCESSES_INTERVAL` | `15s` | WebSocket 可选主题 `processes` 的服务端采集周期（越大越省 CPU） |
+| `WS_PROCESSES_TIMEOUT` | `3s` | WebSocket 采集 `processes` 的超时上限（避免偶发卡顿拉长 CPU 尖峰） |
+| `WS_NET_DETAIL_INTERVAL` | `15s` | WebSocket 可选主题 `net_detail` 的服务端采集周期 |
+| `WS_NET_DETAIL_TIMEOUT` | `3s` | WebSocket 采集 `net_detail` 的超时上限 |
+| `WS_SSH_TIMEOUT` | `3s` | WebSocket 采集 SSH 统计的超时上限（在 `net_detail` 快照里使用） |
 
 #### 生产环境推荐：使用本地 `.env`（不提交到 Git）
 

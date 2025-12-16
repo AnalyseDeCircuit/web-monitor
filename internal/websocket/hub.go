@@ -3,6 +3,8 @@ package websocket
 import (
 	"context"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -258,6 +260,12 @@ func newStatsHub() *statsHub {
 	netDetailColl := collectors.NewNetworkDetailCollector()
 	sshCollector := collectors.NewSSHCollector()
 
+	processInterval := envDuration("WS_PROCESSES_INTERVAL", 15*time.Second)
+	netDetailInterval := envDuration("WS_NET_DETAIL_INTERVAL", 15*time.Second)
+	processTimeout := envDuration("WS_PROCESSES_TIMEOUT", 3*time.Second)
+	netDetailTimeout := envDuration("WS_NET_DETAIL_TIMEOUT", 3*time.Second)
+	sshTimeout := envDuration("WS_SSH_TIMEOUT", 3*time.Second)
+
 	h := &statsHub{
 		aggregator:       aggregator,
 		processCollector: processCollector,
@@ -268,13 +276,15 @@ func newStatsHub() *statsHub {
 
 	// 使用新的并行采集器
 	h.base = newDynamicResponseCollector(aggregator.CollectBaseStats)
-	h.processes = newConditionalCollector(15*time.Second, func() []types.ProcessInfo {
-		if data, ok := processCollector.Collect(context.Background()).([]types.ProcessInfo); ok {
+	h.processes = newConditionalCollector(processInterval, func() []types.ProcessInfo {
+		ctx, cancel := context.WithTimeout(context.Background(), processTimeout)
+		defer cancel()
+		if data, ok := processCollector.Collect(ctx).([]types.ProcessInfo); ok {
 			return data
 		}
 		return []types.ProcessInfo{}
 	})
-	h.netDetail = newConditionalCollector(15*time.Second, func() netDetailSnapshot {
+	h.netDetail = newConditionalCollector(netDetailInterval, func() netDetailSnapshot {
 		out := netDetailSnapshot{
 			Network: types.NetInfo{
 				Interfaces:       map[string]types.Interface{},
@@ -290,16 +300,24 @@ func newStatsHub() *statsHub {
 			},
 		}
 
-		if data, ok := netDetailColl.Collect(context.Background()).(collectors.NetworkDetailData); ok {
-			out.Network.Interfaces = data.Interfaces
-			out.Network.Sockets = data.Sockets
-			out.Network.ConnectionStates = data.ConnectionStates
-			out.Network.Errors = data.Errors
-			out.Network.ListeningPorts = data.ListeningPorts
+		{
+			ctx, cancel := context.WithTimeout(context.Background(), netDetailTimeout)
+			defer cancel()
+			if data, ok := netDetailColl.Collect(ctx).(collectors.NetworkDetailData); ok {
+				out.Network.Interfaces = data.Interfaces
+				out.Network.Sockets = data.Sockets
+				out.Network.ConnectionStates = data.ConnectionStates
+				out.Network.Errors = data.Errors
+				out.Network.ListeningPorts = data.ListeningPorts
+			}
 		}
 
-		if sshData, ok := sshCollector.Collect(context.Background()).(types.SSHStats); ok {
-			out.SSHStats = sshData
+		{
+			ctx, cancel := context.WithTimeout(context.Background(), sshTimeout)
+			defer cancel()
+			if sshData, ok := sshCollector.Collect(ctx).(types.SSHStats); ok {
+				out.SSHStats = sshData
+			}
 		}
 
 		return out
@@ -308,6 +326,29 @@ func newStatsHub() *statsHub {
 	// Start base immediately with a sane default.
 	h.base.Start(5 * time.Second)
 	return h
+}
+
+func envDuration(name string, def time.Duration) time.Duration {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return def
+	}
+	// Allow plain seconds like "15".
+	allDigits := true
+	for i := 0; i < len(v); i++ {
+		if v[i] < '0' || v[i] > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		v += "s"
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
 }
 
 // Shutdown gracefully stops all collectors

@@ -37,7 +37,15 @@ This is the recommended deployment method, pre-configured for full functionality
 2.  Run the following command in the project root:
 
 ```bash
-docker-compose up -d
+docker compose up -d
+```
+
+To customize environment variables (including Docker connection mode, read-only mode, and performance tuning knobs), you can use the example file:
+
+```bash
+cp .env.example .env
+# Edit .env as needed
+docker compose --env-file .env up -d
 ```
 
 3.  Open your browser: `http://<Server-IP>:38080`
@@ -150,6 +158,13 @@ Data can be collected via the `/metrics` endpoint for integration with Prometheu
 | `DOCKER_HOST` | `tcp://127.0.0.1:2375` (Compose default) | Docker Engine API endpoint (recommended: local proxy; can also be `unix:///var/run/docker.sock`) |
 | `DOCKER_SOCK` | Empty | Used by `docker-socket-proxy` only: host docker.sock path override (useful for rootless) |
 | `DOCKER_READ_ONLY` | `false` | Read-only mode: deny Docker write operations (start/stop/restart/remove/prune, etc.) |
+| `PROCESS_IO_REFRESH` | `30s` | Refresh period for per-process `io_read/io_write` (reduces collection cost; accepts `60s` or plain `60` as seconds) |
+| `PROCESS_CWD_REFRESH` | `60s` | Refresh period for per-process `cwd` (reduces collection cost; accepts `60s` or plain `60`) |
+| `WS_PROCESSES_INTERVAL` | `15s` | Server-side collection interval for optional WebSocket topic `processes` (higher = lower CPU) |
+| `WS_PROCESSES_TIMEOUT` | `3s` | Timeout cap for collecting `processes` (prevents long CPU spikes when `/proc` is slow) |
+| `WS_NET_DETAIL_INTERVAL` | `15s` | Server-side collection interval for optional WebSocket topic `net_detail` |
+| `WS_NET_DETAIL_TIMEOUT` | `3s` | Timeout cap for collecting `net_detail` |
+| `WS_SSH_TIMEOUT` | `3s` | Timeout cap for collecting SSH stats (used in the `net_detail` snapshot) |
 
 #### Recommended in production: local `.env` (not committed)
 
