@@ -2,12 +2,146 @@
 package network
 
 import (
+	"bufio"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	gopsutilnet "github.com/shirou/gopsutil/v3/net"
 )
+
+var tcpStateMap = map[string]string{
+	"01": "ESTABLISHED",
+	"02": "SYN_SENT",
+	"03": "SYN_RECV",
+	"04": "FIN_WAIT1",
+	"05": "FIN_WAIT2",
+	"06": "TIME_WAIT",
+	"07": "CLOSE",
+	"08": "CLOSE_WAIT",
+	"09": "LAST_ACK",
+	"0A": "LISTEN",
+	"0B": "CLOSING",
+}
+
+type procNetSummary struct {
+	States        map[string]int
+	Sockets       map[string]int
+	ListeningPort []types.ListeningPort
+}
+
+func readProcNetSummary() (procNetSummary, error) {
+	out := procNetSummary{
+		States:        make(map[string]int),
+		Sockets:       make(map[string]int),
+		ListeningPort: make([]types.ListeningPort, 0),
+	}
+
+	seenPorts := make(map[string]bool) // key: protocol:port
+
+	procRoot := config.GlobalConfig.HostProc
+	if procRoot == "" {
+		procRoot = "/proc"
+	}
+
+	// TCP
+	for _, name := range []string{"tcp", "tcp6"} {
+		path := filepath.Join(procRoot, "net", name)
+		_ = scanProcNet(path, func(localPort int, stateHex string) {
+			out.Sockets["tcp"]++
+
+			stateName := tcpStateMap[strings.ToUpper(stateHex)]
+			if stateName == "" {
+				stateName = "UNKNOWN"
+			}
+			out.States[stateName]++
+			if stateName == "TIME_WAIT" {
+				out.Sockets["tcp_tw"]++
+			}
+			if stateName == "LISTEN" {
+				key := "tcp:" + strconv.Itoa(localPort)
+				if !seenPorts[key] {
+					seenPorts[key] = true
+					out.ListeningPort = append(out.ListeningPort, types.ListeningPort{Port: localPort, Protocol: "tcp"})
+				}
+			}
+		})
+	}
+
+	// UDP
+	for _, name := range []string{"udp", "udp6"} {
+		path := filepath.Join(procRoot, "net", name)
+		_ = scanProcNet(path, func(localPort int, _ string) {
+			out.Sockets["udp"]++
+			out.States["NONE"]++ // keep behavior similar to gopsutil (UDP has status NONE)
+
+			key := "udp:" + strconv.Itoa(localPort)
+			if !seenPorts[key] {
+				seenPorts[key] = true
+				out.ListeningPort = append(out.ListeningPort, types.ListeningPort{Port: localPort, Protocol: "udp"})
+			}
+		})
+	}
+
+	// If we couldn't read anything at all, treat as error.
+	if len(out.States) == 0 && len(out.Sockets) == 0 && len(out.ListeningPort) == 0 {
+		return procNetSummary{}, os.ErrNotExist
+	}
+
+	return out, nil
+}
+
+// scanProcNet scans /proc/net/{tcp,tcp6,udp,udp6} style files.
+// It calls onEntry(localPort, stateHex) for each row.
+func scanProcNet(path string, onEntry func(localPort int, stateHex string)) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		if fields[0] == "sl" {
+			continue
+		}
+		local := fields[1]
+		stateHex := fields[3]
+		// local_address is like 0100007F:1F90
+		parts := strings.Split(local, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		portHex := parts[1]
+		portU, err := strconv.ParseUint(portHex, 16, 32)
+		if err != nil {
+			continue
+		}
+		port := int(portU)
+		if port <= 0 {
+			continue
+		}
+
+		onEntry(port, stateHex)
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return nil
+}
 
 // GetNetworkInfo 获取完整的网络信息
 func GetNetworkInfo() (types.NetInfo, error) {
@@ -28,24 +162,10 @@ func GetNetworkInfo() (types.NetInfo, error) {
 	}
 
 	// Connection States
-	conns, err := gopsutilnet.Connections("all")
-	if err == nil {
-		states := make(map[string]int)
-		sockets := make(map[string]int)
-
-		for _, conn := range conns {
-			states[conn.Status]++
-			if conn.Type == 1 { // TCP
-				sockets["tcp"]++
-			} else if conn.Type == 2 { // UDP
-				sockets["udp"]++
-			}
-			if conn.Status == "TIME_WAIT" {
-				sockets["tcp_tw"]++
-			}
-		}
-		info.ConnectionStates = states
-		info.Sockets = sockets
+	if summary, err := readProcNetSummary(); err == nil {
+		info.ConnectionStates = summary.States
+		info.Sockets = summary.Sockets
+		info.ListeningPorts = summary.ListeningPort
 	}
 
 	// Interfaces
@@ -96,13 +216,6 @@ func GetNetworkInfo() (types.NetInfo, error) {
 	// Format bytes for frontend（与旧版保持一致，返回可读字符串）
 	info.BytesSent = utils.GetSize(info.RawSent)
 	info.BytesRecv = utils.GetSize(info.RawRecv)
-
-	// Listening Ports
-	if err == nil {
-		info.ListeningPorts = getListeningPorts(conns)
-	} else {
-		info.ListeningPorts = []types.ListeningPort{}
-	}
 
 	return info, nil
 }

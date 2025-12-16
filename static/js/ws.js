@@ -1,5 +1,26 @@
 let websocket = null;
 let reconnectTimer = null;
+let currentTopics = ['top_processes', 'net_detail']; // Default: lightweight subscription
+
+/**
+ * Update WebSocket topic subscriptions dynamically.
+ * Call this when switching pages to optimize data transfer.
+ * @param {string[]} topics - Array of topics to subscribe to.
+ *   - 'top_processes': Only top 10 processes (lightweight, for General page)
+ *   - 'processes': Full process list (for Processes/Memory pages)
+ *   - 'net_detail': Network connections detail
+ */
+function updateWebSocketTopics(topics) {
+    currentTopics = topics;
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        try {
+            websocket.send(JSON.stringify({ type: 'set_topics', topics: topics }));
+            console.log('WebSocket topics updated:', topics);
+        } catch (e) {
+            console.warn('Failed to update WS topics:', e);
+        }
+    }
+}
 
 function connectWebSocket(options = {}) {
     const useQueryToken = !!options.useQueryToken;
@@ -38,10 +59,9 @@ function connectWebSocket(options = {}) {
         opened = true;
         statusDot.classList.add('connected');
 
-        // Subscribe to optional topics so legacy UI sections keep working.
-        // Server-side will ignore unknown topics.
+        // Subscribe to topics based on current page context
         try {
-            websocket.send(JSON.stringify({ type: 'set_topics', topics: ['processes', 'net_detail'] }));
+            websocket.send(JSON.stringify({ type: 'set_topics', topics: currentTopics }));
         } catch (e) {
             console.warn('Failed to send WS subscription message:', e);
         }

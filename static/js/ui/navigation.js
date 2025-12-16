@@ -101,6 +101,20 @@ function switchPage(pageId) {
         document.getElementById('page-title').innerText = titles[pageId];
     }
 
+    // Dynamic WebSocket topic subscription based on page
+    // Pages needing full process list: processes, memory (has process table)
+    // Other pages only need top 10 processes (lightweight)
+    if (typeof updateWebSocketTopics === 'function') {
+        if (pageId === 'processes' || pageId === 'memory') {
+            updateWebSocketTopics(['processes', 'net_detail']);
+        } else if (pageId === 'net-traffic' || pageId === 'ssh') {
+            updateWebSocketTopics(['top_processes', 'net_detail']);
+        } else {
+            // General, CPU, Storage, GPU, etc. - only need top processes
+            updateWebSocketTopics(['top_processes']);
+        }
+    }
+
     if (pageId === 'gpu' && lastData && lastData.gpu) {
         requestAnimationFrame(() => renderGPUs(lastData.gpu));
     }

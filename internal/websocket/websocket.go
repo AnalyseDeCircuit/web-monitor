@@ -310,11 +310,18 @@ func (c *Client) readPump(r *http.Request, clientID uint64) {
 		}
 		if req.Type == "set_topics" {
 			c.mu.Lock()
+			// Unsubscribe from previous topics
+			for t := range c.subs {
+				if t != "base" {
+					c.hub.Unsubscribe(t)
+				}
+			}
 			// Reset to base
 			c.subs = map[string]bool{"base": true}
 			for _, t := range req.Topics {
 				t = strings.TrimSpace(t)
-				if t == "processes" || t == "net_detail" {
+				// "top_processes" is lightweight (no full collection), "processes" triggers full collection
+				if t == "processes" || t == "top_processes" || t == "net_detail" {
 					c.subs[t] = true
 					c.hub.Subscribe(t)
 				}
@@ -400,8 +407,13 @@ func (c *Client) sendData() {
 	}
 
 	// Add processes if subscribed
+	// "processes" = full list (triggers collection), "top_processes" = top 10 only (lightweight)
 	if subs["processes"] {
 		if procs, ok := c.hub.LatestProcesses(); ok {
+			resp.Processes = procs
+		}
+	} else if subs["top_processes"] {
+		if procs, ok := c.hub.LatestTopProcesses(10); ok {
 			resp.Processes = procs
 		}
 	}

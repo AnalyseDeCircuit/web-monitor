@@ -97,12 +97,10 @@ func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 		memPercent, _ := entry.proc.MemoryPercent()
 		numThreads, _ := entry.proc.NumThreads()
 
+		// IO data is fetched on-demand via /api/process/io to reduce CPU overhead
+		// (IOCounters() requires reading /proc/[pid]/io for each process)
 		ioRead := "-"
 		ioWrite := "-"
-		if ioCounters, err := entry.proc.IOCounters(); err == nil {
-			ioRead = utils.GetSize(ioCounters.ReadBytes)
-			ioWrite = utils.GetSize(ioCounters.WriteBytes)
-		}
 
 		cwd, _ := entry.proc.Cwd()
 		if cwd == "" {

@@ -347,7 +347,8 @@ func (h *statsHub) UnregisterClient(id uint64) {
 
 func (h *statsHub) Subscribe(topic string) {
 	switch topic {
-	case "processes":
+	case "processes", "top_processes":
+		// Both share the same collector - top_processes just returns fewer items
 		h.processes.Subscribe()
 	case "net_detail":
 		h.netDetail.Subscribe()
@@ -356,11 +357,23 @@ func (h *statsHub) Subscribe(topic string) {
 
 func (h *statsHub) Unsubscribe(topic string) {
 	switch topic {
-	case "processes":
+	case "processes", "top_processes":
 		h.processes.Unsubscribe()
 	case "net_detail":
 		h.netDetail.Unsubscribe()
 	}
+}
+
+// LatestTopProcesses returns top N processes from the shared collector.
+func (h *statsHub) LatestTopProcesses(n int) ([]types.ProcessInfo, bool) {
+	procs, ok := h.processes.Latest()
+	if !ok || len(procs) == 0 {
+		return nil, false
+	}
+	if len(procs) > n {
+		return procs[:n], true
+	}
+	return procs, true
 }
 
 func (h *statsHub) WaitReady(timeout time.Duration) {

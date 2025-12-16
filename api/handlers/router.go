@@ -64,8 +64,9 @@ func SetupRouter() *Router {
 	router.mux.HandleFunc("/api/cron/action", CronActionHandler)
 	router.mux.HandleFunc("/api/cron/logs", CronLogsHandler)
 
-	// Process 管理路由（仅管理员）
-	router.mux.HandleFunc("/api/process/kill", ProcessKillHandler)
+	// Process 管理路由
+	router.mux.HandleFunc("/api/process/io", ProcessIOHandler)     // 懒加载进程 IO 数据
+	router.mux.HandleFunc("/api/process/kill", ProcessKillHandler) // 仅管理员
 
 	// WebSocket路由
 	router.mux.HandleFunc("/ws/stats", websocket.HandleWebSocket)
