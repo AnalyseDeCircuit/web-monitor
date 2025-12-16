@@ -2,8 +2,12 @@
 package power
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +19,20 @@ var (
 	powerMutex sync.Mutex
 )
 
+const (
+	powerCommandTimeout = 10 * time.Second
+)
+
+func sanitizeReason(reason string) string {
+	reason = strings.TrimSpace(reason)
+	reason = strings.ReplaceAll(reason, "\r", " ")
+	reason = strings.ReplaceAll(reason, "\n", " ")
+	if len(reason) > 200 {
+		reason = reason[:200]
+	}
+	return reason
+}
+
 // ShutdownSystem 关闭系统
 func ShutdownSystem(delayMinutes int, reason string) (*types.PowerActionResult, error) {
 	powerMutex.Lock()
@@ -25,10 +43,13 @@ func ShutdownSystem(delayMinutes int, reason string) (*types.PowerActionResult, 
 	}
 
 	var cmd *exec.Cmd
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+	reason = sanitizeReason(reason)
 	if delayMinutes == 0 {
-		cmd = exec.Command("shutdown", "-h", "now")
+		cmd = exec.CommandContext(ctx, "shutdown", "-h", "now")
 	} else {
-		cmd = exec.Command("shutdown", "-h", fmt.Sprintf("+%d", delayMinutes), reason)
+		cmd = exec.CommandContext(ctx, "shutdown", "-h", fmt.Sprintf("+%d", delayMinutes), reason)
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -60,10 +81,13 @@ func RebootSystem(delayMinutes int, reason string) (*types.PowerActionResult, er
 	}
 
 	var cmd *exec.Cmd
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+	reason = sanitizeReason(reason)
 	if delayMinutes == 0 {
-		cmd = exec.Command("shutdown", "-r", "now")
+		cmd = exec.CommandContext(ctx, "shutdown", "-r", "now")
 	} else {
-		cmd = exec.Command("shutdown", "-r", fmt.Sprintf("+%d", delayMinutes), reason)
+		cmd = exec.CommandContext(ctx, "shutdown", "-r", fmt.Sprintf("+%d", delayMinutes), reason)
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -90,7 +114,9 @@ func CancelShutdown() (*types.PowerActionResult, error) {
 	powerMutex.Lock()
 	defer powerMutex.Unlock()
 
-	cmd := exec.Command("shutdown", "-c")
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "shutdown", "-c")
 	output, err := cmd.CombinedOutput()
 	result := &types.PowerActionResult{
 		Action:    "cancel",
@@ -114,7 +140,9 @@ func GetShutdownStatus() (*types.ShutdownStatus, error) {
 	defer powerMutex.Unlock()
 
 	// 检查是否有计划的关机
-	cmd := exec.Command("shutdown", "-c")
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "shutdown", "-c")
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
 
@@ -153,11 +181,13 @@ func GetShutdownStatus() (*types.ShutdownStatus, error) {
 
 // getSystemUptime 获取系统运行时间
 func getSystemUptime() (string, error) {
-	cmd := exec.Command("uptime", "-p")
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "uptime", "-p")
 	output, err := cmd.Output()
 	if err != nil {
 		// 尝试另一种格式
-		cmd = exec.Command("uptime")
+		cmd = exec.CommandContext(ctx, "uptime")
 		output, err = cmd.Output()
 		if err != nil {
 			return "", err
@@ -177,7 +207,9 @@ func SuspendSystem() (*types.PowerActionResult, error) {
 	powerMutex.Lock()
 	defer powerMutex.Unlock()
 
-	cmd := exec.Command("systemctl", "suspend")
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "systemctl", "suspend")
 	output, err := cmd.CombinedOutput()
 	result := &types.PowerActionResult{
 		Action:    "suspend",
@@ -200,7 +232,9 @@ func HibernateSystem() (*types.PowerActionResult, error) {
 	powerMutex.Lock()
 	defer powerMutex.Unlock()
 
-	cmd := exec.Command("systemctl", "hibernate")
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "systemctl", "hibernate")
 	output, err := cmd.CombinedOutput()
 	result := &types.PowerActionResult{
 		Action:    "hibernate",
@@ -261,46 +295,51 @@ func GetPowerInfo() (*types.PowerInfo, error) {
 
 // getBatteryInfo 获取电池信息
 func getBatteryInfo() (*types.BatteryInfo, error) {
-	// 尝试从/sys/class/power_supply读取电池信息
-	cmd := exec.Command("bash", "-c", "cat /sys/class/power_supply/BAT*/capacity 2>/dev/null || echo ''")
-	output, err := cmd.Output()
+	// 尝试从 /sys/class/power_supply 读取电池信息
+	paths, err := filepath.Glob("/sys/class/power_supply/BAT*/capacity")
+	if err != nil || len(paths) == 0 {
+		return nil, fmt.Errorf("no battery capacity found")
+	}
+	capBytes, err := os.ReadFile(paths[0])
 	if err != nil {
 		return nil, err
 	}
-
-	capacityStr := strings.TrimSpace(string(output))
+	capacityStr := strings.TrimSpace(string(capBytes))
 	if capacityStr == "" {
 		return nil, fmt.Errorf("no battery capacity found")
 	}
-
-	cmd = exec.Command("bash", "-c", "cat /sys/class/power_supply/BAT*/status 2>/dev/null || echo ''")
-	output, err = cmd.Output()
+	capVal, err := strconv.ParseFloat(capacityStr, 64)
 	if err != nil {
 		return nil, err
 	}
 
-	status := strings.TrimSpace(string(output))
-
-	percentage := 0.0
-	fmt.Sscanf(capacityStr, "%f", &percentage)
+	statusPaths, _ := filepath.Glob("/sys/class/power_supply/BAT*/status")
+	status := ""
+	if len(statusPaths) > 0 {
+		if b, err := os.ReadFile(statusPaths[0]); err == nil {
+			status = strings.TrimSpace(string(b))
+		}
+	}
 
 	return &types.BatteryInfo{
 		Present:    true,
-		Capacity:   percentage,
-		Percentage: percentage,
+		Capacity:   capVal,
+		Percentage: capVal,
 		Status:     status,
 	}, nil
 }
 
 // getACStatus 获取AC电源状态
 func getACStatus() (bool, error) {
-	cmd := exec.Command("bash", "-c", "cat /sys/class/power_supply/AC*/online 2>/dev/null || echo '0'")
-	output, err := cmd.Output()
+	paths, err := filepath.Glob("/sys/class/power_supply/AC*/online")
+	if err != nil || len(paths) == 0 {
+		return false, fmt.Errorf("no AC status found")
+	}
+	b, err := os.ReadFile(paths[0])
 	if err != nil {
 		return false, err
 	}
-
-	status := strings.TrimSpace(string(output))
+	status := strings.TrimSpace(string(b))
 	return status == "1", nil
 }
 

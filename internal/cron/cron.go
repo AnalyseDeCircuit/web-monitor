@@ -17,6 +17,47 @@ var (
 	cronMutex sync.Mutex
 )
 
+func validateCronInput(user, schedule, command string) error {
+	user = strings.TrimSpace(user)
+	schedule = strings.TrimSpace(schedule)
+	command = strings.TrimSpace(command)
+	if user == "" {
+		return fmt.Errorf("user is required")
+	}
+	if schedule == "" {
+		return fmt.Errorf("schedule is required")
+	}
+	if command == "" {
+		return fmt.Errorf("command is required")
+	}
+	for _, v := range []struct {
+		name string
+		val  string
+	}{
+		{"user", user},
+		{"schedule", schedule},
+		{"command", command},
+	} {
+		if strings.ContainsAny(v.val, "\r\n\x00") {
+			return fmt.Errorf("invalid %s", v.name)
+		}
+		if strings.Contains(v.val, startMarker) || strings.Contains(v.val, endMarker) {
+			return fmt.Errorf("invalid %s", v.name)
+		}
+	}
+	if !ValidateCronSchedule(schedule) {
+		return fmt.Errorf("invalid cron schedule")
+	}
+	return nil
+}
+
+func cronCmd(args ...string) *exec.Cmd {
+	if config.Load().HostFS != "" {
+		return exec.Command("chroot", append([]string{config.Load().HostFS}, args...)...)
+	}
+	return exec.Command(args[0], args[1:]...)
+}
+
 // ListCronJobs 列出所有Cron任务
 // 改进：只返回 Web-Monitor 管理的任务，或者标记哪些是管理的。
 // 目前为了兼容性，我们只解析位于管理区块内的任务。
@@ -256,20 +297,23 @@ func parseCronLine(line, user string, lineNum int) *types.CronJob {
 func AddCronJob(user, schedule, command string) error {
 	cronMutex.Lock()
 	defer cronMutex.Unlock()
+	if err := validateCronInput(user, schedule, command); err != nil {
+		return err
+	}
 
 	// 获取现有crontab
-	cmd := exec.Command("crontab", "-u", user, "-l")
+	cmd := cronCmd("crontab", "-u", strings.TrimSpace(user), "-l")
 	output, err := cmd.Output()
 	if err != nil && !strings.Contains(err.Error(), "no crontab for") {
 		return fmt.Errorf("failed to get crontab: %v", err)
 	}
 
 	// 添加新任务
-	newLine := fmt.Sprintf("%s %s\n", schedule, command)
+	newLine := fmt.Sprintf("%s %s\n", strings.TrimSpace(schedule), strings.TrimSpace(command))
 	newCrontab := string(output) + newLine
 
 	// 写入新crontab
-	cmd = exec.Command("crontab", "-u", user, "-")
+	cmd = cronCmd("crontab", "-u", strings.TrimSpace(user), "-")
 	cmd.Stdin = strings.NewReader(newCrontab)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
@@ -283,9 +327,17 @@ func AddCronJob(user, schedule, command string) error {
 func RemoveCronJob(user, jobID string) error {
 	cronMutex.Lock()
 	defer cronMutex.Unlock()
+	user = strings.TrimSpace(user)
+	jobID = strings.TrimSpace(jobID)
+	if user == "" {
+		return fmt.Errorf("user is required")
+	}
+	if jobID == "" || strings.ContainsAny(jobID, "\r\n\x00") {
+		return fmt.Errorf("invalid job id")
+	}
 
 	// 获取现有crontab
-	cmd := exec.Command("crontab", "-u", user, "-l")
+	cmd := cronCmd("crontab", "-u", user, "-l")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get crontab: %v", err)
@@ -312,6 +364,9 @@ func RemoveCronJob(user, jobID string) error {
 	}
 
 	cmd = exec.Command("crontab", "-u", user, "-")
+	if config.Load().HostFS != "" {
+		cmd = cronCmd("crontab", "-u", user, "-")
+	}
 	cmd.Stdin = strings.NewReader(newCrontab)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
@@ -335,9 +390,17 @@ func DisableCronJob(user, jobID string) error {
 func toggleCronJob(user, jobID string, disable bool) error {
 	cronMutex.Lock()
 	defer cronMutex.Unlock()
+	user = strings.TrimSpace(user)
+	jobID = strings.TrimSpace(jobID)
+	if user == "" {
+		return fmt.Errorf("user is required")
+	}
+	if jobID == "" || strings.ContainsAny(jobID, "\r\n\x00") {
+		return fmt.Errorf("invalid job id")
+	}
 
 	// 获取现有crontab
-	cmd := exec.Command("crontab", "-u", user, "-l")
+	cmd := cronCmd("crontab", "-u", user, "-l")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get crontab: %v", err)
@@ -372,7 +435,7 @@ func toggleCronJob(user, jobID string, disable bool) error {
 		newCrontab += "\n"
 	}
 
-	cmd = exec.Command("crontab", "-u", user, "-")
+	cmd = cronCmd("crontab", "-u", user, "-")
 	cmd.Stdin = strings.NewReader(newCrontab)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
@@ -386,8 +449,14 @@ func toggleCronJob(user, jobID string, disable bool) error {
 func GetCronLogs(lines int) (string, error) {
 	cronMutex.Lock()
 	defer cronMutex.Unlock()
+	if lines <= 0 {
+		lines = 50
+	}
+	if lines > 5000 {
+		lines = 5000
+	}
 
-	cmd := exec.Command("journalctl", "-u", "cron", "-n", fmt.Sprintf("%d", lines), "--no-pager")
+	cmd := cronCmd("journalctl", "-u", "cron", "-n", fmt.Sprintf("%d", lines), "--no-pager")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get cron logs: %v", err)
@@ -399,6 +468,14 @@ func GetCronLogs(lines int) (string, error) {
 // ValidateCronSchedule 验证Cron表达式
 func ValidateCronSchedule(schedule string) bool {
 	fields := strings.Fields(schedule)
+	if len(fields) == 1 && strings.HasPrefix(fields[0], "@") {
+		switch strings.ToLower(fields[0]) {
+		case "@reboot", "@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly":
+			return true
+		default:
+			return false
+		}
+	}
 	if len(fields) != 5 {
 		return false
 	}

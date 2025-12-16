@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/coreos/go-systemd/v22/dbus"
 )
@@ -16,14 +18,34 @@ var (
 	systemdMutex sync.Mutex
 )
 
+const (
+	systemdCommandTimeout = 10 * time.Second
+)
+
+func systemConn(ctx context.Context) (*dbus.Conn, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return dbus.NewSystemConnectionContext(ctx)
+}
+
+func validateUnitName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("service name is required")
+	}
+	if strings.ContainsAny(name, "\r\n\x00") {
+		return fmt.Errorf("invalid service name")
+	}
+	return nil
+}
+
 // ListServices 列出所有Systemd服务
 func ListServices() ([]types.ServiceInfo, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	// Use NewSystemConnectionContext to force using the system bus (and respect DBUS_SYSTEM_BUS_ADDRESS)
-	// instead of falling back to the private socket which might not be mounted.
-	conn, err := dbus.NewSystemConnectionContext(context.Background())
+	conn, err := systemConn(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to systemd dbus: %v", err)
 	}
@@ -57,8 +79,11 @@ func ListServices() ([]types.ServiceInfo, error) {
 func ServiceAction(serviceName, action string) error {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
+	if err := validateUnitName(serviceName); err != nil {
+		return err
+	}
 
-	conn, err := dbus.NewSystemConnectionContext(context.Background())
+	conn, err := systemConn(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to connect to systemd dbus: %v", err)
 	}
@@ -104,8 +129,11 @@ func ServiceAction(serviceName, action string) error {
 func GetServiceStatus(serviceName string) (map[string]string, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
+	if err := validateUnitName(serviceName); err != nil {
+		return nil, err
+	}
 
-	conn, err := dbus.New()
+	conn, err := systemConn(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to systemd dbus: %v", err)
 	}
@@ -128,8 +156,26 @@ func GetServiceStatus(serviceName string) (map[string]string, error) {
 func GetServiceLogs(serviceName string, lines int) (string, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
+	if err := validateUnitName(serviceName); err != nil {
+		return "", err
+	}
+	if lines <= 0 {
+		lines = 100
+	}
+	if lines > 5000 {
+		lines = 5000
+	}
 
-	cmd := exec.Command("journalctl", "-u", serviceName, "-n", fmt.Sprintf("%d", lines), "--no-pager")
+	ctx, cancel := context.WithTimeout(context.Background(), systemdCommandTimeout)
+	defer cancel()
+
+	args := []string{"journalctl", "-u", serviceName, "-n", fmt.Sprintf("%d", lines), "--no-pager"}
+	var cmd *exec.Cmd
+	if config.Load().HostFS != "" {
+		cmd = exec.CommandContext(ctx, "chroot", append([]string{config.Load().HostFS}, args...)...)
+	} else {
+		cmd = exec.CommandContext(ctx, args[0], args[1:]...)
+	}
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get service logs: %v", err)
@@ -143,7 +189,7 @@ func GetSystemStatus() (map[string]interface{}, error) {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	conn, err := dbus.New()
+	conn, err := systemConn(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to systemd dbus: %v", err)
 	}
@@ -171,7 +217,7 @@ func ReloadSystemd() error {
 	systemdMutex.Lock()
 	defer systemdMutex.Unlock()
 
-	conn, err := dbus.New()
+	conn, err := systemConn(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to connect to systemd dbus: %v", err)
 	}

@@ -8,16 +8,49 @@ let dockerImageSort = { column: 'created', direction: 'desc' };
 let serviceSort = { column: 'unit', direction: 'asc' };
 
 // Docker
+function dockerShowTableError(tbodyId, message, colspan) {
+    try {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+        tbody.innerHTML = `<tr><td colspan="${colspan}" style="padding: 10px; text-align: center; color: var(--text-dim);">${message}</td></tr>`;
+    } catch (e) {
+        // no-op
+    }
+}
+
+async function readErrorMessage(response) {
+    try {
+        const ct = (response.headers.get('Content-Type') || '').toLowerCase();
+        if (ct.includes('application/json')) {
+            const data = await response.json();
+            if (data && typeof data.error === 'string') return data.error;
+            return JSON.stringify(data);
+        }
+        const text = await response.text();
+        return text || `${response.status} ${response.statusText}`;
+    } catch (e) {
+        return `${response.status} ${response.statusText}`;
+    }
+}
+
 async function loadDockerContainers() {
     try {
         const response = await fetch('/api/docker/containers');
-        if (response.ok) {
-            const data = await response.json();
-            allDockerContainers = data.containers || [];
-            renderDockerContainers();
+        if (!response.ok) {
+            const msg = await readErrorMessage(response);
+            if (response.status === 401) {
+                dockerShowTableError('docker-containers-body', 'Unauthorized (please log in again)', 6);
+                return;
+            }
+            dockerShowTableError('docker-containers-body', `Failed to load containers: ${msg}`, 6);
+            return;
         }
+        const data = await response.json();
+        allDockerContainers = data.containers || [];
+        renderDockerContainers();
     } catch (err) {
         console.error('Failed to load containers', err);
+        dockerShowTableError('docker-containers-body', 'Failed to load containers: network error', 6);
     }
 }
 
@@ -107,13 +140,21 @@ function setDockerContainerSort(column) {
 async function loadDockerImages() {
     try {
         const response = await fetch('/api/docker/images');
-        if (response.ok) {
-            const data = await response.json();
-            allDockerImages = data.images || [];
-            renderDockerImages();
+        if (!response.ok) {
+            const msg = await readErrorMessage(response);
+            if (response.status === 401) {
+                dockerShowTableError('docker-images-body', 'Unauthorized (please log in again)', 5);
+                return;
+            }
+            dockerShowTableError('docker-images-body', `Failed to load images: ${msg}`, 5);
+            return;
         }
+        const data = await response.json();
+        allDockerImages = data.images || [];
+        renderDockerImages();
     } catch (err) {
         console.error('Failed to load images', err);
+        dockerShowTableError('docker-images-body', 'Failed to load images: network error', 5);
     }
 }
 

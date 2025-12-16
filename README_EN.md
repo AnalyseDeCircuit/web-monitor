@@ -48,14 +48,26 @@ docker-compose up -d
 
 To enable full monitoring and management capabilities, the container requires elevated privileges and specific mounts:
 
-*   `privileged: true`: Required to access hardware sensors and execute privileged commands.
+*   `cap_add`: Uses a minimal capability set (instead of `privileged: true`) for reading host process/log data and running required system operations (see `docker-compose.yml`).
+    *   `SYS_PTRACE`: Read process info from `/proc`.
+    *   `DAC_READ_SEARCH`: Read some restricted files (e.g., auth/audit logs).
+    *   `SYS_CHROOT`: Execute `chroot` (used for Cron management, etc.).
+*   `security_opt: apparmor=unconfined`: Enabled by default in the current Compose (mainly to keep systemd D-Bus control working on some distros/policies).
 *   `network_mode: host`: Recommended for accurate host network monitoring.
 *   `pid: host`: Required to view host processes.
 *   `volumes`:
-    *   `/:/hostfs`: **Core Configuration**. The app uses `chroot /hostfs` to manage the host's Systemd, Cron, and system information.
-    *   `/var/run/docker.sock`: For Docker management features.
+    *   `/:/hostfs`: **Core Configuration**. Used to access the host filesystem (process/log/hardware info, Cron management, etc.).
+    *   `/run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro`: Required for Systemd management (via D-Bus).
     *   `/proc`, `/sys`: For hardware statistics collection and GPU monitoring.
     *   GPU devices (e.g., `/dev/nvidia*`): If GPU monitoring is needed, mount the corresponding devices.
+
+#### Docker Management (via Local Proxy by Default)
+
+To reduce risk, this repo’s default setup **does not mount** `docker.sock` into the `web-monitor-go` container. Instead, it talks to Docker through `docker-socket-proxy` (listening on `127.0.0.1:2375`) which forwards a limited allowlist of Docker Engine API endpoints:
+
+*   `web-monitor-go` uses `DOCKER_HOST=tcp://127.0.0.1:2375` (proxy only).
+*   Only `docker-socket-proxy` mounts the host `${DOCKER_SOCK:-/var/run/docker.sock}`.
+    *   Rootless Docker: set `DOCKER_SOCK` to your actual socket path (e.g. `$XDG_RUNTIME_DIR/docker.sock`).
 
 ## 🛠️ Manual Build & Run
 
@@ -135,6 +147,9 @@ Data can be collected via the `/metrics` endpoint for integration with Prometheu
 | `WS_ALLOWED_ORIGINS` | Empty | Allowlist for WebSocket `/ws/stats` Origin (comma-separated); useful for Cloudflare / reverse proxy / custom domain |
 | `SSL_CERT_FILE` | Empty | TLS certificate file path (for HTTPS) |
 | `SSL_KEY_FILE` | Empty | TLS private key file path (for HTTPS) |
+| `DOCKER_HOST` | `tcp://127.0.0.1:2375` (Compose default) | Docker Engine API endpoint (recommended: local proxy; can also be `unix:///var/run/docker.sock`) |
+| `DOCKER_SOCK` | Empty | Used by `docker-socket-proxy` only: host docker.sock path override (useful for rootless) |
+| `DOCKER_READ_ONLY` | `false` | Read-only mode: deny Docker write operations (start/stop/restart/remove/prune, etc.) |
 
 #### Recommended in production: local `.env` (not committed)
 
@@ -166,10 +181,12 @@ All persistent data (user database, logs, alert configurations) is stored in the
 
 1.  **Cannot view Systemd services or Cron jobs**
     *   Check if Docker has mounted the `/:/hostfs` directory.
-    *   Ensure the container is running with `privileged: true` permission.
+    *   Ensure the container has the required capabilities (`cap_add`) and the D-Bus socket mount (`/run/dbus/system_bus_socket`).
 
 2.  **Docker management page is empty**
-    *   Check if `/var/run/docker.sock` is mounted.
+    *   By default it uses `docker-socket-proxy`: verify the proxy container is running and `DOCKER_HOST` points to `tcp://127.0.0.1:2375`.
+    *   Rootless Docker: ensure `DOCKER_SOCK` is set to the correct socket path.
+    *   For deeper diagnosis: check `docker logs docker-socket-proxy`.
 
 3.  **GPU monitoring shows as unavailable**
     *   Ensure the host has GPU hardware and drivers installed.

@@ -21,6 +21,8 @@ services:
       - DATA_DIR=/data
       - JWT_SECRET=${JWT_SECRET}
       - WS_ALLOWED_ORIGINS=${WS_ALLOWED_ORIGINS}
+      # Docker API: talk to Docker ONLY through the local proxy (no docker.sock mount in this container).
+      - DOCKER_HOST=${DOCKER_HOST:-tcp://127.0.0.1:2375}
       # Host Filesystem Configuration
       - HOST_FS=/hostfs
       - HOST_PROC=/hostfs/proc
@@ -37,13 +39,33 @@ services:
       - /:/hostfs
       - /sys:/sys
       - /proc:/proc
-      - /var/run/docker.sock:/var/run/docker.sock
       - /var/run/utmp:/var/run/utmp:ro
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
       - web-monitor-data:/data
     restart: unless-stopped
+
+  # Optional sidecar: restrict Docker API surface while keeping Docker Management working.
+  # Exposes TCP 2375 on localhost only. Enable by setting DOCKER_HOST=tcp://127.0.0.1:2375 for web-monitor-go.
+  docker-socket-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.docker-proxy
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    mem_limit: 16m
+    ports:
+      - "127.0.0.1:2375:2375"
+    environment:
+      - DOCKER_SOCK=/var/run/docker.sock
+      # Encourage a lower steady-state RSS for this tiny proxy.
+      - GOMEMLIMIT=10MiB
+      - GOGC=25
+      - GODEBUG=madvdontneed=1
+    volumes:
+      # Map the host's docker socket (including rootless) to the path expected by the proxy.
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
 
 
 volumes:

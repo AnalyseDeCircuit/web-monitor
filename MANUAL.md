@@ -9,7 +9,10 @@ Web Monitor 是一个基于 Go 语言开发的轻量级 Linux 服务器监控与
 *   **后端**: Go (Golang) 1.21+
     *   使用 `gopsutil` 采集系统信息。
     *   使用 `gorilla/websocket` 推送实时数据。
-    *   使用 `os/exec` 执行系统命令 (Docker, Systemd, Cron)。
+  *   系统管理：
+    *   Docker：通过 Docker Engine API（`DOCKER_HOST` / `unix:///var/run/docker.sock`）。
+    *   Systemd：通过 systemd D-Bus（挂载 `/run/dbus/system_bus_socket`）。
+    *   Cron：通过 `chroot /hostfs` 调用宿主机 `crontab`。
     *   使用 `github.com/golang-jwt/jwt/v5` 进行 JWT 认证。
 *   **前端**: 纯 HTML5 / CSS3 / JavaScript (ES6+)
     *   无外部框架依赖 (如 React/Vue)，极度轻量。
@@ -35,7 +38,13 @@ services:
       dockerfile: Dockerfile
     image: web-monitor-go:latest
     container_name: web-monitor-go
-    privileged: true        # 必须开启：允许访问硬件设备和执行特权指令
+    # 采用最小能力集替代 privileged（具体能力见仓库内 docker-compose.yml）
+    cap_add:
+      - SYS_PTRACE
+      - DAC_READ_SEARCH
+      - SYS_CHROOT
+    security_opt:
+      - apparmor=unconfined
     network_mode: host      # 推荐开启：直接使用宿主机网络栈，监控更准确
     pid: host               # 必须开启：允许查看宿主机的所有进程
     environment:
@@ -43,23 +52,43 @@ services:
       - JWT_SECRET=${JWT_SECRET:-} # JWT密钥，建议在生产环境设置
       - SSL_CERT_FILE=      # TLS证书文件路径（可选，启用HTTPS）
       - SSL_KEY_FILE=       # TLS私钥文件路径（可选，启用HTTPS）
+      # Docker API：默认仅通过本地 proxy 访问（本容器不挂载 docker.sock）
+      - DOCKER_HOST=${DOCKER_HOST:-tcp://127.0.0.1:2375}
+      # Host Filesystem Configuration
+      - HOST_FS=/hostfs
+      - HOST_PROC=/hostfs/proc
+      - HOST_SYS=/hostfs/sys
+      - HOST_ETC=/hostfs/etc
+      - HOST_VAR=/hostfs/var
+      - HOST_RUN=/hostfs/run
+      # Systemd D-Bus Connection
+      - DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
     volumes:
-      - /:/hostfs:ro        # 关键：将宿主机根目录挂载到容器内的 /hostfs
-                            # 程序通过 chroot /hostfs 来执行宿主机的 systemctl, crontab 等命令
-      - /var/run/docker.sock:/var/run/docker.sock:ro # 允许管理宿主机的 Docker
+      - /:/hostfs           # 关键：将宿主机根目录挂载到容器内的 /hostfs（Cron 等功能需要）
       - /sys:/sys:ro        # 读取硬件传感器信息
       - /proc:/proc:ro      # 读取进程和系统信息
       - /var/run/utmp:/var/run/utmp:ro # SSH会话信息
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+      - /etc/passwd:/etc/passwd:ro
+      - /etc/group:/etc/group:ro
       - web-monitor-data:/data # 持久化存储用户数据、日志和配置
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 256M
-        reservations:
-          cpus: '0.5'
-          memory: 128M
+
+  # Docker API allowlist proxy（仅监听 127.0.0.1:2375，降低暴露面）
+  docker-socket-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.docker-proxy
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    mem_limit: 16m
+    ports:
+      - "127.0.0.1:2375:2375"
+    environment:
+      - DOCKER_SOCK=/var/run/docker.sock
+    volumes:
+      # 支持 rootless：通过 DOCKER_SOCK 覆盖默认 socket 路径
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
 
 volumes:
   web-monitor-data:
@@ -79,19 +108,21 @@ docker-compose up -d
 
 **重要**: 直接访问 `/var/run/docker.sock` 等同于获得宿主机 root 权限。任何应用程序的 RCE（远程代码执行）漏洞都会直接导致宿主机被完全控制。
 
+#### 默认策略（本仓库 Docker Compose 默认）
+
+默认不把 `docker.sock` 挂到 `web-monitor-go` 容器里，而是通过本仓库自带的 `docker-socket-proxy`（超轻量 allowlist proxy）进行访问：
+
+*   `docker-socket-proxy`：挂载宿主机 `${DOCKER_SOCK:-/var/run/docker.sock}`，并仅暴露 `127.0.0.1:2375`。
+*   `web-monitor-go`：设置 `DOCKER_HOST=tcp://127.0.0.1:2375`。
+
+这样可以在保留 Docker 管理能力的同时，避免把高危的 docker.sock 直接暴露给主服务容器。
+
 #### 推荐的安全配置方案
 
 **方案 1：最小化（生产环境推荐）**
-- 仅挂载读权限的 docker.sock，启用环境变量 `DOCKER_READ_ONLY=true`
+- 启用环境变量 `DOCKER_READ_ONLY=true`
 - 此时后端只能查看容器/镜像，**无法执行启动、停止、删除等写操作**
-- 在 docker-compose.yml 中添加：
-  ```yaml
-  volumes:
-    - /var/run/docker.sock:/var/run/docker.sock:ro
-  environment:
-    - DOCKER_READ_ONLY=true
-  ```
-- 若确实需要容器管理，改为 `:rw` 并配合其他防护措施
+- 推荐继续使用默认的 proxy（不要把 docker.sock 挂到 `web-monitor-go`）
 
 **方案 2：使用 docker 组权限（中等安全）**
 ```bash
@@ -106,7 +137,9 @@ sudo chmod 660 /var/run/docker.sock
   ```
 
 **方案 3：使用 Sidecar 代理（最安全）**
-部署一个受控的代理容器（如 socat 或 docker-socket-proxy），限制 API 访问范围：
+部署一个受控的代理容器，限制 API 访问范围。
+
+本仓库已内置一个超轻量 allowlist proxy（见上面 2.1 的 `docker-socket-proxy` 服务）；如果你更倾向第三方实现，也可以使用 `tecnativa/docker-socket-proxy` 等镜像。
 ```yaml
 version: '3.8'
 services:
@@ -117,7 +150,9 @@ services:
     environment:
       - CONTAINERS=1
       - IMAGES=1
-      - POST=0  # 禁止写操作（POST/DELETE/PUT）
+      # 只读示例：禁止写操作（如需保留 Start/Stop/Remove 等能力，请开启 POST/DELETE 并做好网络隔离）
+      - POST=0
+      - DELETE=0
     expose:
       - 2375
     networks:
@@ -142,6 +177,8 @@ networks:
 | 环境变量 | 值 | 说明 |
 |---------|-----|------|
 | `DOCKER_READ_ONLY` | `true` | 启用只读模式，所有写操作（start/stop/restart/remove）被拒绝 |
+| `DOCKER_HOST` | `tcp://127.0.0.1:2375`（Compose 默认） | Docker Engine API 地址（推荐走本地 proxy） |
+| `DOCKER_SOCK` | 为空 | 仅供 `docker-socket-proxy` 使用：宿主机 docker.sock 的路径（rootless 场景覆盖默认） |
 
 当启用只读模式时，容器 REST API 的写操作（`/api/docker/action`, `/api/docker/image/remove`）将返回 403 错误：
 ```json
@@ -208,7 +245,7 @@ networks:
 *   基于 `systemd` 的服务管理。
 *   列出所有 Service 类型的单元，显示加载状态、活动状态、描述。
 *   支持 Start, Stop, Restart, Enable, Disable 操作（需要管理员权限）。
-*   **原理**: 容器内通过 `chroot /hostfs systemctl ...` 执行命令。
+*   **原理**: 容器内通过 systemd D-Bus（挂载 `/run/dbus/system_bus_socket`）控制宿主机 systemd。
 
 ### 3.5 计划任务 (Cron)
 *   读取和编辑 `root` 用户的 crontab。
@@ -350,10 +387,14 @@ networks:
 A: 请检查 Docker 挂载配置。必须将宿主机根目录挂载到容器的 `/hostfs` (`-v /:/hostfs`)。程序依赖此路径来访问宿主机的系统工具。
 
 **Q: 为什么 Docker 管理页面为空？**
-A: 请检查是否挂载了 Docker Socket (`-v /var/run/docker.sock:/var/run/docker.sock`)。
+A: 默认走 `docker-socket-proxy`，请检查：
+
+1. `docker-socket-proxy` 容器是否在运行
+2. `web-monitor-go` 的 `DOCKER_HOST` 是否为 `tcp://127.0.0.1:2375`
+3. Rootless Docker：是否正确设置了 `DOCKER_SOCK` 指向实际 socket（例如 `$XDG_RUNTIME_DIR/docker.sock`）
 
 **Q: 为什么温度显示为 0 或不准确？**
-A: 需要挂载 `/sys` 目录 (`-v /sys:/sys:ro`) 并且容器需要 `privileged: true` 权限来访问硬件传感器。
+A: 需要挂载 `/sys` 目录 (`-v /sys:/sys:ro`) 并确保容器具备读取传感器所需的权限（本仓库默认 Compose 使用 `cap_add` 最小能力集）。部分硬件/驱动可能仍需要额外权限或内核模块支持。
 
 **Q: 为什么网络监控不显示流量？**
 A: 建议使用 `network_mode: host` 以便准确监控宿主机网络流量。

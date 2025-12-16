@@ -48,14 +48,26 @@ docker-compose up -d
 
 为了使监控和管理功能正常工作，容器需要较高的权限和特定的挂载：
 
-*   `privileged: true`: 必须开启，用于访问硬件传感器和执行特权命令。
+*   `cap_add`: 采用最小能力集（替代 `privileged: true`），用于读取进程/日志与执行必要的系统操作（见 `docker-compose.yml`）。
+    *   `SYS_PTRACE`: 读取 `/proc` 的进程信息。
+    *   `DAC_READ_SEARCH`: 读取部分受限文件（如认证/审计日志）。
+    *   `SYS_CHROOT`: 执行 `chroot`（用于 Cron 管理等场景）。
+*   `security_opt: apparmor=unconfined`: 当前默认启用（主要用于 systemd D-Bus 控制在部分发行版/内核策略下可用）。
 *   `network_mode: host`: 推荐开启，以便准确监控宿主机网络流量。
 *   `pid: host`: 必须开启，以便获取宿主机进程列表。
 *   `volumes`:
-    *   `/:/hostfs`: **核心配置**。程序通过 `chroot /hostfs` 来管理宿主机的 Systemd、Cron 和系统信息。
-    *   `/var/run/docker.sock`: 用于 Docker 管理功能。
+    *   `/:/hostfs`: **核心配置**。用于访问宿主机文件系统（进程/日志/硬件信息、Cron 管理等）。
+    *   `/run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro`: 用于 Systemd 管理（通过 D-Bus）。
     *   `/proc`, `/sys`: 用于采集硬件信息和 GPU 监控。
     *   GPU 设备（如 `/dev/nvidia*`）: 如需 GPU 监控，需挂载相应设备。
+
+#### Docker 管理（默认通过本地 Proxy）
+
+为降低风险，默认 **不在 `web-monitor-go` 容器内挂载** `docker.sock`，而是通过同编排内的 `docker-socket-proxy`（仅监听 `127.0.0.1:2375`）转发有限的 Docker Engine API：
+
+*   `web-monitor-go` 通过 `DOCKER_HOST=tcp://127.0.0.1:2375` 访问 Docker（仅走 proxy）。
+*   只有 `docker-socket-proxy` 挂载宿主机的 `${DOCKER_SOCK:-/var/run/docker.sock}`。
+    *   Rootless Docker 场景：把 `DOCKER_SOCK` 指向实际的 socket 路径即可（例如 `$XDG_RUNTIME_DIR/docker.sock`）。
 
 ## 🛠️ 手动编译与运行
 
@@ -106,7 +118,7 @@ Web Monitor 内置多层安全机制，确保系统安全：
 ### Docker Socket 安全
 *   **直接访问风险**：Docker socket 访问等同于 root 权限，任何 RCE 都会导致宿主机被控制。
 *   **只读模式**：支持设置 `DOCKER_READ_ONLY=true` 禁用写操作（start/stop/remove），仅允许查看。
-*   **部署方案**：推荐使用 Sidecar 代理或组权限隔离（见部署手册）。
+*   **部署方案**：推荐使用 Sidecar 代理或组权限隔离（本仓库默认提供轻量 allowlist proxy，见上文“Docker 管理（默认通过本地 Proxy）”）。
 *   **操作控制**：Docker 操作需 admin 权限，所有操作均记录审计日志。
 
 ### 操作审计
@@ -143,6 +155,9 @@ Web Monitor 通过 Prometheus 暴露丰富的系统指标，包括：
 | `WS_ALLOWED_ORIGINS` | 空 | WebSocket `/ws/stats` 的 Origin 允许列表（逗号分隔）；用于 Cloudflare/反代/自定义域名场景 |
 | `SSL_CERT_FILE` | 空 | TLS 证书文件路径（启用 HTTPS） |
 | `SSL_KEY_FILE` | 空 | TLS 私钥文件路径（启用 HTTPS） |
+| `DOCKER_HOST` | `tcp://127.0.0.1:2375`（Compose 默认） | Docker Engine API 地址（推荐走本地 proxy；也可用 `unix:///var/run/docker.sock`） |
+| `DOCKER_SOCK` | 空 | 仅供 `docker-socket-proxy` 使用：宿主机 docker.sock 路径（用于 rootless 场景覆盖默认） |
+| `DOCKER_READ_ONLY` | `false` | 启用只读模式：拒绝 Docker 写操作（start/stop/restart/remove/prune 等） |
 
 #### 生产环境推荐：使用本地 `.env`（不提交到 Git）
 
@@ -178,10 +193,12 @@ Docker Compose 会自动读取同目录的 `.env` 用于变量注入（无需把
 
 1.  **无法查看 Systemd 服务或 Cron 任务**
     *   检查 Docker 是否挂载了 `/:/hostfs` 目录。
-    *   确保容器以 `privileged: true` 权限运行。
+    *   确保容器具备所需能力集（`cap_add`）并挂载了 D-Bus Socket（`/run/dbus/system_bus_socket`）。
 
 2.  **Docker 管理页面为空**
-    *   检查是否挂载了 `/var/run/docker.sock`。
+    *   默认走 `docker-socket-proxy`：检查该容器是否在运行，以及 `DOCKER_HOST` 是否指向 `tcp://127.0.0.1:2375`。
+    *   Rootless Docker：确认设置了 `DOCKER_SOCK` 并指向正确的 socket 路径。
+    *   进一步排查：查看 `docker logs docker-socket-proxy`。
 
 3.  **GPU 监控显示为不可用**
     *   确保宿主机有 GPU 硬件且驱动已安装。

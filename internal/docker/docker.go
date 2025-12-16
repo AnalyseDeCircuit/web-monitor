@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
@@ -20,11 +22,82 @@ var (
 	dockerClient       *http.Client
 	dockerOnce         sync.Once
 	dockerReadOnlyMode bool
+	dockerSockPath     string
+	dockerBaseURL      string
 )
+
+const (
+	dockerDialTimeout    = 5 * time.Second
+	dockerRequestTimeout = 15 * time.Second
+)
+
+func resolveDockerSocketPath() (string, error) {
+	if v := strings.TrimSpace(os.Getenv("DOCKER_SOCK")); v != "" {
+		return v, nil
+	}
+	if v := strings.TrimSpace(os.Getenv("DOCKER_HOST")); v != "" {
+		// Common format: unix:///var/run/docker.sock
+		if strings.HasPrefix(v, "unix://") {
+			p := strings.TrimPrefix(v, "unix://")
+			if p == "" {
+				return "", fmt.Errorf("invalid DOCKER_HOST: %q", v)
+			}
+			return p, nil
+		}
+		return "", fmt.Errorf("unsupported DOCKER_HOST (only unix:// supported): %q", v)
+	}
+	return "/var/run/docker.sock", nil
+}
+
+func resolveDockerBaseURL() (string, bool, error) {
+	// Returns (baseURL, isUnix, error)
+	if v := strings.TrimSpace(os.Getenv("DOCKER_HOST")); v != "" {
+		// Supported:
+		// - unix:///var/run/docker.sock
+		// - tcp://127.0.0.1:2375 (for docker-socket-proxy)
+		// - http://127.0.0.1:2375
+		// - https://...
+		if strings.HasPrefix(v, "unix://") {
+			return "http://docker", true, nil
+		}
+		if strings.HasPrefix(v, "tcp://") {
+			return "http://" + strings.TrimPrefix(v, "tcp://"), false, nil
+		}
+		if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+			return v, false, nil
+		}
+		return "", false, fmt.Errorf("unsupported DOCKER_HOST: %q", v)
+	}
+
+	// Default: unix socket mode.
+	return "http://docker", true, nil
+}
 
 // getDockerClient 获取Docker客户端
 func getDockerClient() *http.Client {
 	dockerOnce.Do(func() {
+		baseURL, isUnix, err := resolveDockerBaseURL()
+		if err != nil {
+			log.Printf("Docker host config error: %v", err)
+			// Keep a sane default.
+			baseURL = "http://docker"
+			isUnix = true
+		}
+		dockerBaseURL = baseURL
+
+		if isUnix {
+			dockerSockPath, err = resolveDockerSocketPath()
+			if err != nil {
+				log.Printf("Docker socket config error: %v", err)
+				// Keep a sane default so endpoints can still attempt to work.
+				dockerSockPath = "/var/run/docker.sock"
+			}
+			log.Printf("Docker mode: unix socket (%s)", dockerSockPath)
+		} else {
+			log.Printf("Docker mode: tcp/http (%s)", dockerBaseURL)
+			log.Println("WARNING: Remote Docker API access is high risk; prefer docker-socket-proxy bound to 127.0.0.1")
+		}
+
 		// Check if read-only mode is enforced via env var.
 		if os.Getenv("DOCKER_READ_ONLY") == "true" {
 			dockerReadOnlyMode = true
@@ -36,30 +109,72 @@ func getDockerClient() *http.Client {
 		// - Using a sidecar container with limited Docker API access
 		// - Mounting /var/run/docker.sock read-only when possible
 		log.Println("WARNING: Direct docker.sock access detected. Ensure secure deployment configuration.")
-		dockerClient = &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", "/var/run/docker.sock")
-				},
-			},
+		tr := &http.Transport{
+			ResponseHeaderTimeout: dockerRequestTimeout,
+			MaxIdleConns:          20,
+			IdleConnTimeout:       30 * time.Second,
 		}
+		if isUnix {
+			dialer := &net.Dialer{Timeout: dockerDialTimeout}
+			tr.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "unix", dockerSockPath)
+			}
+		}
+		dockerClient = &http.Client{Timeout: dockerRequestTimeout, Transport: tr}
 	})
 	return dockerClient
 }
 
 // dockerRequest 发送Docker API请求
-func dockerRequest(method, path string) (*http.Response, error) {
+func dockerRequest(ctx context.Context, method, path string) (*http.Response, error) {
 	client := getDockerClient()
-	req, err := http.NewRequest(method, "http://docker"+path, nil)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var cancel context.CancelFunc
+	if _, ok := ctx.Deadline(); !ok {
+		ctx, cancel = context.WithTimeout(ctx, dockerRequestTimeout)
+	}
+	base := dockerBaseURL
+	if base == "" {
+		base = "http://docker"
+	}
+	req, err := http.NewRequestWithContext(ctx, method, base+path, nil)
 	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
 		return nil, err
 	}
-	return client.Do(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, err
+	}
+	if cancel != nil && resp != nil && resp.Body != nil {
+		resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: cancel}
+	}
+	return resp, nil
+}
+
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	if c.cancel != nil {
+		c.cancel()
+	}
+	return err
 }
 
 // ListContainers 列出所有容器
 func ListContainers() ([]types.DockerContainer, error) {
-	resp, err := dockerRequest("GET", "/containers/json?all=1")
+	resp, err := dockerRequest(context.Background(), "GET", "/containers/json?all=1")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %v", err)
 	}
@@ -79,7 +194,7 @@ func ListContainers() ([]types.DockerContainer, error) {
 
 // ListImages 列出所有镜像
 func ListImages() ([]types.DockerImage, error) {
-	resp, err := dockerRequest("GET", "/images/json")
+	resp, err := dockerRequest(context.Background(), "GET", "/images/json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %v", err)
 	}
@@ -103,23 +218,27 @@ func ContainerAction(containerID, action string) error {
 	if dockerReadOnlyMode {
 		return fmt.Errorf("Docker read-only mode is enabled; action '%s' is not allowed", action)
 	}
+	if containerID == "" {
+		return fmt.Errorf("container id is required")
+	}
+	escapedID := url.PathEscape(containerID)
 	var path string
 	method := "POST"
 	switch action {
 	case "start":
-		path = fmt.Sprintf("/containers/%s/start", containerID)
+		path = fmt.Sprintf("/containers/%s/start", escapedID)
 	case "stop":
-		path = fmt.Sprintf("/containers/%s/stop", containerID)
+		path = fmt.Sprintf("/containers/%s/stop", escapedID)
 	case "restart":
-		path = fmt.Sprintf("/containers/%s/restart", containerID)
+		path = fmt.Sprintf("/containers/%s/restart", escapedID)
 	case "remove":
-		path = fmt.Sprintf("/containers/%s", containerID)
+		path = fmt.Sprintf("/containers/%s", escapedID)
 		method = "DELETE"
 	default:
 		return fmt.Errorf("invalid action: %s", action)
 	}
 
-	resp, err := dockerRequest(method, path)
+	resp, err := dockerRequest(context.Background(), method, path)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %v", err)
 	}
@@ -154,7 +273,7 @@ func RemoveImage(imageRef string, force bool, noprune bool) error {
 	}
 
 	path := fmt.Sprintf("/images/%s?force=%s&noprune=%s", url.PathEscape(imageRef), forceVal, nopruneVal)
-	resp, err := dockerRequest("DELETE", path)
+	resp, err := dockerRequest(context.Background(), "DELETE", path)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %v", err)
 	}
@@ -170,7 +289,11 @@ func RemoveImage(imageRef string, force bool, noprune bool) error {
 
 // GetContainerStats 获取容器统计信息
 func GetContainerStats(containerID string) (map[string]interface{}, error) {
-	resp, err := dockerRequest("GET", fmt.Sprintf("/containers/%s/stats?stream=false", containerID))
+	if containerID == "" {
+		return nil, fmt.Errorf("container id is required")
+	}
+	escapedID := url.PathEscape(containerID)
+	resp, err := dockerRequest(context.Background(), "GET", fmt.Sprintf("/containers/%s/stats?stream=false", escapedID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %v", err)
 	}
@@ -190,8 +313,18 @@ func GetContainerStats(containerID string) (map[string]interface{}, error) {
 
 // GetContainerLogs 获取容器日志
 func GetContainerLogs(containerID string, lines int) (string, error) {
-	path := fmt.Sprintf("/containers/%s/logs?stdout=true&stderr=true&tail=%d", containerID, lines)
-	resp, err := dockerRequest("GET", path)
+	if containerID == "" {
+		return "", fmt.Errorf("container id is required")
+	}
+	if lines <= 0 {
+		lines = 100
+	}
+	if lines > 5000 {
+		lines = 5000
+	}
+	escapedID := url.PathEscape(containerID)
+	path := fmt.Sprintf("/containers/%s/logs?stdout=true&stderr=true&tail=%d", escapedID, lines)
+	resp, err := dockerRequest(context.Background(), "GET", path)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %v", err)
 	}
@@ -211,7 +344,11 @@ func GetContainerLogs(containerID string, lines int) (string, error) {
 
 // PruneSystem 清理Docker系统
 func PruneSystem() (map[string]interface{}, error) {
-	resp, err := dockerRequest("POST", "/system/prune")
+	// Block write operations in read-only mode.
+	if dockerReadOnlyMode {
+		return nil, fmt.Errorf("Docker read-only mode is enabled; prune is not allowed")
+	}
+	resp, err := dockerRequest(context.Background(), "POST", "/system/prune")
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %v", err)
 	}
