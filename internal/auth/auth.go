@@ -263,19 +263,33 @@ func SaveUserDatabase() error {
 func InitJWTKey() {
 	key := os.Getenv("JWT_SECRET")
 	if key == "" {
-		log.Println("WARNING: JWT_SECRET environment variable is not set, generating random key for development only")
-		// 生成随机的32字节密钥（仅用于开发环境）
-		randomKey := make([]byte, 32)
-		if _, err := rand.Read(randomKey); err != nil {
-			log.Fatalf("Failed to generate random JWT key: %v", err)
+		// 仅允许开发环境使用随机密钥
+		if os.Getenv("ENV") == "development" || os.Getenv("DEV") == "true" {
+			log.Println("WARNING: JWT_SECRET environment variable is not set, generating random key for development only")
+			log.Println("In production, JWT_SECRET must be set and be at least 32 bytes long")
+			// 生成随机的32字节密钥（仅用于开发环境）
+			randomKey := make([]byte, 32)
+			if _, err := rand.Read(randomKey); err != nil {
+				log.Fatalf("Failed to generate random JWT key: %v", err)
+			}
+			jwtKey = randomKey
+			return
 		}
-		jwtKey = randomKey
-	} else {
-		jwtKey = []byte(key)
-		if len(jwtKey) < 32 {
-			log.Fatal("JWT_SECRET must be at least 32 bytes long for security")
-		}
-		log.Println("JWT key loaded from environment variable")
+		// 生产环境必须配置JWT_SECRET
+		log.Fatal("ERROR: JWT_SECRET environment variable is required in production")
+		log.Fatal("Please set a strong JWT_SECRET (minimum 32 bytes)")
+		os.Exit(1)
+	}
+
+	jwtKey = []byte(key)
+	if len(jwtKey) < 32 {
+		log.Fatal("JWT_SECRET must be at least 32 bytes long for security")
+	}
+	log.Println("JWT key loaded from environment variable")
+
+	// 检查JWT_SECRET强度
+	if len(jwtKey) < 64 {
+		log.Println("WARNING: JWT_SECRET is less than 64 bytes. Consider using a longer secret for better security.")
 	}
 }
 
