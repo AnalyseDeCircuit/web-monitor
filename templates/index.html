@@ -152,9 +152,23 @@
 
         <!-- Power Profile Card -->
         <div class="card" id="power-profile-card" style="display: none; grid-column: 1 / -1;">
-            <div class="card-title">Power Profile</div>
+            <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                <span>Power & GUI</span>
+                <button id="power-profile-refresh" onclick="loadPowerProfile(); loadGuiStatus();" style="margin-left: auto; background: none; border: none; color: var(--text-dim); cursor: pointer;">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;" id="power-profile-controls">
                 <!-- Buttons will be injected here -->
+            </div>
+            <div id="power-profile-hint" style="font-size: 0.85rem; color: var(--text-dim); margin-top: 8px; display: none;"></div>
+            <div id="gui-controls" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <div style="font-weight: bold; color: var(--text-main);">GUI Session:</div>
+                <span id="gui-status-text" style="font-size: 0.9rem; color: var(--text-dim);">Unknown</span>
+                <span id="gui-default-target" style="font-size: 0.85rem; color: var(--text-dim); background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 6px; display: none;"></span>
+                <button id="gui-toggle-btn" onclick="toggleGuiSession()" style="background: var(--accent-net); border: none; color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; display: none;">
+                    Toggle
+                </button>
             </div>
         </div>
 
@@ -214,7 +228,19 @@
 
         <!-- Network Card -->
         <div class="card">
-            <div class="card-title">Network</div>
+            <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                <span>Network</span>
+                <div style="margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-dim);">
+                    <span style="font-size: 0.8rem;">Interface</span>
+                    <select id="net-interface-select" onchange="onNetworkInterfaceChange()" style="background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; padding: 4px 8px; font-size: 0.85rem;">
+                        <option value="__all__">All interfaces</option>
+                    </select>
+                </div>
+            </div>
+            <div id="net-interface-meta" style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
+                <span id="net-interface-ip">-</span>
+                <span id="net-interface-status" style="font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); color: var(--text-dim);">-</span>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div class="net-box">
                     <div style="font-size: 0.8rem; color: var(--text-dim);">UPLOAD SPEED</div>
@@ -826,9 +852,30 @@
         <div class="grid-container">
             <!-- Containers -->
             <div class="card" style="grid-column: 1 / -1;">
-                <div class="card-title">
+                <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
                     <span>Docker Containers</span>
-                    <button onclick="loadDockerContainers()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
+                    <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                        <button onclick="loadDockerContainers()" title="Refresh containers" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
+                        <button id="docker-prune-btn" onclick="openDockerPruneConfirm()" title="Prune unused containers/images/volumes" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; display: none;">
+                            <i class="fas fa-broom" style="margin-right: 6px;"></i>Prune
+                        </button>
+                    </div>
+                </div>
+                <div id="docker-prune-hint" style="display: none; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 8px;">Prune will remove stopped containers, dangling images, unused networks, and build cache.</div>
+                <div id="docker-prune-result" style="display: none; font-size: 0.85rem; margin-bottom: 8px; padding: 8px 10px; border-radius: 6px; background: rgba(0, 180, 0, 0.12); border: 1px solid rgba(0,180,0,0.3); color: #a3ffb3;"></div>
+                <div id="docker-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 10px;">
+                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-mem);">
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Containers</div>
+                        <div id="docker-summary-containers" style="font-size: 1.2rem; font-weight: bold;">0 / 0 running</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-cpu);">
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Images</div>
+                        <div id="docker-summary-images" style="font-size: 1.2rem; font-weight: bold;">0 images</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-net);">
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">Image Size</div>
+                        <div id="docker-summary-size" style="font-size: 1.2rem; font-weight: bold;">0 B</div>
+                    </div>
                 </div>
                 <div style="margin-bottom: 10px; display: flex; gap: 10px;">
                     <input type="text" id="docker-container-search" placeholder="Search containers..." onkeyup="renderDockerContainers()" style="padding: 5px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white;">
@@ -1058,6 +1105,48 @@
                 </div>
                 <button type="submit" style="width: 100%; padding: 10px; background: var(--accent-mem); border: none; color: white; border-radius: 4px; cursor: pointer;">Create User</button>
             </form>
+        </div>
+    </div>
+
+    <!-- Reset Password Modal -->
+    <div id="reset-password-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;">
+        <div class="card" style="width: 420px; background: #2d2d2d;">
+            <div class="card-title">
+                <span>Reset Password</span>
+                <i class="fas fa-times" onclick="hideResetPasswordModal()" style="cursor: pointer;"></i>
+            </div>
+            <form onsubmit="handleResetPasswordSubmit(event)">
+                <input type="hidden" id="reset-password-username">
+                <div style="margin-bottom: 12px; color: var(--text-dim); font-size: 0.9rem;">
+                    User: <span id="reset-password-username-text" style="color: var(--text-main); font-weight: bold;"></span>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">New Password</label>
+                    <input type="password" id="reset-password-new" required style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" style="flex: 1; padding: 10px; background: var(--accent-mem); border: none; color: white; border-radius: 4px; cursor: pointer;">Confirm</button>
+                    <button type="button" onclick="hideResetPasswordModal()" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); color: white; border-radius: 4px; cursor: pointer;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Docker Logs Modal -->
+    <div id="docker-logs-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1100; align-items: center; justify-content: center;">
+        <div class="card" style="width: 90%; max-width: 900px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
+            <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                <span id="docker-logs-title">Container Logs</span>
+                <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+                    <button id="docker-logs-load-more" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;">
+                        <i class="fas fa-plus-circle"></i> Load more
+                    </button>
+                    <button onclick="closeDockerLogsModal()" style="background: none; border: none; color: var(--text-main); cursor: pointer; font-size: 1.3rem;">×</button>
+                </div>
+            </div>
+            <div style="flex: 1; overflow: auto; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; font-family: monospace; color: var(--text-main);">
+                <pre id="docker-logs-content" style="margin: 0; white-space: pre-wrap;"></pre>
+            </div>
         </div>
     </div>
 

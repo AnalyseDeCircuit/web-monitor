@@ -143,6 +143,61 @@ function updateList(containerId, items, createFn, updateFn) {
             });
         }
 
+        function onNetworkInterfaceChange() {
+            const select = document.getElementById('net-interface-select');
+            if (!select) return;
+            selectedInterface = select.value || '__all__';
+            localStorage.setItem('netInterface', selectedInterface);
+            // Reset baselines so next tick computes fresh speeds for chosen interface
+            lastInterfaceStats = {};
+            lastNetwork = null;
+            lastTime = null;
+        }
+
+        function syncNetworkInterfaceOptions(ifaces) {
+            const select = document.getElementById('net-interface-select');
+            if (!select) return;
+
+            const names = ['__all__', ...Object.keys(ifaces || {})];
+            const currentOptions = Array.from(select.options).map((o) => o.value);
+            const sameLength = currentOptions.length === names.length;
+            const sameItems = sameLength && names.every((n, idx) => currentOptions[idx] === n);
+            if (!sameItems) {
+                select.innerHTML = '';
+                names.forEach((n) => {
+                    const opt = document.createElement('option');
+                    opt.value = n;
+                    opt.textContent = n === '__all__' ? 'All interfaces' : n;
+                    select.appendChild(opt);
+                });
+            }
+
+            if (!names.includes(selectedInterface)) {
+                selectedInterface = '__all__';
+                localStorage.setItem('netInterface', selectedInterface);
+            }
+            select.value = selectedInterface;
+        }
+
+        function renderSelectedInterfaceMeta(name, iface) {
+            const ipEl = document.getElementById('net-interface-ip');
+            const statusEl = document.getElementById('net-interface-status');
+            if (!ipEl || !statusEl) return;
+
+            if (!iface || name === '__all__') {
+                ipEl.innerText = 'Aggregated across all interfaces';
+                statusEl.innerText = 'MULTI';
+                statusEl.style.background = 'rgba(255,255,255,0.06)';
+                statusEl.style.color = 'var(--text-dim)';
+                return;
+            }
+
+            ipEl.innerText = iface.ip || 'No IP assigned';
+            statusEl.innerText = iface.is_up ? 'UP' : 'DOWN';
+            statusEl.style.background = iface.is_up ? 'rgba(46, 213, 115, 0.2)' : 'rgba(255, 71, 87, 0.15)';
+            statusEl.style.color = iface.is_up ? '#2ed573' : '#ff6b6b';
+        }
+
         function renderStats(data) {
             lastData = data;
             requestAnimationFrame(() => {
@@ -617,31 +672,58 @@ function _renderStatsInternal(data) {
                     document.getElementById('net-page-sent').innerText = data.network.bytes_sent;
                     document.getElementById('net-page-recv').innerText = data.network.bytes_recv;
                 }
+                const ifaceMap = data.network.interfaces || {};
+                syncNetworkInterfaceOptions(ifaceMap);
 
-                if (lastNetwork && lastTime) {
-                    const now = Date.now();
-                    const timeDiff = (now - lastTime) / 1000; // seconds
-                    if (timeDiff > 0) {
-                        const sentDiff = data.network.raw_sent - lastNetwork.raw_sent;
-                        const recvDiff = data.network.raw_recv - lastNetwork.raw_recv;
-                        
-                        const sentSpeed = sentDiff / timeDiff;
-                        const recvSpeed = recvDiff / timeDiff;
-                        const sentSpeedStr = formatSize(sentSpeed) + '/s';
-                        const recvSpeedStr = formatSize(recvSpeed) + '/s';
+                const nowTs = Date.now();
+                let sentSpeedStr = '0 B/s';
+                let recvSpeedStr = '0 B/s';
 
-                        if (document.getElementById('net-speed-sent')) {
-                            document.getElementById('net-speed-sent').innerText = sentSpeedStr;
-                            document.getElementById('net-speed-recv').innerText = recvSpeedStr;
+                const iface = selectedInterface !== '__all__' ? ifaceMap[selectedInterface] : null;
+                const selectedName = iface ? selectedInterface : '__all__';
+                renderSelectedInterfaceMeta(selectedName, iface);
+
+                if (selectedName === '__all__') {
+                    if (lastNetwork && lastTime) {
+                        const timeDiff = (nowTs - lastTime) / 1000;
+                        if (timeDiff > 0) {
+                            const sentDiff = data.network.raw_sent - lastNetwork.raw_sent;
+                            const recvDiff = data.network.raw_recv - lastNetwork.raw_recv;
+                            sentSpeedStr = formatSize(sentDiff / timeDiff) + '/s';
+                            recvSpeedStr = formatSize(recvDiff / timeDiff) + '/s';
                         }
-                        if (document.getElementById('net-page-speed-sent')) {
-                            document.getElementById('net-page-speed-sent').innerText = sentSpeedStr;
-                            document.getElementById('net-page-speed-recv').innerText = recvSpeedStr;
+                    }
+                } else if (iface) {
+                    const prev = lastInterfaceStats[selectedName];
+                    if (prev) {
+                        const timeDiff = (nowTs - prev.ts) / 1000;
+                        if (timeDiff > 0) {
+                            const sentDiff = iface.raw_sent - prev.rawSent;
+                            const recvDiff = iface.raw_recv - prev.rawRecv;
+                            sentSpeedStr = formatSize(sentDiff / timeDiff) + '/s';
+                            recvSpeedStr = formatSize(recvDiff / timeDiff) + '/s';
                         }
                     }
                 }
+
+                if (document.getElementById('net-speed-sent')) {
+                    document.getElementById('net-speed-sent').innerText = sentSpeedStr;
+                    document.getElementById('net-speed-recv').innerText = recvSpeedStr;
+                }
+                if (document.getElementById('net-page-speed-sent')) {
+                    document.getElementById('net-page-speed-sent').innerText = sentSpeedStr;
+                    document.getElementById('net-page-speed-recv').innerText = recvSpeedStr;
+                }
+
+                Object.entries(ifaceMap).forEach(([name, stats]) => {
+                    lastInterfaceStats[name] = {
+                        rawSent: stats.raw_sent || 0,
+                        rawRecv: stats.raw_recv || 0,
+                        ts: nowTs,
+                    };
+                });
                 lastNetwork = data.network;
-                lastTime = Date.now();
+                lastTime = nowTs;
 
                 // Network Page Interfaces
                 const isNetPage = document.getElementById('page-net-traffic').classList.contains('active');

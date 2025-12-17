@@ -2,6 +2,8 @@
 let lastNetwork = null;
 let lastTime = null;
 let lastData = null;
+let lastInterfaceStats = {};
+let selectedInterface = localStorage.getItem('netInterface') || '__all__';
 
 let currentSort = { column: 'memory_percent', direction: 'desc' };
 

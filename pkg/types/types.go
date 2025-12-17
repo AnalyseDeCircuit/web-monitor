@@ -227,11 +227,30 @@ type NetInfo struct {
 	ListeningPorts   []ListeningPort      `json:"listening_ports"`
 }
 
+// PowerProfileInfo describes available power profiles and current selection.
+type PowerProfileInfo struct {
+	Available []string `json:"available"`
+	Current   string   `json:"current"`
+	Supported bool     `json:"supported"`
+	Error     string   `json:"error,omitempty"`
+}
+
+// GUIStatus describes display/session manager state.
+type GUIStatus struct {
+	Supported     bool   `json:"supported"`
+	Running       bool   `json:"running"`
+	Service       string `json:"service"`
+	DefaultTarget string `json:"default_target,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
 // Interface 网络接口信息
 type Interface struct {
 	IP        string  `json:"ip"`
 	BytesSent string  `json:"bytes_sent"`
 	BytesRecv string  `json:"bytes_recv"`
+	RawSent   uint64  `json:"raw_sent"`
+	RawRecv   uint64  `json:"raw_recv"`
 	Speed     float64 `json:"speed"`
 	IsUp      bool    `json:"is_up"`
 	ErrorsIn  uint64  `json:"errors_in"`
@@ -534,13 +553,6 @@ type BatteryInfo struct {
 	Status        string  `json:"status"`
 	TimeRemaining string  `json:"time_remaining,omitempty"`
 	Capacity      float64 `json:"capacity,omitempty"`
-}
-
-// PowerProfileInfo 电源配置信息
-type PowerProfileInfo struct {
-	Current   string   `json:"current"`
-	Available []string `json:"available"`
-	Error     string   `json:"error,omitempty"`
 }
 
 // --- JWT工具类型 ---

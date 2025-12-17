@@ -1,5 +1,5 @@
 # Build stage (offline-friendly, uses vendored deps)
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.24-bookworm AS builder
 WORKDIR /app
 # Use Aliyun mirror for Debian
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources

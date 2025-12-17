@@ -202,6 +202,8 @@ func GetNetworkInfo() (types.NetInfo, error) {
 				// 与旧版行为保持一致，使用可读的容量字符串
 				stats.BytesSent = utils.GetSize(io.BytesSent)
 				stats.BytesRecv = utils.GetSize(io.BytesRecv)
+				stats.RawSent = io.BytesSent
+				stats.RawRecv = io.BytesRecv
 				stats.ErrorsIn = io.Errin
 				stats.ErrorsOut = io.Errout
 				stats.DropsIn = io.Dropin

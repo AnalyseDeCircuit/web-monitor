@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/power"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
 
@@ -41,19 +42,18 @@ func AlertsHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
 }
 
-// PowerProfileHandler provides a legacy-compatible stub.
-// The new backend uses /api/power/action for power operations; profile is not universally supported.
 func PowerProfileHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		if _, _, ok := requireAuth(w, r); !ok {
 			return
 		}
-		// Frontend hides the card if available is empty or error is set.
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"available": []string{},
-			"current":   "",
-			"error":     "not supported",
-		})
+
+		info, err := power.GetPowerProfiles()
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "Failed to read power profiles: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, info)
 		return
 	}
 
@@ -61,7 +61,21 @@ func PowerProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if _, ok := requireAdmin(w, r); !ok {
 			return
 		}
-		writeJSONError(w, http.StatusNotImplemented, "Power profile not supported in this build")
+
+		var req struct {
+			Profile string `json:"profile"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+
+		if err := power.SetPowerProfile(req.Profile); err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "success"})
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,6 +195,77 @@ func DockerActionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
 		"message": "Docker action completed",
+	})
+}
+
+// DockerLogsHandler 获取容器日志（仅管理员）
+// GET /api/docker/logs?id=container_id&tail=200
+func DockerLogsHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	username, ok := requireAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	containerID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if containerID == "" {
+		writeJSONError(w, http.StatusBadRequest, "Missing id")
+		return
+	}
+
+	// 默认尾部 200 行，可通过 tail 参数调整，限制上限避免 OOM
+	tail := 200
+	if v := strings.TrimSpace(r.URL.Query().Get("tail")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 2000 {
+				n = 2000
+			}
+			tail = n
+		}
+	}
+
+	logsText, err := docker.GetContainerLogs(containerID, tail)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Failed to fetch logs: "+err.Error())
+		return
+	}
+
+	logs.LogOperation(username, "docker_logs", fmt.Sprintf("fetch logs tail=%d for %s", tail, containerID), r.RemoteAddr)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"logs": logsText,
+	})
+}
+
+// DockerPruneHandler 清理未使用的 Docker 资源（仅管理员）
+func DockerPruneHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	username, ok := requireAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := docker.PruneSystem()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "Docker prune failed: "+err.Error())
+		return
+	}
+
+	// 记录操作日志
+	logs.LogOperation(username, "docker_prune", "Pruned unused Docker resources", r.RemoteAddr)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Docker prune completed",
+		"result":  result,
 	})
 }
 

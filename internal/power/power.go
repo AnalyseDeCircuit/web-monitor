@@ -33,6 +33,21 @@ func sanitizeReason(reason string) string {
 	return reason
 }
 
+// normalizeProfile maps user-friendly names to powerprofilesctl values.
+func normalizeProfile(profile string) string {
+	p := strings.ToLower(strings.TrimSpace(profile))
+	switch p {
+	case "powersaver", "power-saver", "powersave":
+		return "power-saver"
+	case "balanced":
+		return "balanced"
+	case "performance":
+		return "performance"
+	default:
+		return ""
+	}
+}
+
 // ShutdownSystem 关闭系统
 func ShutdownSystem(delayMinutes int, reason string) (*types.PowerActionResult, error) {
 	powerMutex.Lock()
@@ -250,6 +265,158 @@ func HibernateSystem() (*types.PowerActionResult, error) {
 	}
 
 	return result, nil
+}
+
+// GetPowerProfiles returns supported profiles using powerprofilesctl when available.
+func GetPowerProfiles() (*types.PowerProfileInfo, error) {
+	powerMutex.Lock()
+	defer powerMutex.Unlock()
+
+	info := &types.PowerProfileInfo{Available: []string{}, Supported: false}
+
+	bin, err := exec.LookPath("powerprofilesctl")
+	if err != nil {
+		info.Error = "powerprofilesctl not found"
+		return info, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+
+	// current mode via `powerprofilesctl get`
+	getCmd := exec.CommandContext(ctx, bin, "get")
+	getOut, err := getCmd.CombinedOutput()
+	if err == nil {
+		info.Current = normalizeProfile(strings.TrimSpace(string(getOut)))
+	}
+
+	// available via `powerprofilesctl list`
+	listCmd := exec.CommandContext(ctx, bin, "list")
+	out, err := listCmd.CombinedOutput()
+	if err != nil {
+		info.Error = strings.TrimSpace(string(out))
+		return info, nil
+	}
+
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Lines like "* performance" or "  balanced"
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			continue
+		}
+		p := normalizeProfile(parts[len(parts)-1])
+		if p == "" {
+			continue
+		}
+		info.Available = append(info.Available, p)
+		if strings.HasPrefix(line, "*") || (info.Current == "" && len(parts) > 0 && parts[0] == "*") {
+			info.Current = p
+		}
+	}
+
+	if len(info.Available) == 0 {
+		info.Error = "no profiles detected"
+		return info, nil
+	}
+	info.Supported = true
+	if info.Current == "" {
+		info.Current = info.Available[0]
+	}
+	return info, nil
+}
+
+// SetPowerProfile switches profile via powerprofilesctl.
+func SetPowerProfile(profile string) error {
+	powerMutex.Lock()
+	defer powerMutex.Unlock()
+
+	bin, err := exec.LookPath("powerprofilesctl")
+	if err != nil {
+		return fmt.Errorf("powerprofilesctl not found")
+	}
+
+	norm := normalizeProfile(profile)
+	if norm == "" {
+		return fmt.Errorf("invalid profile")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin, "set", norm)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("set failed: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// GetGUIStatus inspects the display manager service state.
+func GetGUIStatus() (*types.GUIStatus, error) {
+	powerMutex.Lock()
+	defer powerMutex.Unlock()
+
+	status := &types.GUIStatus{Supported: false, Running: false, Service: "display-manager.service"}
+
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		status.Error = "systemctl not available"
+		return status, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "systemctl", "is-active", status.Service)
+	out, err := cmd.CombinedOutput()
+	txt := strings.TrimSpace(string(out))
+	if err != nil {
+		// If unit missing, treat as unsupported.
+		if strings.Contains(txt, "could not be found") || strings.Contains(txt, "not-found") {
+			status.Error = txt
+			return status, nil
+		}
+	}
+
+	status.Supported = true
+	status.Running = (txt == "active")
+
+	// default target like graphical.target or multi-user.target
+	defCmd := exec.CommandContext(ctx, "systemctl", "get-default")
+	defOut, err := defCmd.CombinedOutput()
+	if err == nil {
+		status.DefaultTarget = strings.TrimSpace(string(defOut))
+	}
+	return status, nil
+}
+
+// SetGUIRunning toggles the display manager service.
+func SetGUIRunning(enable bool) error {
+	powerMutex.Lock()
+	defer powerMutex.Unlock()
+
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return fmt.Errorf("systemctl not available")
+	}
+
+	action := "stop"
+	if enable {
+		action = "start"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "systemctl", action, "display-manager.service")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s failed: %s", action, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // GetPowerInfo 获取电源信息

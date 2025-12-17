@@ -3,6 +3,8 @@ let allDockerContainers = [];
 let allDockerImages = [];
 let allServices = [];
 
+let dockerLogsState = { id: null, name: '', tail: 200 };
+
 let dockerContainerSort = { column: 'name', direction: 'asc' };
 let dockerImageSort = { column: 'created', direction: 'desc' };
 let serviceSort = { column: 'unit', direction: 'asc' };
@@ -47,7 +49,32 @@ async function loadDockerContainers() {
         }
         const data = await response.json();
         allDockerContainers = data.containers || [];
+        // Show prune button only for admin (fallback to /api/session if role not cached)
+        const pruneBtn = document.getElementById('docker-prune-btn');
+        const pruneHint = document.getElementById('docker-prune-hint');
+        if (pruneBtn && pruneHint) {
+            let role = localStorage.getItem('role');
+            if (!role) {
+                try {
+                    const sessionRes = await fetch('/api/session');
+                    if (sessionRes.ok) {
+                        const sessionData = await sessionRes.json();
+                        if (sessionData && sessionData.role) {
+                            role = sessionData.role;
+                            localStorage.setItem('role', role);
+                            if (sessionData.username) localStorage.setItem('username', sessionData.username);
+                        }
+                    }
+                } catch (_) {
+                    // ignore
+                }
+            }
+            const isAdmin = role === 'admin';
+            pruneBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+            pruneHint.style.display = isAdmin ? 'block' : 'none';
+        }
         renderDockerContainers();
+        updateDockerSummary();
     } catch (err) {
         console.error('Failed to load containers', err);
         dockerShowTableError('docker-containers-body', 'Failed to load containers: network error', 6);
@@ -101,11 +128,12 @@ function renderDockerContainers() {
 
         let actionsHtml = '';
         if (role === 'admin') {
+            const logsBtn = `<button onclick="openDockerLogs('${c.Id}', ${JSON.stringify(name)})" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Logs</button>`;
             actionsHtml =
                 c.State === 'running'
-                    ? `<button onclick="handleDockerAction('${c.Id}', 'stop')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Stop</button>
+                    ? `${logsBtn}<button onclick="handleDockerAction('${c.Id}', 'stop')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Stop</button>
                          <button onclick="handleDockerAction('${c.Id}', 'restart')" style="background: var(--accent-net); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Restart</button>`
-                    : `<button onclick="handleDockerAction('${c.Id}', 'start')" style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Start</button>
+                    : `${logsBtn}<button onclick="handleDockerAction('${c.Id}', 'start')" style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Start</button>
                          <button onclick="handleDockerAction('${c.Id}', 'remove')" style="background: var(--text-dim); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Remove</button>`;
         } else {
             actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
@@ -152,9 +180,29 @@ async function loadDockerImages() {
         const data = await response.json();
         allDockerImages = data.images || [];
         renderDockerImages();
+        updateDockerSummary();
     } catch (err) {
         console.error('Failed to load images', err);
         dockerShowTableError('docker-images-body', 'Failed to load images: network error', 5);
+    }
+}
+
+function updateDockerSummary() {
+    try {
+        const running = allDockerContainers.filter((c) => c.State === 'running').length;
+        const total = allDockerContainers.length;
+        const imageCount = allDockerImages.length;
+        const imageSizeBytes = allDockerImages.reduce((acc, img) => acc + (img.Size || 0), 0);
+
+        const containersEl = document.getElementById('docker-summary-containers');
+        const imagesEl = document.getElementById('docker-summary-images');
+        const sizeEl = document.getElementById('docker-summary-size');
+
+        if (containersEl) containersEl.innerText = `${running} / ${total} running`;
+        if (imagesEl) imagesEl.innerText = `${imageCount} images`;
+        if (sizeEl) sizeEl.innerText = formatSize(imageSizeBytes);
+    } catch (e) {
+        // non-blocking UI helper
     }
 }
 
@@ -272,6 +320,120 @@ async function handleDockerAction(id, action) {
         }
     } catch (err) {
         alert('Failed to perform action');
+    }
+}
+
+function closeDockerLogsModal() {
+    const modal = document.getElementById('docker-logs-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function openDockerLogs(id, name) {
+    const role = localStorage.getItem('role');
+    if (role !== 'admin') {
+        alert('Docker logs are restricted to admin users.');
+        return;
+    }
+
+    dockerLogsState = { id, name: name || id, tail: 200 };
+    const modal = document.getElementById('docker-logs-modal');
+    const title = document.getElementById('docker-logs-title');
+    if (title) title.innerText = `Logs: ${dockerLogsState.name}`;
+    if (modal) modal.style.display = 'flex';
+
+    await fetchDockerLogs();
+}
+
+async function fetchDockerLogs() {
+    const content = document.getElementById('docker-logs-content');
+    if (content) content.textContent = 'Loading...';
+
+    if (!dockerLogsState.id) return;
+
+    try {
+        const resp = await fetch(`/api/docker/logs?id=${encodeURIComponent(dockerLogsState.id)}&tail=${dockerLogsState.tail}`);
+        if (!resp.ok) {
+            const msg = await readErrorMessage(resp);
+            if (content) content.textContent = `Failed to load logs: ${msg}`;
+            return;
+        }
+        const data = await resp.json();
+        if (content) content.textContent = data.logs || '';
+    } catch (e) {
+        if (content) content.textContent = 'Failed to load logs.';
+    }
+}
+
+async function loadMoreDockerLogs() {
+    if (!dockerLogsState.id) return;
+    dockerLogsState.tail = Math.min(dockerLogsState.tail + 200, 2000);
+    await fetchDockerLogs();
+}
+
+async function openDockerPruneConfirm() {
+    if (!confirm('Prune will remove stopped containers, dangling images, unused networks, and build cache. Continue?')) return;
+    await handleDockerPrune();
+}
+
+async function handleDockerPrune() {
+    const resultBox = document.getElementById('docker-prune-result');
+    if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.style.background = 'rgba(255, 182, 0, 0.12)';
+        resultBox.style.border = '1px solid rgba(255,182,0,0.3)';
+        resultBox.style.color = '#ffd479';
+        resultBox.textContent = 'Pruning...';
+    }
+
+    try {
+        const response = await fetch('/api/docker/prune', { method: 'POST' });
+        if (response.ok) {
+            const data = await response.json();
+            const reclaimed = data.result && (data.result.SpaceReclaimed || data.result.space_reclaimed || data.result.spaceReclaimed);
+            const containersDeleted = data.result && (data.result.ContainersDeleted || (data.result.Containers && data.result.Containers.length));
+            const imagesDeleted = data.result && (data.result.ImagesDeleted || (data.result.Images && data.result.Images.length));
+            const volumesDeleted = data.result && (data.result.VolumesDeleted || (data.result.Volumes && data.result.Volumes.length));
+
+            let summary = 'Prune completed';
+            if (reclaimed !== undefined) summary += ` • Space reclaimed: ${formatBytes(reclaimed)}`;
+            if (containersDeleted) summary += ` • Containers: ${containersDeleted}`;
+            if (imagesDeleted) summary += ` • Images: ${imagesDeleted}`;
+            if (volumesDeleted) summary += ` • Volumes: ${volumesDeleted}`;
+
+            if (resultBox) {
+                resultBox.style.display = 'block';
+                resultBox.style.background = 'rgba(0, 180, 0, 0.12)';
+                resultBox.style.border = '1px solid rgba(0,180,0,0.3)';
+                resultBox.style.color = '#a3ffb3';
+                resultBox.textContent = summary;
+            }
+            // Refresh containers/images after prune
+            loadDockerContainers();
+            loadDockerImages();
+        } else {
+            const data = await response.json().catch(() => ({}));
+            const msg = data.error || 'Prune failed';
+            if (resultBox) {
+                resultBox.style.display = 'block';
+                resultBox.style.background = 'rgba(255, 0, 0, 0.12)';
+                resultBox.style.border = '1px solid rgba(255,0,0,0.3)';
+                resultBox.style.color = '#ffb3b3';
+                resultBox.textContent = msg;
+            } else {
+                alert(msg);
+            }
+        }
+    } catch (err) {
+        const msg = 'Prune failed: ' + err.message;
+        if (resultBox) {
+            resultBox.style.display = 'block';
+            resultBox.style.background = 'rgba(255, 0, 0, 0.12)';
+            resultBox.style.border = '1px solid rgba(255,0,0,0.3)';
+            resultBox.style.color = '#ffb3b3';
+            resultBox.textContent = msg;
+        } else {
+            alert(msg);
+        }
     }
 }
 
@@ -523,8 +685,8 @@ async function loadUsers() {
                             <td style="padding: 10px;">${new Date(user.created_at).toLocaleString()}</td>
                             <td style="padding: 10px;">${user.last_login ? new Date(user.last_login).toLocaleString() : '-'}</td>
                             <td style="padding: 10px;">
-                                ${isAdmin && user.username !== 'admin' ? `<button onclick="handleResetPassword(${JSON.stringify(user.username)})" style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 8px;">Reset Password</button>` : ''}
-                                ${user.username !== 'admin' ? `<button onclick="handleDeleteUser(${JSON.stringify(user.username)})" style="background: var(--accent-cpu); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Delete</button>` : ''}
+                                ${isAdmin && user.username !== 'admin' ? `<button onclick='showResetPasswordModal(${JSON.stringify(user.username)})' style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 8px;">Reset Password</button>` : ''}
+                                ${user.username !== 'admin' ? `<button onclick='handleDeleteUser(${JSON.stringify(user.username)})' style="background: var(--accent-cpu); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Delete</button>` : ''}
                             </td>
                         `;
                 tbody.appendChild(tr);
@@ -535,6 +697,71 @@ async function loadUsers() {
     }
 }
 
+function showResetPasswordModal(username) {
+    if (!username || username === 'admin') return;
+
+    const modal = document.getElementById('reset-password-modal');
+    const usernameField = document.getElementById('reset-password-username');
+    const usernameText = document.getElementById('reset-password-username-text');
+    const passwordInput = document.getElementById('reset-password-new');
+
+    if (!modal || !usernameField || !usernameText || !passwordInput) {
+        // Fallback: if modal is missing for any reason, try prompt.
+        handleResetPassword(username);
+        return;
+    }
+
+    usernameField.value = username;
+    usernameText.textContent = username;
+    passwordInput.value = '';
+    modal.style.display = 'flex';
+    setTimeout(() => passwordInput.focus(), 0);
+}
+
+function hideResetPasswordModal() {
+    const modal = document.getElementById('reset-password-modal');
+    const usernameField = document.getElementById('reset-password-username');
+    const passwordInput = document.getElementById('reset-password-new');
+
+    if (usernameField) usernameField.value = '';
+    if (passwordInput) passwordInput.value = '';
+    if (modal) modal.style.display = 'none';
+}
+
+async function handleResetPasswordSubmit(e) {
+    e.preventDefault();
+
+    const usernameField = document.getElementById('reset-password-username');
+    const passwordInput = document.getElementById('reset-password-new');
+    const username = usernameField ? usernameField.value : '';
+    const newPassword = passwordInput ? passwordInput.value : '';
+
+    if (!username || username === 'admin') return;
+    if (!newPassword) return;
+
+    const headers = { 'Content-Type': 'application/json' };
+
+    try {
+        const response = await fetch('/api/password', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ username, new_password: newPassword }),
+        });
+
+        if (response.ok) {
+            hideResetPasswordModal();
+            alert('Password reset successfully');
+            return;
+        }
+
+        const data = await response.json().catch(() => ({}));
+        alert('Error: ' + (data.error || 'Failed to reset password'));
+    } catch (err) {
+        alert('Error resetting password');
+    }
+}
+
+// Backward-compatible prompt-based flow (some deployments may not include the modal)
 async function handleResetPassword(username) {
     if (!username || username === 'admin') return;
     const newPassword = prompt(`Set a new password for ${username}:`);
@@ -675,6 +902,7 @@ function checkRole() {
         document.getElementById('nav-users').style.display = 'flex';
         document.getElementById('nav-logs').style.display = 'flex';
     }
+    loadGuiStatus();
     loadPowerProfile();
     loadAlerts();
 }
@@ -683,19 +911,38 @@ function loadPowerProfile() {
     fetch('/api/power/profile')
         .then((res) => res.json())
         .then((data) => {
-            if (data.error || !data.available || data.available.length === 0) {
-                return;
-            }
-
             const card = document.getElementById('power-profile-card');
             const container = document.getElementById('power-profile-controls');
+            const hint = document.getElementById('power-profile-hint');
+            if (!card || !container || !hint) return;
             card.style.display = 'block';
             container.innerHTML = '';
 
             const role = localStorage.getItem('role');
             const isAdmin = role === 'admin';
+            const supported = data && data.supported !== false;
+            const profiles = (data && data.available) || [];
+            const hasProfiles = profiles.length > 0;
 
-            data.available.forEach((profile) => {
+            const errMsg = data && data.error ? data.error : (supported ? '' : '当前设备未检测到 powerprofilesctl 或不支持电源配置');
+            if (errMsg) {
+                hint.style.display = 'block';
+                hint.textContent = errMsg;
+            } else {
+                hint.style.display = 'none';
+                hint.textContent = '';
+            }
+
+            if (!supported || !hasProfiles) {
+                const msg = document.createElement('div');
+                msg.style.color = 'var(--text-dim)';
+                msg.style.fontSize = '0.9rem';
+                msg.textContent = '未检测到可用的电源模式';
+                container.appendChild(msg);
+                return;
+            }
+
+            profiles.forEach((profile) => {
                 const btn = document.createElement('button');
                 btn.innerText = profile;
                 btn.style.padding = '8px 16px';
@@ -758,6 +1005,61 @@ function setPowerProfile(profile) {
         .catch((err) => console.error('Error setting profile:', err));
 }
 
+function loadGuiStatus() {
+    fetch('/api/gui/status')
+        .then((res) => res.json())
+        .then((data) => {
+            const statusEl = document.getElementById('gui-status-text');
+            const btn = document.getElementById('gui-toggle-btn');
+            const targetEl = document.getElementById('gui-default-target');
+            if (!statusEl || !btn) return;
+
+            if (!data || data.supported === false) {
+                statusEl.innerText = 'Display manager not detected';
+                btn.style.display = 'none';
+                if (targetEl) targetEl.style.display = 'none';
+                return;
+            }
+
+            statusEl.innerText = data.running ? 'Running' : 'Stopped';
+            statusEl.style.color = data.running ? 'var(--accent-mem)' : '#ff6b6b';
+
+            if (targetEl) {
+                if (data.default_target) {
+                    targetEl.style.display = 'inline-flex';
+                    targetEl.innerText = 'Default: ' + data.default_target;
+                } else {
+                    targetEl.style.display = 'none';
+                }
+            }
+
+            const role = localStorage.getItem('role');
+            const isAdmin = role === 'admin';
+            btn.style.display = isAdmin ? 'inline-flex' : 'none';
+            btn.textContent = data.running ? 'Stop GUI' : 'Start GUI';
+            btn.dataset.nextAction = data.running ? 'stop' : 'start';
+        })
+        .catch((err) => console.error('Failed to load GUI status:', err));
+}
+
+function toggleGuiSession() {
+    const btn = document.getElementById('gui-toggle-btn');
+    if (!btn || !btn.dataset.nextAction) return;
+    const action = btn.dataset.nextAction;
+
+    fetch('/api/gui/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+    })
+        .then((res) => {
+            if (!res.ok) return res.json().then((d) => Promise.reject(d.error || 'Failed'));
+            return res.json();
+        })
+        .then(() => loadGuiStatus())
+        .catch((err) => alert('Failed: ' + err));
+}
+
 function loadAlerts() {
     fetch('/api/alerts')
         .then((res) => res.json())
@@ -796,6 +1098,16 @@ function saveAlerts() {
         })
         .catch((err) => console.error('Error saving alerts:', err));
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const loadMoreBtn = document.getElementById('docker-logs-load-more');
+    if (loadMoreBtn) {
+        loadMoreBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            loadMoreDockerLogs();
+        });
+    }
+});
 
 // Fetch static info once
 fetch('/api/info')

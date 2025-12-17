@@ -158,6 +158,25 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Logged out"})
 }
 
+// SessionInfoHandler 返回当前会话的用户名和角色
+func SessionInfoHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	username, role, err := getUserAndRoleFromRequest(r)
+	if err != nil {
+		writeJSONError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"username": username,
+		"role":     role,
+	})
+}
+
 // ChangePasswordHandler 处理修改密码请求
 // @Summary 修改密码
 // @Description 修改用户密码。普通用户只能修改自己的密码(需提供旧密码)，管理员可修改任意用户密码(修改他人时不需要旧密码)
