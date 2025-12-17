@@ -1,0 +1,1029 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "轻量级系统监控API服务，提供实时CPU、内存、磁盘、网络、GPU监控，以及Docker和Systemd管理功能\n\n特性:\n- 实时系统监控 (CPU/内存/磁盘/网络/GPU/传感器)\n- WebSocket推送 (动态订阅主题)\n- Docker容器管理\n- Systemd服务管理\n- SSH会话监控\n- Cron任务管理\n- 用户权限管理 (admin/user)\n- JWT认证 (HttpOnly Cookie)\n- Prometheus指标导出",
+        "title": "Web Monitor API",
+        "contact": {
+            "name": "API Support",
+            "url": "https://github.com/AnalyseDeCircuit/web-monitor",
+            "email": "support@example.com"
+        },
+        "license": {
+            "name": "CC BY-NC 4.0",
+            "url": "https://creativecommons.org/licenses/by-nc/4.0/"
+        },
+        "version": "2.0"
+    },
+    "host": "localhost:8000",
+    "basePath": "/",
+    "paths": {
+        "/api/docker/containers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "获取所有Docker容器的信息",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Docker"
+                ],
+                "summary": "获取Docker容器列表",
+                "responses": {
+                    "200": {
+                        "description": "容器列表",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "containers": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/types.DockerContainer"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未授权",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/health": {
+            "get": {
+                "description": "返回服务健康状态，用于容器编排健康探针",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitoring"
+                ],
+                "summary": "健康检查",
+                "responses": {
+                    "200": {
+                        "description": "健康状态",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/info": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "获取完整的系统监控信息，包括系统指标、Docker容器、Systemd服务、网络状态、SSH统计等",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitoring"
+                ],
+                "summary": "获取系统信息",
+                "responses": {
+                    "200": {
+                        "description": "系统信息",
+                        "schema": {
+                            "$ref": "#/definitions/types.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "未授权",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/login": {
+            "post": {
+                "description": "使用用户名和密码登录，成功后返回JWT token并设置HttpOnly Cookie",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "用户登录",
+                "parameters": [
+                    {
+                        "description": "登录凭证",
+                        "name": "credentials",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "登录成功",
+                        "schema": {
+                            "$ref": "#/definitions/types.LoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "用户名或密码错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "登录尝试次数过多",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/logout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "登出当前用户，清除JWT token和Cookie",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "用户登出",
+                "responses": {
+                    "200": {
+                        "description": "登出成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/metrics": {
+            "get": {
+                "description": "以Prometheus格式导出系统指标",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "Monitoring"
+                ],
+                "summary": "Prometheus指标",
+                "responses": {
+                    "200": {
+                        "description": "Prometheus指标文本",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/password": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "修改用户密码。普通用户只能修改自己的密码(需提供旧密码)，管理员可修改任意用户密码(修改他人时不需要旧密码)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "修改密码",
+                "parameters": [
+                    {
+                        "description": "密码修改请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "new_password": {
+                                    "type": "string"
+                                },
+                                "old_password": {
+                                    "type": "string"
+                                },
+                                "username": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "密码修改成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未授权或旧密码错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权限(非管理员修改他人密码)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/systemd/services": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "获取系统中所有Systemd服务的状态",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Systemd"
+                ],
+                "summary": "获取Systemd服务列表",
+                "responses": {
+                    "200": {
+                        "description": "服务列表",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "services": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/types.ServiceInfo"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未授权",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_AnalyseDeCircuit_web-monitor_pkg_types.Interface": {
+            "type": "object",
+            "properties": {
+                "bytes_recv": {
+                    "type": "string"
+                },
+                "bytes_sent": {
+                    "type": "string"
+                },
+                "drops_in": {
+                    "type": "integer"
+                },
+                "drops_out": {
+                    "type": "integer"
+                },
+                "errors_in": {
+                    "type": "integer"
+                },
+                "errors_out": {
+                    "type": "integer"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "is_up": {
+                    "type": "boolean"
+                },
+                "speed": {
+                    "type": "number"
+                }
+            }
+        },
+        "types.CPUDetail": {
+            "type": "object",
+            "properties": {
+                "architecture": {
+                    "type": "string"
+                },
+                "cores": {
+                    "type": "integer"
+                },
+                "max_freq": {
+                    "type": "number"
+                },
+                "min_freq": {
+                    "type": "number"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "threads": {
+                    "type": "integer"
+                }
+            }
+        },
+        "types.CPUFreq": {
+            "type": "object",
+            "properties": {
+                "avg": {
+                    "type": "number"
+                },
+                "per_core": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                }
+            }
+        },
+        "types.CPUInfo": {
+            "type": "object",
+            "properties": {
+                "freq": {
+                    "$ref": "#/definitions/types.CPUFreq"
+                },
+                "info": {
+                    "$ref": "#/definitions/types.CPUDetail"
+                },
+                "load_avg": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "per_core": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "stats": {},
+                "temp_history": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "times": {}
+            }
+        },
+        "types.DiskIOInfo": {
+            "type": "object",
+            "properties": {
+                "read_bytes": {
+                    "type": "string"
+                },
+                "read_count": {
+                    "type": "integer"
+                },
+                "read_time": {
+                    "type": "integer"
+                },
+                "write_bytes": {
+                    "type": "string"
+                },
+                "write_count": {
+                    "type": "integer"
+                },
+                "write_time": {
+                    "type": "integer"
+                }
+            }
+        },
+        "types.DiskInfo": {
+            "type": "object",
+            "properties": {
+                "device": {
+                    "type": "string"
+                },
+                "free": {
+                    "type": "string"
+                },
+                "fstype": {
+                    "type": "string"
+                },
+                "mountpoint": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "total": {
+                    "type": "string"
+                },
+                "used": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.DockerContainer": {
+            "type": "object",
+            "properties": {
+                "Id": {
+                    "type": "string"
+                },
+                "Image": {
+                    "type": "string"
+                },
+                "Names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "Ports": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "PrivatePort": {
+                                "type": "integer"
+                            },
+                            "PublicPort": {
+                                "type": "integer"
+                            },
+                            "Type": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "State": {
+                    "type": "string"
+                },
+                "Status": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.GPUDetail": {
+            "type": "object",
+            "properties": {
+                "drm_card": {
+                    "type": "string"
+                },
+                "freq_mhz": {
+                    "type": "number"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "load_percent": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pci_address": {
+                    "type": "string"
+                },
+                "power_w": {
+                    "type": "number"
+                },
+                "processes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.GPUProcess"
+                    }
+                },
+                "temp_c": {
+                    "type": "number"
+                },
+                "vendor": {
+                    "type": "string"
+                },
+                "vram_percent": {
+                    "type": "number"
+                },
+                "vram_total": {
+                    "type": "string"
+                },
+                "vram_used": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.GPUProcess": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "pid": {
+                    "type": "integer"
+                },
+                "vram_used": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.InodeInfo": {
+            "type": "object",
+            "properties": {
+                "free": {
+                    "type": "integer"
+                },
+                "mountpoint": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "used": {
+                    "type": "integer"
+                }
+            }
+        },
+        "types.ListeningPort": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.LoginRequest": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.LoginResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.MemInfo": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "string"
+                },
+                "available": {
+                    "type": "string"
+                },
+                "buffers": {
+                    "type": "string"
+                },
+                "cached": {
+                    "type": "string"
+                },
+                "free": {
+                    "type": "string"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "inactive": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "shared": {
+                    "type": "string"
+                },
+                "slab": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "string"
+                },
+                "used": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.NetInfo": {
+            "type": "object",
+            "properties": {
+                "bytes_recv": {
+                    "type": "string"
+                },
+                "bytes_sent": {
+                    "type": "string"
+                },
+                "connection_states": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "errors": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "interfaces": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_AnalyseDeCircuit_web-monitor_pkg_types.Interface"
+                    }
+                },
+                "listening_ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.ListeningPort"
+                    }
+                },
+                "raw_recv": {
+                    "type": "integer"
+                },
+                "raw_sent": {
+                    "type": "integer"
+                },
+                "sockets": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "types.ProcessInfo": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.ProcessInfo"
+                    }
+                },
+                "cmdline": {
+                    "type": "string"
+                },
+                "cpu_percent": {
+                    "type": "number"
+                },
+                "cwd": {
+                    "type": "string"
+                },
+                "io_read": {
+                    "type": "string"
+                },
+                "io_write": {
+                    "type": "string"
+                },
+                "memory_percent": {
+                    "type": "number"
+                },
+                "memory_rss": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "num_threads": {
+                    "type": "integer"
+                },
+                "pid": {
+                    "type": "integer"
+                },
+                "ppid": {
+                    "type": "integer"
+                },
+                "uptime": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.Response": {
+            "type": "object",
+            "properties": {
+                "boot_time": {
+                    "type": "string"
+                },
+                "cpu": {
+                    "$ref": "#/definitions/types.CPUInfo"
+                },
+                "disk": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.DiskInfo"
+                    }
+                },
+                "disk_io": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/types.DiskIOInfo"
+                    }
+                },
+                "fans": {
+                    "type": "array",
+                    "items": {}
+                },
+                "gpu": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.GPUDetail"
+                    }
+                },
+                "inodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.InodeInfo"
+                    }
+                },
+                "memory": {
+                    "$ref": "#/definitions/types.MemInfo"
+                },
+                "network": {
+                    "$ref": "#/definitions/types.NetInfo"
+                },
+                "power": {},
+                "processes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.ProcessInfo"
+                    }
+                },
+                "sensors": {},
+                "ssh_stats": {
+                    "$ref": "#/definitions/types.SSHStats"
+                },
+                "swap": {
+                    "$ref": "#/definitions/types.SwapInfo"
+                }
+            }
+        },
+        "types.SSHSession": {
+            "type": "object",
+            "properties": {
+                "ip": {
+                    "type": "string"
+                },
+                "started": {
+                    "type": "string"
+                },
+                "user": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.SSHStats": {
+            "type": "object",
+            "properties": {
+                "auth_methods": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "connections": {
+                    "type": "integer"
+                },
+                "failed_logins": {
+                    "type": "integer"
+                },
+                "history_size": {
+                    "type": "integer"
+                },
+                "hostkey_fingerprint": {
+                    "type": "string"
+                },
+                "oom_risk_processes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.ProcessInfo"
+                    }
+                },
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SSHSession"
+                    }
+                },
+                "ssh_process_memory": {
+                    "type": "number"
+                },
+                "ssh_process_rss": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.ServiceInfo": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "load": {
+                    "type": "string"
+                },
+                "sub": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.SwapInfo": {
+            "type": "object",
+            "properties": {
+                "free": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "sin": {
+                    "type": "string"
+                },
+                "sout": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "string"
+                },
+                "used": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "JWT令牌 (格式: \"Bearer {token}\")",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "CookieAuth": {
+            "description": "JWT令牌 (HttpOnly Cookie, 优先使用)",
+            "type": "apiKey",
+            "name": "auth_token",
+            "in": "cookie"
+        }
+    },
+    "tags": [
+        {
+            "description": "用户认证相关接口",
+            "name": "Authentication"
+        },
+        {
+            "description": "系统监控数据接口",
+            "name": "Monitoring"
+        },
+        {
+            "description": "Docker容器管理接口 (需要admin权限)",
+            "name": "Docker"
+        },
+        {
+            "description": "Systemd服务管理接口 (需要admin权限)",
+            "name": "Systemd"
+        },
+        {
+            "description": "用户管理接口 (需要admin权限)",
+            "name": "Users"
+        },
+        {
+            "description": "Cron任务管理接口 (需要admin权限)",
+            "name": "Cron"
+        },
+        {
+            "description": "WebSocket实时推送接口",
+            "name": "WebSocket"
+        }
+    ]
+}

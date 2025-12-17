@@ -269,7 +269,10 @@ services:
 | `/api/cron/jobs` | GET | Cron 任务列表 |
 | `/api/users` | GET/POST | 用户管理（管理员） |
 
-详细 API 文档请参阅 [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)。
+**📖 完整 API 文档**:
+- **Swagger UI** (推荐): `http://localhost:8000/swagger/index.html` - 交互式API测试
+- **Markdown**: [API_DOCUMENTATION.md](./API_DOCUMENTATION.md) - 详细文档
+- **生成文档**: `make docs` - 自动同步最新代码
 
 ---
 

@@ -1,0 +1,674 @@
+basePath: /
+definitions:
+  github_com_AnalyseDeCircuit_web-monitor_pkg_types.Interface:
+    properties:
+      bytes_recv:
+        type: string
+      bytes_sent:
+        type: string
+      drops_in:
+        type: integer
+      drops_out:
+        type: integer
+      errors_in:
+        type: integer
+      errors_out:
+        type: integer
+      ip:
+        type: string
+      is_up:
+        type: boolean
+      speed:
+        type: number
+    type: object
+  types.CPUDetail:
+    properties:
+      architecture:
+        type: string
+      cores:
+        type: integer
+      max_freq:
+        type: number
+      min_freq:
+        type: number
+      model:
+        type: string
+      threads:
+        type: integer
+    type: object
+  types.CPUFreq:
+    properties:
+      avg:
+        type: number
+      per_core:
+        items:
+          type: number
+        type: array
+    type: object
+  types.CPUInfo:
+    properties:
+      freq:
+        $ref: '#/definitions/types.CPUFreq'
+      info:
+        $ref: '#/definitions/types.CPUDetail'
+      load_avg:
+        items:
+          type: number
+        type: array
+      per_core:
+        items:
+          type: number
+        type: array
+      percent:
+        type: number
+      stats: {}
+      temp_history:
+        items:
+          type: number
+        type: array
+      times: {}
+    type: object
+  types.DiskIOInfo:
+    properties:
+      read_bytes:
+        type: string
+      read_count:
+        type: integer
+      read_time:
+        type: integer
+      write_bytes:
+        type: string
+      write_count:
+        type: integer
+      write_time:
+        type: integer
+    type: object
+  types.DiskInfo:
+    properties:
+      device:
+        type: string
+      free:
+        type: string
+      fstype:
+        type: string
+      mountpoint:
+        type: string
+      percent:
+        type: number
+      total:
+        type: string
+      used:
+        type: string
+    type: object
+  types.DockerContainer:
+    properties:
+      Id:
+        type: string
+      Image:
+        type: string
+      Names:
+        items:
+          type: string
+        type: array
+      Ports:
+        items:
+          properties:
+            PrivatePort:
+              type: integer
+            PublicPort:
+              type: integer
+            Type:
+              type: string
+          type: object
+        type: array
+      State:
+        type: string
+      Status:
+        type: string
+    type: object
+  types.GPUDetail:
+    properties:
+      drm_card:
+        type: string
+      freq_mhz:
+        type: number
+      index:
+        type: integer
+      load_percent:
+        type: number
+      name:
+        type: string
+      pci_address:
+        type: string
+      power_w:
+        type: number
+      processes:
+        items:
+          $ref: '#/definitions/types.GPUProcess'
+        type: array
+      temp_c:
+        type: number
+      vendor:
+        type: string
+      vram_percent:
+        type: number
+      vram_total:
+        type: string
+      vram_used:
+        type: string
+    type: object
+  types.GPUProcess:
+    properties:
+      name:
+        type: string
+      pid:
+        type: integer
+      vram_used:
+        type: string
+    type: object
+  types.InodeInfo:
+    properties:
+      free:
+        type: integer
+      mountpoint:
+        type: string
+      percent:
+        type: number
+      total:
+        type: integer
+      used:
+        type: integer
+    type: object
+  types.ListeningPort:
+    properties:
+      port:
+        type: integer
+      protocol:
+        type: string
+    type: object
+  types.LoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  types.LoginResponse:
+    properties:
+      message:
+        type: string
+      role:
+        type: string
+      token:
+        type: string
+      username:
+        type: string
+    type: object
+  types.MemInfo:
+    properties:
+      active:
+        type: string
+      available:
+        type: string
+      buffers:
+        type: string
+      cached:
+        type: string
+      free:
+        type: string
+      history:
+        items:
+          type: number
+        type: array
+      inactive:
+        type: string
+      percent:
+        type: number
+      shared:
+        type: string
+      slab:
+        type: string
+      total:
+        type: string
+      used:
+        type: string
+    type: object
+  types.NetInfo:
+    properties:
+      bytes_recv:
+        type: string
+      bytes_sent:
+        type: string
+      connection_states:
+        additionalProperties:
+          type: integer
+        type: object
+      errors:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      interfaces:
+        additionalProperties:
+          $ref: '#/definitions/github_com_AnalyseDeCircuit_web-monitor_pkg_types.Interface'
+        type: object
+      listening_ports:
+        items:
+          $ref: '#/definitions/types.ListeningPort'
+        type: array
+      raw_recv:
+        type: integer
+      raw_sent:
+        type: integer
+      sockets:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
+  types.ProcessInfo:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/types.ProcessInfo'
+        type: array
+      cmdline:
+        type: string
+      cpu_percent:
+        type: number
+      cwd:
+        type: string
+      io_read:
+        type: string
+      io_write:
+        type: string
+      memory_percent:
+        type: number
+      memory_rss:
+        type: string
+      name:
+        type: string
+      num_threads:
+        type: integer
+      pid:
+        type: integer
+      ppid:
+        type: integer
+      uptime:
+        type: string
+      username:
+        type: string
+    type: object
+  types.Response:
+    properties:
+      boot_time:
+        type: string
+      cpu:
+        $ref: '#/definitions/types.CPUInfo'
+      disk:
+        items:
+          $ref: '#/definitions/types.DiskInfo'
+        type: array
+      disk_io:
+        additionalProperties:
+          $ref: '#/definitions/types.DiskIOInfo'
+        type: object
+      fans:
+        items: {}
+        type: array
+      gpu:
+        items:
+          $ref: '#/definitions/types.GPUDetail'
+        type: array
+      inodes:
+        items:
+          $ref: '#/definitions/types.InodeInfo'
+        type: array
+      memory:
+        $ref: '#/definitions/types.MemInfo'
+      network:
+        $ref: '#/definitions/types.NetInfo'
+      power: {}
+      processes:
+        items:
+          $ref: '#/definitions/types.ProcessInfo'
+        type: array
+      sensors: {}
+      ssh_stats:
+        $ref: '#/definitions/types.SSHStats'
+      swap:
+        $ref: '#/definitions/types.SwapInfo'
+    type: object
+  types.SSHSession:
+    properties:
+      ip:
+        type: string
+      started:
+        type: string
+      user:
+        type: string
+    type: object
+  types.SSHStats:
+    properties:
+      auth_methods:
+        additionalProperties:
+          type: integer
+        type: object
+      connections:
+        type: integer
+      failed_logins:
+        type: integer
+      history_size:
+        type: integer
+      hostkey_fingerprint:
+        type: string
+      oom_risk_processes:
+        items:
+          $ref: '#/definitions/types.ProcessInfo'
+        type: array
+      sessions:
+        items:
+          $ref: '#/definitions/types.SSHSession'
+        type: array
+      ssh_process_memory:
+        type: number
+      ssh_process_rss:
+        type: string
+      status:
+        type: string
+    type: object
+  types.ServiceInfo:
+    properties:
+      active:
+        type: string
+      description:
+        type: string
+      load:
+        type: string
+      sub:
+        type: string
+      unit:
+        type: string
+    type: object
+  types.SwapInfo:
+    properties:
+      free:
+        type: string
+      percent:
+        type: number
+      sin:
+        type: string
+      sout:
+        type: string
+      total:
+        type: string
+      used:
+        type: string
+    type: object
+host: localhost:8000
+info:
+  contact:
+    email: support@example.com
+    name: API Support
+    url: https://github.com/AnalyseDeCircuit/web-monitor
+  description: |-
+    轻量级系统监控API服务，提供实时CPU、内存、磁盘、网络、GPU监控，以及Docker和Systemd管理功能
+
+    特性:
+    - 实时系统监控 (CPU/内存/磁盘/网络/GPU/传感器)
+    - WebSocket推送 (动态订阅主题)
+    - Docker容器管理
+    - Systemd服务管理
+    - SSH会话监控
+    - Cron任务管理
+    - 用户权限管理 (admin/user)
+    - JWT认证 (HttpOnly Cookie)
+    - Prometheus指标导出
+  license:
+    name: CC BY-NC 4.0
+    url: https://creativecommons.org/licenses/by-nc/4.0/
+  title: Web Monitor API
+  version: "2.0"
+paths:
+  /api/docker/containers:
+    get:
+      description: 获取所有Docker容器的信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 容器列表
+          schema:
+            properties:
+              containers:
+                items:
+                  $ref: '#/definitions/types.DockerContainer'
+                type: array
+            type: object
+        "401":
+          description: 未授权
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: 获取Docker容器列表
+      tags:
+      - Docker
+  /api/health:
+    get:
+      description: 返回服务健康状态，用于容器编排健康探针
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 健康状态
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 健康检查
+      tags:
+      - Monitoring
+  /api/info:
+    get:
+      description: 获取完整的系统监控信息，包括系统指标、Docker容器、Systemd服务、网络状态、SSH统计等
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 系统信息
+          schema:
+            $ref: '#/definitions/types.Response'
+        "401":
+          description: 未授权
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: 获取系统信息
+      tags:
+      - Monitoring
+  /api/login:
+    post:
+      consumes:
+      - application/json
+      description: 使用用户名和密码登录，成功后返回JWT token并设置HttpOnly Cookie
+      parameters:
+      - description: 登录凭证
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/types.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 登录成功
+          schema:
+            $ref: '#/definitions/types.LoginResponse'
+        "400":
+          description: 请求格式错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 用户名或密码错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "429":
+          description: 登录尝试次数过多
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 用户登录
+      tags:
+      - Authentication
+  /api/logout:
+    post:
+      consumes:
+      - application/json
+      description: 登出当前用户，清除JWT token和Cookie
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 登出成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: 用户登出
+      tags:
+      - Authentication
+  /api/metrics:
+    get:
+      description: 以Prometheus格式导出系统指标
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Prometheus指标文本
+          schema:
+            type: string
+      summary: Prometheus指标
+      tags:
+      - Monitoring
+  /api/password:
+    post:
+      consumes:
+      - application/json
+      description: 修改用户密码。普通用户只能修改自己的密码(需提供旧密码)，管理员可修改任意用户密码(修改他人时不需要旧密码)
+      parameters:
+      - description: 密码修改请求
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            new_password:
+              type: string
+            old_password:
+              type: string
+            username:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 密码修改成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 未授权或旧密码错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权限(非管理员修改他人密码)
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: 修改密码
+      tags:
+      - Authentication
+  /api/systemd/services:
+    get:
+      description: 获取系统中所有Systemd服务的状态
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 服务列表
+          schema:
+            properties:
+              services:
+                items:
+                  $ref: '#/definitions/types.ServiceInfo'
+                type: array
+            type: object
+        "401":
+          description: 未授权
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      - CookieAuth: []
+      summary: 获取Systemd服务列表
+      tags:
+      - Systemd
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT令牌 (格式: "Bearer {token}")'
+    in: header
+    name: Authorization
+    type: apiKey
+  CookieAuth:
+    description: JWT令牌 (HttpOnly Cookie, 优先使用)
+    in: cookie
+    name: auth_token
+    type: apiKey
+swagger: "2.0"
+tags:
+- description: 用户认证相关接口
+  name: Authentication
+- description: 系统监控数据接口
+  name: Monitoring
+- description: Docker容器管理接口 (需要admin权限)
+  name: Docker
+- description: Systemd服务管理接口 (需要admin权限)
+  name: Systemd
+- description: 用户管理接口 (需要admin权限)
+  name: Users
+- description: Cron任务管理接口 (需要admin权限)
+  name: Cron
+- description: WebSocket实时推送接口
+  name: WebSocket

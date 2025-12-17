@@ -57,6 +57,9 @@ var Upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return isAllowedWebSocketOrigin(r)
 	},
+	// 启用 WebSocket 压缩扩展 (permessage-deflate)
+	// 可减少 60-70% 的网络传输量
+	EnableCompression: true,
 }
 
 func isAllowedWebSocketOrigin(r *http.Request) bool {

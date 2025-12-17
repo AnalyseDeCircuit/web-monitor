@@ -37,6 +37,17 @@ func clientIP(r *http.Request) string {
 }
 
 // LoginHandler 处理登录请求
+// @Summary 用户登录
+// @Description 使用用户名和密码登录，成功后返回JWT token并设置HttpOnly Cookie
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param credentials body types.LoginRequest true "登录凭证"
+// @Success 200 {object} types.LoginResponse "登录成功"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 401 {object} map[string]string "用户名或密码错误"
+// @Failure 429 {object} map[string]string "登录尝试次数过多"
+// @Router /api/login [post]
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -107,6 +118,15 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // LogoutHandler 处理登出请求
+// @Summary 用户登出
+// @Description 登出当前用户，清除JWT token和Cookie
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Security CookieAuth
+// @Success 200 {object} map[string]string "登出成功"
+// @Router /api/logout [post]
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -139,6 +159,19 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ChangePasswordHandler 处理修改密码请求
+// @Summary 修改密码
+// @Description 修改用户密码。普通用户只能修改自己的密码(需提供旧密码)，管理员可修改任意用户密码(修改他人时不需要旧密码)
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Security CookieAuth
+// @Param request body object{username=string,old_password=string,new_password=string} true "密码修改请求"
+// @Success 200 {object} map[string]string "密码修改成功"
+// @Failure 400 {object} map[string]string "请求参数错误"
+// @Failure 401 {object} map[string]string "未授权或旧密码错误"
+// @Failure 403 {object} map[string]string "无权限(非管理员修改他人密码)"
+// @Router /api/password [post]
 func ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return

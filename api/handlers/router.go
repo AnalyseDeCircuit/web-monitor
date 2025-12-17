@@ -9,6 +9,8 @@ import (
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
+
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
 // Router 封装HTTP路由器
@@ -73,6 +75,14 @@ func SetupRouter() *Router {
 
 	// WebSocket路由
 	router.mux.HandleFunc("/ws/stats", websocket.HandleWebSocket)
+
+	// Swagger API文档
+	router.mux.Handle("/swagger/", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+		httpSwagger.DeepLinking(true),
+		httpSwagger.DocExpansion("list"),
+		httpSwagger.DomID("swagger-ui"),
+	))
 
 	// 静态文件服务
 	fs := http.FileServer(http.Dir("./templates"))

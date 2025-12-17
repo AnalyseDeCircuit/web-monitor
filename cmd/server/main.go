@@ -17,7 +17,65 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
+
+	_ "github.com/AnalyseDeCircuit/web-monitor/docs" // swagger docs
 )
+
+// @title Web Monitor API
+// @version 2.0
+// @description 轻量级系统监控API服务，提供实时CPU、内存、磁盘、网络、GPU监控，以及Docker和Systemd管理功能
+// @description
+// @description 特性:
+// @description - 实时系统监控 (CPU/内存/磁盘/网络/GPU/传感器)
+// @description - WebSocket推送 (动态订阅主题)
+// @description - Docker容器管理
+// @description - Systemd服务管理
+// @description - SSH会话监控
+// @description - Cron任务管理
+// @description - 用户权限管理 (admin/user)
+// @description - JWT认证 (HttpOnly Cookie)
+// @description - Prometheus指标导出
+
+// @contact.name API Support
+// @contact.url https://github.com/AnalyseDeCircuit/web-monitor
+// @contact.email support@example.com
+
+// @license.name CC BY-NC 4.0
+// @license.url https://creativecommons.org/licenses/by-nc/4.0/
+
+// @host localhost:8000
+// @BasePath /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT令牌 (格式: "Bearer {token}")
+
+// @securityDefinitions.apikey CookieAuth
+// @in cookie
+// @name auth_token
+// @description JWT令牌 (HttpOnly Cookie, 优先使用)
+
+// @tag.name Authentication
+// @tag.description 用户认证相关接口
+
+// @tag.name Monitoring
+// @tag.description 系统监控数据接口
+
+// @tag.name Docker
+// @tag.description Docker容器管理接口 (需要admin权限)
+
+// @tag.name Systemd
+// @tag.description Systemd服务管理接口 (需要admin权限)
+
+// @tag.name Users
+// @tag.description 用户管理接口 (需要admin权限)
+
+// @tag.name Cron
+// @tag.description Cron任务管理接口 (需要admin权限)
+
+// @tag.name WebSocket
+// @tag.description WebSocket实时推送接口
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)

@@ -11,6 +11,48 @@
             --border-radius: 12px;
         }
 
+        /* 亮色主题变量 */
+        :root[data-theme="light"] {
+            --bg-color: #f5f5f5;
+            --card-bg: #ffffff;
+            --text-main: #2c3e50;
+            --text-dim: #7f8c8d;
+            --accent-cpu: #e74c3c;
+            --accent-mem: #27ae60;
+            --accent-net: #3498db;
+            --accent-disk: #f39c12;
+            --accent-temp: #e91e63;
+        }
+
+        /* 主题切换按钮样式 */
+        .theme-toggle {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.15);
+            transform: scale(1.05);
+        }
+
+        :root[data-theme="light"] .theme-toggle {
+            background: rgba(0,0,0,0.05);
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        :root[data-theme="light"] .theme-toggle:hover {
+            background: rgba(0,0,0,0.1);
+        }
+
         body {
             background-color: var(--bg-color);
             color: var(--text-main);
@@ -39,6 +81,11 @@
             transition: all 0.3s ease;
             position: relative;
             overflow-y: auto;
+        }
+
+        :root[data-theme="light"] .sidebar {
+            background-color: #e8e8e8;
+            border-right: 1px solid rgba(0,0,0,0.1);
         }
 
         .sidebar.collapsed {
@@ -954,4 +1001,473 @@
         }
         .slider.round:before {
             border-radius: 50%;
+        }
+
+        /* ==================== 亮色主题完整样式优化 ==================== */
+        
+        /* 卡片和容器 */
+        :root[data-theme="light"] .card {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+
+        :root[data-theme="light"] .card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            border-color: rgba(0,0,0,0.12);
+        }
+
+        :root[data-theme="light"] .card-title {
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+
+        /* 导航栏 */
+        :root[data-theme="light"] .nav-item:hover {
+            background-color: rgba(0,0,0,0.06);
+        }
+
+        :root[data-theme="light"] .nav-item.active {
+            background-color: rgba(231, 76, 60, 0.12);
+        }
+
+        /* 进度条背景 */
+        :root[data-theme="light"] .progress-bg {
+            background: rgba(0,0,0,0.08);
+        }
+
+        :root[data-theme="light"] .process-bar-bg {
+            background: rgba(0,0,0,0.08);
+        }
+
+        :root[data-theme="light"] .core-bar {
+            background: rgba(0,0,0,0.08);
+        }
+
+        /* 进程和核心项 */
+        :root[data-theme="light"] .process-item {
+            background: rgba(0,0,0,0.02);
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+
+        :root[data-theme="light"] .process-item:hover {
+            background: rgba(0,0,0,0.04);
+            border-color: rgba(0,0,0,0.12);
+        }
+
+        :root[data-theme="light"] .core-item {
+            background: rgba(0,0,0,0.04);
+            border: 1px solid rgba(0,0,0,0.06);
+        }
+
+        /* 传感器项 */
+        :root[data-theme="light"] .sensor-item {
+            border-bottom: 1px dashed rgba(0,0,0,0.12);
+        }
+
+        /* 网络统计框 */
+        :root[data-theme="light"] .net-box {
+            background: rgba(52, 152, 219, 0.08);
+            border: 1px solid rgba(52, 152, 219, 0.2);
+        }
+
+        /* 启动时间标签 */
+        :root[data-theme="light"] .boot-time {
+            background: rgba(0,0,0,0.06);
+        }
+
+        /* 频率标签 */
+        :root[data-theme="light"] .freq-badge {
+            background: rgba(231, 76, 60, 0.12);
+        }
+
+        /* 按钮 */
+        :root[data-theme="light"] .sort-btn {
+            background: rgba(0,0,0,0.05);
+            border: 1px solid rgba(0,0,0,0.15);
+        }
+
+        :root[data-theme="light"] .sort-btn:hover {
+            background: rgba(0,0,0,0.08);
+        }
+
+        :root[data-theme="light"] .sort-btn.active {
+            background: rgba(231, 76, 60, 0.15);
+            border-color: var(--accent-cpu);
+        }
+
+        :root[data-theme="light"] .net-tab {
+            background: rgba(0,0,0,0.05);
+        }
+
+        :root[data-theme="light"] .net-tab.active {
+            background: var(--accent-net);
+            color: white;
+        }
+
+        :root[data-theme="light"] .net-tab:hover:not(.active) {
+            background: rgba(0,0,0,0.08);
+        }
+
+        /* GPU统计行 */
+        :root[data-theme="light"] .stat-row {
+            background: rgba(0,0,0,0.03);
+        }
+
+        /* VRAM条 */
+        :root[data-theme="light"] .vram-bar-bg {
+            background: rgba(0,0,0,0.1);
+        }
+
+        /* 滚动条 */
+        :root[data-theme="light"] #processes-container::-webkit-scrollbar-track,
+        :root[data-theme="light"] .cpu-grid::-webkit-scrollbar-track,
+        :root[data-theme="light"] #sensors-container::-webkit-scrollbar-track,
+        :root[data-theme="light"] .logs-scroll::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.05);
+        }
+
+        :root[data-theme="light"] #processes-container::-webkit-scrollbar-thumb,
+        :root[data-theme="light"] .cpu-grid::-webkit-scrollbar-thumb,
+        :root[data-theme="light"] #sensors-container::-webkit-scrollbar-thumb,
+        :root[data-theme="light"] .logs-scroll::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.2);
+        }
+
+        :root[data-theme="light"] #processes-container::-webkit-scrollbar-thumb:hover,
+        :root[data-theme="light"] .cpu-grid::-webkit-scrollbar-thumb:hover,
+        :root[data-theme="light"] #sensors-container::-webkit-scrollbar-thumb:hover,
+        :root[data-theme="light"] .logs-scroll::-webkit-scrollbar-thumb:hover {
+            background: rgba(0,0,0,0.35);
+        }
+
+        /* 开关滑块 */
+        :root[data-theme="light"] .slider {
+            background-color: rgba(0,0,0,0.15);
+        }
+
+        :root[data-theme="light"] .slider:before {
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        /* 移动端菜单按钮 */
+        :root[data-theme="light"] .mobile-menu-btn {
+            background: rgba(0,0,0,0.08);
+            border: 1px solid rgba(0,0,0,0.15);
+        }
+
+        :root[data-theme="light"] .mobile-menu-btn:hover {
+            background: rgba(0,0,0,0.12);
+        }
+
+        :root[data-theme="light"] .mobile-menu-btn.active {
+            background: var(--accent-cpu);
+            color: white;
+        }
+
+        /* 侧边栏切换按钮 */
+        :root[data-theme="light"] .sidebar-toggle:hover {
+            color: var(--accent-cpu);
+        }
+
+        /* 表格样式优化 */
+        :root[data-theme="light"] table {
+            border-collapse: collapse;
+        }
+
+        :root[data-theme="light"] table th {
+            background: rgba(0,0,0,0.04);
+            border-bottom: 2px solid rgba(0,0,0,0.1);
+        }
+
+        :root[data-theme="light"] table td {
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+        }
+
+        :root[data-theme="light"] table tr:hover {
+            background: rgba(0,0,0,0.02);
+        }
+
+        /* 输入框和选择器 */
+        :root[data-theme="light"] input[type="text"],
+        :root[data-theme="light"] input[type="password"],
+        :root[data-theme="light"] input[type="email"],
+        :root[data-theme="light"] select {
+            background: rgba(0,0,0,0.04);
+            border: 1px solid rgba(0,0,0,0.15);
+            color: var(--text-main);
+        }
+
+        :root[data-theme="light"] input:focus,
+        :root[data-theme="light"] select:focus {
+            border-color: var(--accent-net);
+            outline: none;
+            background: rgba(52, 152, 219, 0.05);
+        }
+
+        :root[data-theme="light"] #interval-select {
+            background: rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.12);
+        }
+
+        /* 按钮通用样式 */
+        :root[data-theme="light"] button:not(.theme-toggle):not(.mobile-menu-btn):not(.sidebar-toggle):not(.sort-btn):not(.net-tab) {
+            background: rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.12);
+        }
+
+        :root[data-theme="light"] button:hover:not(.theme-toggle):not(.mobile-menu-btn):not(.sidebar-toggle) {
+            background: rgba(0,0,0,0.1);
+        }
+
+        /* 模态框和对话框 */
+        :root[data-theme="light"] .modal {
+            background: rgba(0,0,0,0.4);
+        }
+
+        /* 网络子菜单 */
+        :root[data-theme="light"] #network-submenu {
+            background: rgba(0,0,0,0.06);
+        }
+
+        /* 表格行边框 */
+        :root[data-theme="light"] thead tr,
+        :root[data-theme="light"] tbody tr {
+            border-bottom: 1px solid rgba(0,0,0,0.08) !important;
+        }
+
+        :root[data-theme="light"] thead {
+            background: var(--card-bg) !important;
+        }
+
+        /* 内联样式元素的亮色主题覆盖 */
+        
+        /* SSH会话容器 */
+        :root[data-theme="light"] #general-ssh-sessions {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+
+        /* 趋势图容器 */
+        :root[data-theme="light"] #cpu-temp-trend,
+        :root[data-theme="light"] #mem-trend {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+
+        /* 代码/命令输出容器 */
+        :root[data-theme="light"] [style*="font-family: monospace"] {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+
+        /* 模态框背景 */
+        :root[data-theme="light"] #proc-detail-modal,
+        :root[data-theme="light"] #add-user-modal {
+            background: rgba(0,0,0,0.5) !important;
+        }
+
+        /* Docker/Service搜索输入框 */
+        :root[data-theme="light"] #docker-container-search,
+        :root[data-theme="light"] #docker-image-search,
+        :root[data-theme="light"] #service-search {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.15) !important;
+            color: var(--text-main) !important;
+        }
+
+        /* Alert输入框 */
+        :root[data-theme="light"] #alert-webhook,
+        :root[data-theme="light"] #alert-cpu,
+        :root[data-theme="light"] #alert-mem,
+        :root[data-theme="light"] #alert-disk {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.15) !important;
+            color: var(--text-main) !important;
+        }
+
+        /* 用户管理表单输入 */
+        :root[data-theme="light"] #new-username,
+        :root[data-theme="light"] #new-password,
+        :root[data-theme="light"] #new-role {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.15) !important;
+            color: var(--text-main) !important;
+        }
+
+        /* 密码修改表单 */
+        :root[data-theme="light"] #cp-old,
+        :root[data-theme="light"] #cp-new {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.15) !important;
+            color: var(--text-main) !important;
+        }
+
+        /* 用户头像圆圈 */
+        :root[data-theme="light"] [style*="border-radius: 50%"] {
+            background: rgba(0,0,0,0.06) !important;
+        }
+
+        /* 角色标签 */
+        :root[data-theme="light"] [style*="border-radius: 15px"][style*="display: inline-block"] {
+            background: rgba(0,0,0,0.08) !important;
+        }
+
+        /* 统计信息卡片 */
+        :root[data-theme="light"] div[style*="border-left: 4px solid"] {
+            background: rgba(0,0,0,0.03) !important;
+        }
+
+        /* 通用信息容器 */
+        :root[data-theme="light"] div[style*="background: rgba(0,0,0,0.2)"] {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+
+        /* Cron输入框 */
+        :root[data-theme="light"] input[style*="rgba(255,255,255,0.1)"] {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.15) !important;
+            color: var(--text-main) !important;
+        }
+
+        /* 进度条颜色在亮色主题下保持鲜艳 */
+        :root[data-theme="light"] .cpu-fill,
+        :root[data-theme="light"] .core-fill {
+            box-shadow: 0 0 8px rgba(231, 76, 60, 0.4);
+        }
+
+        :root[data-theme="light"] .mem-fill {
+            box-shadow: 0 0 8px rgba(39, 174, 96, 0.4);
+        }
+
+        :root[data-theme="light"] .vram-bar-fill {
+            box-shadow: 0 0 6px rgba(39, 174, 96, 0.3);
+        }
+
+        /* ASCII logo在亮色主题下的颜色 */
+        :root[data-theme="light"] .ascii-logo {
+            color: var(--accent-net);
+            opacity: 0.9;
+        }
+
+        /* 系统信息键值 */
+        :root[data-theme="light"] .sys-key {
+            color: var(--accent-mem);
+            font-weight: bold;
+        }
+
+        /* 标题渐变在亮色主题下更饱和 */
+        :root[data-theme="light"] h1 {
+            background: linear-gradient(45deg, #e74c3c, #27ae60);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* 状态点在亮色主题下的阴影 */
+        :root[data-theme="light"] .status-dot {
+            box-shadow: 0 0 8px rgba(231, 76, 60, 0.4);
+        }
+
+        :root[data-theme="light"] .status-dot.connected {
+            box-shadow: 0 0 8px rgba(39, 174, 96, 0.5);
+        }
+
+        /* Docker/Service操作按钮优化 */
+        :root[data-theme="light"] button[style*="background: #ff6b6b"],
+        :root[data-theme="light"] button[style*="background: var(--accent-mem)"],
+        :root[data-theme="light"] button[style*="background: var(--accent-net)"],
+        :root[data-theme="light"] button[style*="background: var(--text-dim)"] {
+            opacity: 0.95;
+        }
+
+        :root[data-theme="light"] button[style*="background: #ff6b6b"]:hover,
+        :root[data-theme="light"] button[style*="background: var(--accent-mem)"]:hover,
+        :root[data-theme="light"] button[style*="background: var(--accent-net)"]:hover {
+            opacity: 1;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        /* 提交按钮样式 */
+        :root[data-theme="light"] button[type="submit"] {
+            background: var(--accent-mem) !important;
+            color: white !important;
+            border: none !important;
+        }
+
+        :root[data-theme="light"] button[type="submit"]:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+        }
+
+        /* 溢出容器 */
+        :root[data-theme="light"] div[style*="overflow-x: auto"],
+        :root[data-theme="light"] div[style*="overflow-y: auto"] {
+            scrollbar-color: rgba(0,0,0,0.2) transparent;
+        }
+
+        /* 图表容器改进 */
+        :root[data-theme="light"] .chart-container {
+            background: rgba(0,0,0,0.02);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        /* GPU名称和温度 */
+        :root[data-theme="light"] .gpu-name {
+            color: var(--accent-net);
+        }
+
+        :root[data-theme="light"] .gpu-temp {
+            color: var(--accent-temp);
+        }
+
+        /* Fastfetch容器优化 */
+        :root[data-theme="light"] .fastfetch-container {
+            padding: 15px;
+            background: rgba(0,0,0,0.02);
+            border-radius: 8px;
+        }
+
+        /* 进程详情模态框内容 */
+        :root[data-theme="light"] #proc-detail-modal .card {
+            background: var(--card-bg);
+            color: var(--text-main);
+        }
+
+        /* 确保所有图标在亮色主题下可见 */
+        :root[data-theme="light"] i.fas,
+        :root[data-theme="light"] i.fab {
+            opacity: 0.85;
+        }
+
+        :root[data-theme="light"] .nav-item.active i {
+            opacity: 1;
+        }
+
+        /* Logs页面优化 */
+        :root[data-theme="light"] .logs-scroll {
+            background: rgba(0,0,0,0.02);
+            border-radius: 8px;
+        }
+
+        /* Cron页面的时间输入 */
+        :root[data-theme="light"] input[type="time"],
+        :root[data-theme="light"] input[type="number"],
+        :root[data-theme="light"] textarea {
+            background: rgba(0,0,0,0.04) !important;
+            border: 1px solid rgba(0,0,0,0.15) !important;
+            color: var(--text-main) !important;
+        }
+
+        /* Alert页面开关按钮 */
+        :root[data-theme="light"] .switch input:checked + .slider {
+            background-color: var(--accent-cpu);
+        }
+
+        /* 确保占位符文本在亮色主题下可见 */
+        :root[data-theme="light"] ::placeholder {
+            color: var(--text-dim);
+            opacity: 0.6;
         }

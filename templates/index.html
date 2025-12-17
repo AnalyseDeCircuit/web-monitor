@@ -129,7 +129,12 @@
                         <option value="60">60s</option>
                     </select>
                 </div>
-                <div id="boot-time" class="boot-time">Booting...</div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="切换主题">
+                        <i class="fas fa-moon" id="theme-icon"></i>
+                    </button>
+                    <div id="boot-time" class="boot-time">Booting...</div>
+                </div>
             </div>
 
             <!-- Page: General -->

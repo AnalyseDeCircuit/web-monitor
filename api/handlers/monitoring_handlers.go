@@ -23,6 +23,15 @@ import (
 )
 
 // SystemInfoHandler 处理系统信息请求
+// @Summary 获取系统信息
+// @Description 获取完整的系统监控信息，包括系统指标、Docker容器、Systemd服务、网络状态、SSH统计等
+// @Tags Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Security CookieAuth
+// @Success 200 {object} types.Response "系统信息"
+// @Failure 401 {object} map[string]string "未授权"
+// @Router /api/info [get]
 func SystemInfoHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -94,6 +103,16 @@ func SystemInfoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // DockerContainersHandler 处理Docker容器请求
+// DockerContainersHandler 处理Docker容器列表请求
+// @Summary 获取Docker容器列表
+// @Description 获取所有Docker容器的信息
+// @Tags Docker
+// @Produce json
+// @Security BearerAuth
+// @Security CookieAuth
+// @Success 200 {object} object{containers=[]types.DockerContainer} "容器列表"
+// @Failure 401 {object} map[string]string "未授权"
+// @Router /api/docker/containers [get]
 func DockerContainersHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -222,6 +241,16 @@ func DockerImageRemoveHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // SystemdServicesHandler 处理Systemd服务请求
+// SystemdServicesHandler 处理Systemd服务列表请求
+// @Summary 获取Systemd服务列表
+// @Description 获取系统中所有Systemd服务的状态
+// @Tags Systemd
+// @Produce json
+// @Security BearerAuth
+// @Security CookieAuth
+// @Success 200 {object} object{services=[]types.ServiceInfo} "服务列表"
+// @Failure 401 {object} map[string]string "未授权"
+// @Router /api/systemd/services [get]
 func SystemdServicesHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -335,6 +364,13 @@ func PowerInfoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // PrometheusMetricsHandler 处理Prometheus指标请求
+// PrometheusMetricsHandler Prometheus指标导出
+// @Summary Prometheus指标
+// @Description 以Prometheus格式导出系统指标
+// @Tags Monitoring
+// @Produce plain
+// @Success 200 {string} string "Prometheus指标文本"
+// @Router /api/metrics [get]
 func PrometheusMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		// metrics 输出为 text/plain；这里保持简单且明确
@@ -365,6 +401,13 @@ func CacheInfoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // HealthCheckHandler 处理健康检查请求
+// HealthCheckHandler 健康检查
+// @Summary 健康检查
+// @Description 返回服务健康状态，用于容器编排健康探针
+// @Tags Monitoring
+// @Produce json
+// @Success 200 {object} map[string]string "健康状态"
+// @Router /api/health [get]
 func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "healthy",
