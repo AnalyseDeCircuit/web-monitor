@@ -1,7 +1,8 @@
 # Web Monitor - User Manual
 
-**Version**: 1.5
+**Version**: 2.0
 **Last Updated**: December 17, 2025
+**License**: CC BY-NC 4.0 (Attribution-NonCommercial)
 
 [English Version](#web-monitor-user-manual) | [中文版本](#web-monitor-用户手册)
 
@@ -51,6 +52,7 @@ Web Monitor is a **lightweight, high-performance Linux server monitoring and man
 - **OS**: Linux (kernel 3.10+)
 - **Architecture**: amd64, arm64
 - **Deployment**: Docker (recommended), Binary
+- **License**: CC BY-NC 4.0 (Attribution-NonCommercial)
 
 ---
 
@@ -563,9 +565,21 @@ docker compose up -d
 
 ---
 
+## License
+
+This project is licensed under **CC BY-NC 4.0 (Attribution-NonCommercial 4.0 International)**.
+
+- ✅ Allowed: Copy, distribute, modify, create derivative works
+- ✅ Required: Attribution, indicate changes
+- ❌ Prohibited: Commercial use
+
+See [LICENSE](./LICENSE) for details.
+
+---
+
 # Web Monitor - 用户手册
 
-**版本**: 1.5
+**版本**: 2.0
 **最后更新**: 2025年12月17日
 
 ---
@@ -962,3 +976,15 @@ docker compose up -d
 ---
 
 **需要帮助？** 查看 [故障排除](#5-故障排除) 或 [GitHub Issues](https://github.com/AnalyseDeCircuit/web-monitor/issues)
+
+---
+
+## 许可证
+
+本项目采用 **CC BY-NC 4.0（署名-非商业性使用 4.0 国际）** 许可证。
+
+- ✅ 允许：复制、分发、修改、创作衍生作品
+- ✅ 必须：署名、注明修改
+- ❌ 禁止：商业用途
+
+详见 [LICENSE](./LICENSE) 文件。

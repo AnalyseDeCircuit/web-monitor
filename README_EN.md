@@ -1,118 +1,279 @@
-# Web Monitor (Go Version)
+# Web Monitor
 
-A lightweight, high-performance Linux server monitoring and management dashboard. Built with a Go backend and pure HTML/JS frontend, it has a minimal footprint and is easy to deploy.
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version">
+  <img src="https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg" alt="License">
+  <img src="https://img.shields.io/badge/Platform-Linux-FCC624?logo=linux&logoColor=black" alt="Platform">
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker">
+</p>
+
+<p align="center">
+  <strong>🚀 High-Performance Real-Time System Monitoring Dashboard</strong>
+</p>
+
+<p align="center">
+  A lightweight system monitoring tool built with Go, supporting both Docker and bare-metal deployments.<br/>
+  Real-time updates via WebSocket for CPU, Memory, GPU, Network, Docker, Systemd, and more.
+</p>
+
+<p align="center">
+  English | <a href="./README.md">简体中文</a>
+</p>
+
+---
 
 ## ✨ Features
 
-*   **Real-time Monitoring**: CPU, Memory, Disk I/O, Network Traffic, GPU (NVIDIA/AMD/Intel), Temperature Sensors.
-*   **Process Management**: View top system processes, sortable by CPU, memory, IO usage.
-    *   **Lazy Loading**: Process I/O details are loaded on-demand via REST API, significantly reducing overhead during regular collection.
-*   **Docker Management**: List containers/images, start, stop, restart, remove containers, view container logs and statistics.
-*   **System Management**:
-    *   **Systemd Services**: View service status, start, stop, restart, enable, and disable services.
-    *   **Cron Jobs**: View and edit scheduled tasks.
-*   **SSH Monitoring**: Monitor SSH connections, active sessions, login history, and failed attempts.
-    *   **Multi-level Caching**: Implements TTL caching (Connections 60s / Logs 5m / HostKey 1h) with manual refresh support.
-    *   **Memory Optimization**: Uses VmRSS for accurate sshd memory usage statistics.
-*   **Security Auditing**: Built-in Role-Based Access Control (Admin/User), logging critical operations.
-*   **Prometheus Integration**: Exposes `/metrics` endpoint for Prometheus/Grafana integration.
-*   **Alert Configuration**: Supports CPU, memory, disk usage threshold alerts with configurable webhooks.
-*   **Power Management**: View and adjust system power performance modes (requires hardware support).
-*   **GPU Monitoring**: Supports NVIDIA, AMD, Intel GPU temperature, usage, and memory monitoring.
+### 📊 Real-Time Monitoring
+- **CPU**: Usage, per-core load, frequency, temperature history
+- **Memory**: Physical memory, Swap, cache, buffer analysis
+- **Disk**: Partition info, usage, I/O stats, inode status
+- **GPU**: NVIDIA GPU support (via nvml) - VRAM, temp, power, processes
+- **Network**: Interface traffic, connection states, listening ports, socket stats
+- **Processes**: Top processes by CPU/memory, I/O statistics
 
-## ⚡ Performance & Optimization
+### 🔧 System Management
+- **Docker**: Start/stop/restart/remove containers, image management
+- **Systemd Services**: List, start/stop/restart/enable/disable services
+- **Cron Jobs**: Create, list, delete cron jobs, view logs
+- **Process Management**: Kill processes (admin only)
 
-This project has undergone deep performance tuning to ensure minimal resource usage while providing rich features:
+### 🔐 Security Features
+- **JWT Authentication**: Secure token-based authentication
+- **Role-Based Access**: Admin and regular user separation
+- **Rate Limiting**: Brute-force protection for login
+- **Security Headers**: CSP, X-Frame-Options, HSTS, etc.
+- **Token Revocation**: Logout invalidates tokens
 
-*   **Ultra-low Resource Usage**: Deeply optimized via pprof profiling to significantly reduce CPU and memory footprint.
-*   **Zero External Dependencies**: All static assets (Font Awesome, Chart.js, JetBrains Mono) are **fully localized**. Works perfectly in intranet/offline environments without CDN issues.
-*   **Efficient Collection**:
-    *   **Native Linux Parsing**: Network details are parsed directly from `/proc/net/{tcp,udp}`, replacing generic library calls for better performance.
-    *   **Smart Caching**: Implemented caching for static process info (cmdline, start time) to avoid repetitive `/proc` filesystem reads.
-    *   **Object Pooling**: Optimized network and process collection logic to reuse objects, reducing GC pressure and system calls.
-*   **On-Demand Loading**:
-    *   **Dynamic Subscription**: WebSocket supports page-based dynamic subscription (e.g., only Top 10 processes on Dashboard, full list on Processes page), reducing data transfer.
-    *   **Lazy I/O Stats**: Process I/O statistics are fetched via REST API only when viewing details, avoiding I/O overhead in every collection cycle.
-*   **High-Performance Serialization**: Manually implemented `MarshalJSON` for hot paths (e.g., process lists) to bypass reflection overhead.
-*   **Static Asset Optimization**: Implemented file fingerprinting and aggressive caching strategies (`Cache-Control: immutable`) for faster frontend loading.
+### 🌐 Modern Frontend
+- **Real-Time Updates**: WebSocket bidirectional communication
+- **PWA Support**: Installable as desktop/mobile app
+- **Responsive Design**: Works on all screen sizes
+- **Dark Theme**: Easy on the eyes
+- **Chart Visualization**: Real-time charts powered by Chart.js
 
-## 🚀 Quick Start (Docker Compose)
+### ⚡ High-Performance Design
+- **Parallel Collection**: 11 collectors running concurrently
+- **Smart Caching**: TTL-based cache to reduce system load
+- **Dynamic Intervals**: Auto-adjusts based on client demand
+- **Graceful Shutdown**: Signal handling and smooth exit
 
-This is the recommended deployment method, pre-configured for full functionality.
+---
 
-1.  Ensure Docker and Docker Compose are installed.
-2.  Run the following command in the project root:
+## 🚀 Quick Start
+
+### Docker Deployment (Recommended)
 
 ```bash
+# Clone the repository
+git clone https://github.com/AnalyseDeCircuit/web-monitor.git
+cd web-monitor
+
+# Set environment variables (optional)
+export JWT_SECRET="your-secure-secret-key"
+
+# Start the service
 docker compose up -d
 ```
 
-3.  Open your browser: `http://<Server-IP>:38080`
-4.  **Default User**: `admin`
-5.  **Default Password**: `admin123` **(Change immediately after login)**
+Access `http://localhost:38080` with default credentials:
+- Username: `admin`
+- Password: `admin123`
 
-### ⚠️ Critical Configuration
+> ⚠️ **Change the default password immediately after first login!**
 
-To enable full monitoring and management capabilities, the container requires elevated privileges and specific mounts:
-
-*   `cap_add`: Uses a minimal capability set (instead of `privileged: true`) for reading host process/log data and running required system operations (see `docker-compose.yml`).
-    *   `SYS_PTRACE`: Read process info from `/proc`.
-    *   `DAC_READ_SEARCH`: Read some restricted files (e.g., auth/audit logs).
-    *   `SYS_CHROOT`: Execute `chroot` (used for Cron management, etc.).
-*   `security_opt: apparmor=unconfined`: Enabled by default in the current Compose (mainly to keep systemd D-Bus control working on some distros/policies).
-*   `network_mode: host`: Recommended for accurate host network monitoring.
-*   `pid: host`: Required to view host processes.
-*   `volumes`:
-    *   `/:/hostfs`: **Core Configuration**. Used to access the host filesystem (process/log/hardware info, Cron management, etc.).
-    *   `/run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro`: Required for Systemd management (via D-Bus).
-    *   `/proc`, `/sys`: For hardware statistics collection and GPU monitoring.
-    *   GPU devices (e.g., `/dev/nvidia*`): If GPU monitoring is needed, mount the corresponding devices.
-
-#### Docker Management (via Local Proxy by Default)
-
-To reduce risk, this repo’s default setup **does not mount** `docker.sock` into the `web-monitor-go` container. Instead, it talks to Docker through `docker-socket-proxy` (listening on `127.0.0.1:2375`) which forwards a limited allowlist of Docker Engine API endpoints:
-
-*   `web-monitor-go` uses `DOCKER_HOST=tcp://127.0.0.1:2375` (proxy only).
-*   Only `docker-socket-proxy` mounts the host `${DOCKER_SOCK:-/var/run/docker.sock}`.
-    *   Rootless Docker: set `DOCKER_SOCK` to your actual socket path (e.g. `$XDG_RUNTIME_DIR/docker.sock`).
-
-## 🛠️ Manual Build & Run
-
-If you prefer not to use Docker, you can compile and run the binary directly.
-
-### Build
+### Bare-Metal Deployment
 
 ```bash
-# Enable static compilation for compatibility
-export CGO_ENABLED=0
-go build -ldflags="-s -w" -trimpath -o web-monitor-go ./cmd/server/main.go
+# Build
+go build -mod=vendor -o server ./cmd/server
 
-# Optional: Compress binary with upx
-upx --lzma --best web-monitor-go
+# Set environment variables
+export PORT=8000
+export DATA_DIR=/var/lib/web-monitor
+
+# Run
+./server
 ```
 
-### Run
+---
 
-```bash
-# Defaults to port 8000
-./web-monitor-go
+## 📁 Project Structure
 
-# Specify a custom port
-PORT=8080 ./web-monitor-go
+```
+web-monitor/
+├── cmd/
+│   ├── server/          # Main entry point
+│   └── dockerproxy/     # Docker socket proxy
+├── api/handlers/        # HTTP routes and handlers
+├── internal/
+│   ├── auth/            # Authentication & authorization
+│   ├── cache/           # Metrics cache
+│   ├── collectors/      # Data collectors (11 total)
+│   ├── config/          # Configuration management
+│   ├── cron/            # Cron job management
+│   ├── docker/          # Docker API client
+│   ├── middleware/      # HTTP middleware
+│   ├── monitoring/      # Monitoring service & alerts
+│   ├── systemd/         # Systemd service management
+│   └── websocket/       # WebSocket hub
+├── pkg/types/           # Shared type definitions
+├── static/              # Frontend static assets
+├── templates/           # HTML templates
+└── vendor/              # Dependencies (offline build)
 ```
 
-Note: When running directly on the host, the app executes commands directly and does not require the `/hostfs` mechanism.
+---
 
-## 🔒 Security Features
+## ⚙️ Configuration
 
-*   **HttpOnly Cookie Auth**: Removed frontend localStorage token storage. Uses HttpOnly Cookies for authentication to prevent token theft via XSS.
-*   **Cloudflare/Proxy Support**: Supports `CF-Connecting-IP` and other proxy headers (requires firewall configuration to restrict source IP).
-*   **Docker Socket Isolation**: Accesses Docker API via a read-only/allowlist proxy to prevent container escape risks.
-*   **Least Privilege**: Docker container uses fine-grained Linux Capabilities instead of `privileged` mode.
-*   **Security Headers**: Built-in CSP (Content Security Policy), HSTS, and other security headers.
-*   **CSRF Protection**: Cookie-based SameSite policy and Origin validation.
+### Environment Variables
 
-## 📝 License
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8000` | HTTP server port |
+| `DATA_DIR` | `/data` | Data storage directory |
+| `JWT_SECRET` | Random | JWT signing key |
+| `WS_ALLOWED_ORIGINS` | `*` | WebSocket allowed origins |
+| `HOST_FS` | `/hostfs` | Host filesystem mount point |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker API endpoint |
 
+### Container Mode vs Bare-Metal Mode
 
-CC BY-NC 4.0
+**Container Mode** (auto-detected when `HOST_FS` is set):
+- Access host system via `/hostfs` mount
+- Requires specific Linux capabilities
+
+**Bare-Metal Mode** (`HOST_FS` is empty):
+- Direct access to local `/proc`, `/sys`, etc.
+- No additional permission configuration needed
+
+### Docker Compose Reference
+
+```yaml
+services:
+  web-monitor-go:
+    image: web-monitor-go:latest
+    cap_add:
+      - SYS_PTRACE        # Read process info
+      - DAC_READ_SEARCH   # Read log files
+      - SYS_CHROOT        # Cron management
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/hostfs:ro
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+```
+
+---
+
+## 📡 API Overview
+
+### Authentication
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/login` | POST | User login |
+| `/api/logout` | POST | User logout |
+| `/api/password` | POST | Change password |
+
+### Monitoring Data
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/ws/stats` | WebSocket | Real-time monitoring stream |
+| `/api/system/info` | GET | System info snapshot |
+| `/api/info` | GET | Static system info |
+
+### Management (Authenticated)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/docker/containers` | GET | List Docker containers |
+| `/api/docker/action` | POST | Container operations (admin) |
+| `/api/systemd/services` | GET | List Systemd services |
+| `/api/systemd/action` | POST | Service operations (admin) |
+| `/api/cron/jobs` | GET | List cron jobs |
+| `/api/users` | GET/POST | User management (admin) |
+
+For detailed API documentation, see [API_DOCUMENTATION.md](./API_DOCUMENTATION.md).
+
+---
+
+## 🛡️ Security Recommendations
+
+1. **Change Default Password**: Immediately change the admin password after first login
+2. **Set JWT_SECRET**: Always set a strong random key in production
+3. **Restrict Network Access**: Use a reverse proxy (Nginx) with HTTPS
+4. **Docker Socket Proxy**: Use `docker-socket-proxy` to limit Docker API exposure
+5. **Keep Updated**: Follow project updates for security patches
+
+---
+
+## 🔌 GPU Support
+
+### NVIDIA GPU
+
+Automatically detected and collected via nvml:
+- GPU utilization
+- VRAM usage
+- Temperature/Power
+- GPU processes
+
+Enable NVIDIA Container Toolkit in Docker:
+
+```yaml
+environment:
+  - NVIDIA_VISIBLE_DEVICES=all
+  - NVIDIA_DRIVER_CAPABILITIES=all
+```
+
+---
+
+## 📊 Architecture
+
+For detailed architecture diagrams, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+```
+┌─────────────┐     ┌──────────────────────────────────────┐
+│   Browser   │────▶│            Go Server                 │
+│  (WebSocket)│◀────│  ┌─────────┐  ┌──────────────────┐  │
+└─────────────┘     │  │ Router  │──│ WebSocket Hub    │  │
+                    │  └────┬────┘  └────────┬─────────┘  │
+                    │       │                │            │
+                    │  ┌────▼────┐  ┌────────▼─────────┐  │
+                    │  │ Cache   │◀─│ Stats Aggregator │  │
+                    │  └─────────┘  └────────┬─────────┘  │
+                    │                        │            │
+                    │         ┌──────────────┼──────────┐ │
+                    │         ▼              ▼          ▼ │
+                    │  ┌──────────┐ ┌──────────┐ ┌──────┐ │
+                    │  │Collectors│ │  Docker  │ │Systemd││
+                    │  │ (x11)    │ │  Client  │ │ D-Bus ││
+                    │  └──────────┘ └──────────┘ └──────┘ │
+                    └──────────────────────────────────────┘
+```
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to submit Issues and Pull Requests.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under [CC BY-NC 4.0](./LICENSE) (Attribution-NonCommercial).
+
+---
+
+## 🙏 Acknowledgments
+
+- [gopsutil](https://github.com/shirou/gopsutil) - Cross-platform system info
+- [go-nvml](https://github.com/NVIDIA/go-nvml) - NVIDIA GPU monitoring
+- [gorilla/websocket](https://github.com/gorilla/websocket) - WebSocket implementation
+- [Chart.js](https://www.chartjs.org/) - Frontend charting library

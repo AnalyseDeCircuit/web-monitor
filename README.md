@@ -1,494 +1,355 @@
-# Web Monitor - Lightweight Linux Server Management Panel
+# Web Monitor
 
-Web Monitor is a **high-performance, lightweight Linux server monitoring and management panel** built with Go and vanilla JavaScript. Designed for resource-constrained environments and secure deployments.
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version">
+  <img src="https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg" alt="License">
+  <img src="https://img.shields.io/badge/Platform-Linux-FCC624?logo=linux&logoColor=black" alt="Platform">
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker">
+</p>
 
-[English Version](#web-monitor) | [中文版本](#web-monitor-中文版)
+<p align="center">
+  <strong>🚀 高性能实时系统监控面板</strong>
+</p>
 
----
+<p align="center">
+  基于 Go 构建的轻量级系统监控工具，支持 Docker 容器部署和裸机运行。<br/>
+  通过 WebSocket 实时推送，提供 CPU、内存、GPU、网络、Docker、Systemd 等全方位监控。
+</p>
 
-## 🌟 Key Features
-
-### Real-Time Monitoring
-- **System Metrics**: CPU (per-core), memory, disk I/O, network traffic, temperature sensors
-- **GPU Monitoring**: NVIDIA, AMD, and Intel GPU support (temperature, utilization, memory)
-- **Process Management**: Top processes by CPU/memory/IO with on-demand I/O statistics
-- **SSH Monitoring**: Active sessions, authentication logs, brute-force detection
-
-### Container & Service Management
-- **Docker**: Container/image management with safe Docker socket proxy
-- **Systemd**: Full service control (start, stop, restart, enable, disable)
-- **Cron Jobs**: View and manage scheduled tasks
-
-### Security & Access Control
-- **Role-Based Access**: Admin and User roles with granular permissions
-- **Audit Logging**: All operations logged with IP and timestamp
-- **JWT Authentication**: HttpOnly cookies, secure token management
-- **SSH Security**: Monitor failed attempts, detect suspicious activity
-
-### Observability
-- **Prometheus Integration**: Built-in `/metrics` endpoint
-- **Alerting**: Configurable thresholds for CPU, memory, disk
-- **WebSocket**: Real-time data push with dynamic subscription
+<p align="center">
+  <a href="./README_EN.md">English</a> | 简体中文
+</p>
 
 ---
 
-## 🏗️ Architecture Highlights
+## ✨ 特性
 
-### Backend (Go 1.23)
-- **No Web Framework**: Pure `net/http` for minimal overhead
-- **Vendor Mode**: All dependencies bundled for offline deployment
-- **Parallel Collection**: 9 collectors run concurrently with 8s timeout
-- **Lazy Loading**: I/O stats fetched only when needed
+### 📊 实时监控
+- **CPU**：使用率、每核心负载、频率、温度历史趋势
+- **内存**：物理内存、Swap、缓存、Buffer 详细分析
+- **磁盘**：分区信息、使用率、IO 读写、Inode 状态
+- **GPU**：NVIDIA GPU 支持（via nvml）- 显存、温度、功耗、进程
+- **网络**：接口流量、连接状态、监听端口、Socket 统计
+- **进程**：Top 进程列表、CPU/内存占用、IO 统计
 
-### Frontend (Vanilla JS)
-- **Zero Dependencies**: Chart.js, Font Awesome vendored locally
-- **PWA Support**: Offline-capable with service worker
-- **Efficient Updates**: WebSocket with selective data subscription
+### 🔧 系统管理
+- **Docker 管理**：容器启停/重启/删除、镜像管理
+- **Systemd 服务**：服务列表、启停/重启/启用/禁用
+- **Cron 任务**：定时任务增删改查、日志查看
+- **进程管理**：进程终止（仅管理员）
 
-### Deployment Options
-- **Docker-First**: Optimized multi-stage build
-- **HostFS Support**: Containerized monitoring of host system
-- **Socket Proxy**: Secure Docker access without mounting docker.sock
+### 🔐 安全特性
+- **JWT 认证**：安全的 Token 认证机制
+- **角色权限**：管理员/普通用户分离
+- **速率限制**：登录防暴力破解
+- **安全头**：CSP、X-Frame-Options、HSTS 等
+- **Token 撤销**：支持登出后 Token 失效
+
+### 🌐 现代化前端
+- **实时更新**：WebSocket 双向通信
+- **PWA 支持**：可安装为桌面/移动应用
+- **响应式设计**：适配各种屏幕尺寸
+- **深色主题**：护眼暗色界面
+- **图表可视化**：Chart.js 驱动的实时图表
+
+### ⚡ 高性能设计
+- **并行采集**：11 个采集器并发运行
+- **智能缓存**：TTL 缓存减少系统负载
+- **动态采集频率**：根据客户端需求自动调整
+- **优雅关闭**：支持信号处理和平滑退出
+、
+```mermaid
+graph LR
+    Browser[Web Browser]
+    
+    subgraph Server["Go Server"]
+        Entry[Entry Point<br/>cmd/server/main.go]
+        Config[Config<br/>Manager]
+        
+        subgraph Middleware["Middleware Layer"]
+            SecHeaders[Security<br/>Headers]
+            AuthMW[Auth<br/>Middleware]
+            RateLimit[Rate<br/>Limiter]
+        end
+        
+        Router[HTTP Router]
+        WSHandler[WebSocket Handler]
+        
+        subgraph Services["Core Services"]
+            Auth[Auth Service]
+            Monitor[Monitoring Service]
+            WSHub[WebSocket Hub]
+            Alerts[Alert Manager]
+            Logs[Operation Logs]
+        end
+        
+        subgraph Cache["Cache Layer"]
+            MetricsCache[Metrics Cache<br/>TTL-based]
+        end
+        
+        subgraph Collection["Data Collection"]
+            Aggregator[Stats Aggregator]
+            Collectors[11 Parallel<br/>Collectors]
+        end
+        
+        subgraph Management["Management Modules"]
+            DockerMgmt[Docker]
+            SystemdMgmt[Systemd]
+            CronMgmt[Cron]
+        end
+    end
+    
+    subgraph Sources["Data Sources"]
+        Host["Host System<br/>CPU/Memory/Disk/GPU<br/>Network/Sensors"]
+        Docker["Docker Daemon"]
+        SystemD[Systemd]
+        ProcFS["/proc and /sys"]
+    end
+    
+    Browser -->|HTTP/WS| SecHeaders
+    SecHeaders --> AuthMW
+    AuthMW --> RateLimit
+    RateLimit --> Router
+    RateLimit --> WSHandler
+    
+    Entry --> Config
+    Entry --> Auth
+    Entry --> Alerts
+    Entry --> Logs
+    
+    Router --> Auth
+    Router --> Monitor
+    Router --> Management
+    WSHandler --> WSHub
+    
+    Monitor <--> MetricsCache
+    Monitor --> Aggregator
+    WSHub --> Aggregator
+    
+    Aggregator --> Collectors
+    
+    Collectors --> Host
+    Collectors --> ProcFS
+    Management --> Docker
+    Management --> SystemD
+```
 
 ---
 
-## ⚡ Performance Characteristics
+## 🚀 快速开始
 
-### Resource Usage (Typical)
-- **Memory**: 20-50 MB RSS (container)
-- **CPU**: <1% on idle, spikes during collection
-- **Collection Interval**: 2-60s (configurable per client)
-
-### Optimizations
-- **Linux Native**: Direct `/proc` parsing instead of library calls
-- **Caching**: Process static info cached across collections
-- **Object Pool**: Minimized allocations in hot paths
-- **Immutable Assets**: Fingerprinted with 1-year cache headers
-
----
-
-## 🚀 Quick Start (Docker Compose)
-
-**Recommended for production deployments**
+### Docker 部署（推荐）
 
 ```bash
-# 1. Clone repository
-git clone <repository-url>
+# 克隆仓库
+git clone https://github.com/AnalyseDeCircuit/web-monitor.git
 cd web-monitor
 
-# 2. Configure environment
-cp .env.example .env
-# Edit .env and set JWT_SECRET (min 32 bytes)
+# 设置环境变量（可选）
+export JWT_SECRET="your-secure-secret-key"
 
-# 3. Deploy
+# 启动服务
 docker compose up -d
-
-# 4. Access
-# http://<server-ip>:38080
-# Default: admin / admin123 (change immediately!)
 ```
 
-### Docker Security Configuration
+访问 `http://localhost:38080`，默认账户：
+- 用户名：`admin`
+- 密码：`admin123`
 
-The container requires specific privileges for system monitoring:
+> ⚠️ **首次登录后请立即修改密码！**
 
-```yaml
-cap_add:
-  - SYS_PTRACE      # Read /proc for process info
-  - DAC_READ_SEARCH # Read logs and restricted files
-  - SYS_CHROOT      # Cron management
-
-security_opt:
-  - apparmor=unconfined
-
-network_mode: host  # Accurate network monitoring
-pid: host          # Access host process tree
-
-volumes:
-  - /:/hostfs       # Core: host filesystem access
-  - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro  # Systemd
-  - /proc:/proc     # Hardware/process info
-  - /sys:/sys       # GPU/temperature data
-```
-
-### Docker Socket Security
-
-**Default (Recommended)**: Uses proxy container
-- `web-monitor-go` accesses Docker via `tcp://127.0.0.1:2375`
-- Only `docker-socket-proxy` mounts docker.sock
-- Limited API surface exposed
-
-**Alternative**: Direct socket mount (not recommended)
-```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:ro
-```
-
----
-
-## 🔧 Manual Build
+### 裸机部署
 
 ```bash
-# 1. Build static binary
-cd cmd/server
-CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o web-monitor main.go
+# 构建
+go build -mod=vendor -o server ./cmd/server
 
-# 2. Run
-./web-monitor
+# 设置环境变量
+export PORT=8000
+export DATA_DIR=/var/lib/web-monitor
 
-# Optional: compress with upx
-upx --lzma --best web-monitor
-```
-
-**Binary Size**: ~15 MB (uncompressed), ~5 MB (with upx)
-
----
-
-## 🔒 Security Features
-
-### Authentication & Authorization
-- **HttpOnly Cookies**: JWT token not accessible to JavaScript
-- **BCrypt Passwords**: Password hashing with automatic salt
-- **Rate Limiting**: Login attempts throttled per IP/username
-- **Account Lockout**: Auto-lock after 5 failed attempts (15 min)
-- **JWT Management**: Token revocation on logout
-
-### Production Security Checklist
-- [ ] Set strong `JWT_SECRET` (≥64 bytes recommended)
-- [ ] Change default admin password
-- [ ] Configure firewall to limit access
-- [ ] Enable HTTPS (reverse proxy)
-- [ ] Restrict Docker proxy to localhost
-- [ ] Review capability requirements
-
-### Network Security
-- **Origin Validation**: WebSocket origins configurable via `WS_ALLOWED_ORIGINS`
-- **Proxy Support**: Correctly identifies client IP behind Cloudflare/proxies
-- **Security Headers**: CSP, HSTS, X-Frame-Options configured
-
----
-
-## 📊 Metrics & Monitoring
-
-### Prometheus Integration
-```yaml
-# Add to prometheus.yml
-scrape_configs:
-  - job_name: 'web-monitor'
-    static_configs:
-      - targets: ['your-server:38080']
-```
-
-### Available Metrics
-- Go runtime: Memory, GC, goroutines
-- System: CPU, memory, disk, network (via API)
-- Custom: Request counts, error rates
-
----
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `JWT_SECRET` | **Yes** | - | Min 32 bytes, 64+ recommended |
-| `PORT` | No | 8000 | HTTP server port |
-| `DATA_DIR` | No | ./data | User database location |
-| `WS_ALLOWED_ORIGINS` | No | - | Comma-separated origins |
-| `DOCKER_HOST` | No | - | Docker API endpoint |
-
-### Development Mode
-```bash
-ENV=development  # Allows auto-generated JWT keys (not for production!)
+# 运行
+./server
 ```
 
 ---
 
-## 📈 Benchmarks
+## 📁 项目结构
 
-### Collection Performance
-- **Full collection**: ~50-200ms (9 parallel collectors)
-- **Process list**: <100ms for 1000+ processes
-- **Network details**: ~10-30ms (direct /proc parsing)
-
-### WebSocket Throughput
-- Concurrent clients: 100+ tested
-- Message rate: Up to 10 Hz per client
-- Typical bandwidth: 10-50 KB/s per client
-
----
-
-## 🐛 Troubleshooting
-
-### High CPU Usage
-1. Check collection interval (WebSocket clients)
-2. Review process count (affects collection time)
-3. Monitor Docker API response time
-
-### Memory Growing
-1. Check for WebSocket client leaks
-2. Monitor process cache size
-3. Review log for cleanup messages
-
-### Docker Not Working
-1. Verify docker-socket-proxy is running
-2. Check DOCKER_HOST environment variable
-3. Test with `docker exec web-monitor-go curl http://docker-proxy:2375/version`
-
----
-
-## 📝 License
-
-CC BY-NC 4.0 - Non-commercial use only
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Please ensure:
-1. Code follows Go best practices
-2. Security implications considered
-3. Performance impact measured
-4. Documentation updated
-
----
-
-# Web Monitor - 轻量级 Linux 服务器监控面板
-
-Web Monitor 是一个**高性能、轻量级**的 Linux 服务器监控与管理面板，采用 Go 语言开发后端，原生 JavaScript 前端，专为资源受限环境和安全部署而设计。
-
----
-
-## 🌟 核心功能
-
-### 实时监控
-- **系统指标**: CPU（单核）、内存、磁盘 I/O、网络流量、温度传感器
-- **GPU 监控**: 支持 NVIDIA、AMD、Intel GPU（温度、使用率、显存）
-- **进程管理**: Top 进程查看，支持按 CPU/内存/IO 排序
-- **SSH 监控**: 活跃会话、认证日志、暴力破解检测
-
-### 容器与服务管理
-- **Docker**: 容器/镜像管理，安全 Docker Socket 代理
-- **Systemd**: 完整的系统服务控制（启动、停止、重启、启用、禁用）
-- **Cron 任务**: 查看和管理计划任务
-
-### 安全与访问控制
-- **基于角色的访问**: Admin 和 User 角色，细粒度权限控制
-- **审计日志**: 所有操作记录 IP 和时间戳
-- **JWT 认证**: HttpOnly Cookie，安全的令牌管理
-
-### 可观测性
-- **Prometheus 集成**: 内置 `/metrics` 端点
-- **告警配置**: CPU、内存、磁盘使用率阈值告警
-- **WebSocket**: 实时数据推送，动态订阅
-
----
-
-## 🏗️ 架构亮点
-
-### 后端 (Go 1.23)
-- **无 Web 框架**: 纯 `net/http` 实现，最小化开销
-- **Vendor 模式**: 所有依赖打包，支持离线部署
-- **并行采集**: 9 个采集器并发运行，8 秒超时控制
-- **懒加载**: I/O 统计仅在需要时获取
-
-### 前端 (原生 JS)
-- **零依赖**: Chart.js、Font Awesome 本地化处理
-- **PWA 支持**: 支持离线访问
-- **高效更新**: WebSocket 选择性数据订阅
-
-### 部署选项
-- **Docker 优先**: 优化的多阶段构建
-- **HostFS 支持**: 容器内监控宿主机系统
-- **Socket 代理**: 无需挂载 docker.sock 的安全 Docker 访问
-
----
-
-## ⚡ 性能特性
-
-### 资源占用（典型值）
-- **内存**: 20-50 MB RSS（容器环境）
-- **CPU**: <1% 空闲时，采集期间峰值
-- **采集间隔**: 2-60 秒（每个客户端可配置）
-
-### 优化措施
-- **Linux 原生**: 直接解析 `/proc` 而非库调用
-- **缓存机制**: 进程静态信息跨采集周期缓存
-- **对象复用**: 减少 GC 压力和系统调用
-- **不可变资源**: 资源文件指纹化，1 年缓存
-
----
-
-## 🚀 快速部署（Docker Compose）
-
-**生产环境推荐方式**
-
-```bash
-# 1. 克隆仓库
-git clone <repository-url>
-cd web-monitor
-
-# 2. 配置环境
-cp .env.example .env
-# 编辑 .env，设置 JWT_SECRET（至少 32 字节）
-
-# 3. 部署
-docker compose up -d
-
-# 4. 访问
-# http://<服务器IP>:38080
-# 默认账号: admin / admin123（立即修改！）
+```
+web-monitor/
+├── cmd/
+│   ├── server/          # 主程序入口
+│   └── dockerproxy/     # Docker Socket 代理
+├── api/handlers/        # HTTP 路由和处理器
+├── internal/
+│   ├── auth/            # 认证和授权
+│   ├── cache/           # 指标缓存
+│   ├── collectors/      # 数据采集器（11个）
+│   ├── config/          # 配置管理
+│   ├── cron/            # Cron 任务管理
+│   ├── docker/          # Docker API 客户端
+│   ├── middleware/      # 中间件
+│   ├── monitoring/      # 监控服务和告警
+│   ├── systemd/         # Systemd 服务管理
+│   └── websocket/       # WebSocket Hub
+├── pkg/types/           # 公共类型定义
+├── static/              # 前端静态资源
+├── templates/           # HTML 模板
+└── vendor/              # 依赖（离线构建）
 ```
 
-### Docker 安全配置
-
-容器需要特定权限进行系统监控：
-
-```yaml
-cap_add:
-  - SYS_PTRACE      # 读取 /proc 进程信息
-  - DAC_READ_SEARCH # 读取日志和受限文件
-  - SYS_CHROOT      # Cron 管理
-
-security_opt:
-  - apparmor=unconfined
-
-network_mode: host  # 准确监控网络
-pid: host          # 访问宿主机进程树
-
-volumes:
-  - /:/hostfs       # 核心：宿主机文件系统访问
-  - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro  # Systemd
-  - /proc:/proc     # 硬件/进程信息
-  - /sys:/sys       # GPU/温度数据
-```
-
-### Docker Socket 安全
-
-**默认（推荐）**: 使用代理容器
-- `web-monitor-go` 通过 `tcp://127.0.0.1:2375` 访问 Docker
-- 仅 `docker-socket-proxy` 挂载 docker.sock
-- 暴露有限的 API 接口
-
 ---
 
-## 🔧 手动编译
-
-```bash
-# 1. 编译静态二进制文件
-cd cmd/server
-CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o web-monitor main.go
-
-# 2. 运行
-./web-monitor
-
-# 可选：使用 upx 压缩
-upx --lzma --best web-monitor
-```
-
-**二进制大小**: ~15 MB（未压缩），~5 MB（upx 压缩后）
-
----
-
-## 🔒 安全特性
-
-### 认证与授权
-- **HttpOnly Cookie**: JWT 令牌不可被 JavaScript 访问
-- **BCrypt 密码**: 密码哈希加自动盐值
-- **速率限制**: 按 IP/用户名限制登录尝试
-- **账号锁定**: 5 次失败尝试后锁定 15 分钟
-- **JWT 管理**: 登出时令牌撤销
-
-### 生产环境安全清单
-- [ ] 设置强 `JWT_SECRET`（推荐 ≥64 字节）
-- [ ] 修改默认管理员密码
-- [ ] 配置防火墙限制访问
-- [ ] 启用 HTTPS（反向代理）
-- [ ] 限制 Docker 代理为本地访问
-- [ ] 审查能力集需求
-
----
-
-## 📊 指标与监控
-
-### Prometheus 集成
-```yaml
-# 添加到 prometheus.yml
-scrape_configs:
-  - job_name: 'web-monitor'
-    static_configs:
-      - targets: ['your-server:38080']
-```
-
-### 可用指标
-- Go 运行时: 内存、GC、goroutine
-- 系统: CPU、内存、磁盘、网络（通过 API）
-- 自定义: 请求计数、错误率
-
----
-
-## ⚙️ 配置
+## ⚙️ 配置说明
 
 ### 环境变量
 
-| 变量 | 必需 | 默认值 | 说明 |
-|----------|----------|---------|-------------|
-| `JWT_SECRET` | **是** | - | 至少 32 字节，推荐 64+ 字节 |
-| `PORT` | 否 | 8000 | HTTP 服务端口 |
-| `DATA_DIR` | 否 | ./data | 用户数据目录 |
-| `WS_ALLOWED_ORIGINS` | 否 | - | 逗号分隔的源列表 |
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `PORT` | `8000` | HTTP 服务端口 |
+| `DATA_DIR` | `/data` | 数据存储目录 |
+| `JWT_SECRET` | 随机生成 | JWT 签名密钥 |
+| `WS_ALLOWED_ORIGINS` | `*` | WebSocket 允许的源 |
+| `HOST_FS` | `/hostfs` | 宿主机文件系统挂载点 |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker API 地址 |
 
-### 开发模式
-```bash
-ENV=development  # 允许自动生成 JWT 密钥（仅限开发！）
+### 容器模式 vs 裸机模式
+
+**容器模式**（自动检测 `HOST_FS`）：
+- 通过 `/hostfs` 挂载访问宿主机系统
+- 需要特定的 Linux Capabilities
+
+**裸机模式**（`HOST_FS` 为空）：
+- 直接访问本机 `/proc`、`/sys` 等
+- 无需额外权限配置
+
+### Docker Compose 配置参考
+
+```yaml
+services:
+  web-monitor-go:
+    image: web-monitor-go:latest
+    cap_add:
+      - SYS_PTRACE        # 读取进程信息
+      - DAC_READ_SEARCH   # 读取日志文件
+      - SYS_CHROOT        # Cron 管理
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/hostfs:ro
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
 ```
 
 ---
 
-## 📈 基准测试
+## 📡 API 概览
 
-### 采集性能
-- **完整采集**: ~50-200ms（9 个并行采集器）
-- **进程列表**: <100ms（1000+ 进程）
-- **网络详情**: ~10-30ms（直接解析 /proc）
+### 认证
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/login` | POST | 用户登录 |
+| `/api/logout` | POST | 用户登出 |
+| `/api/password` | POST | 修改密码 |
 
-### WebSocket 吞吐量
-- 并发客户端: 100+ 已测试
-- 消息频率: 每个客户端最高 10 Hz
-- 典型带宽: 每个客户端 10-50 KB/s
+### 监控数据
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/ws/stats` | WebSocket | 实时监控数据流 |
+| `/api/system/info` | GET | 系统信息快照 |
+| `/api/info` | GET | 静态系统信息 |
 
----
+### 管理功能（需认证）
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/docker/containers` | GET | Docker 容器列表 |
+| `/api/docker/action` | POST | 容器操作（管理员） |
+| `/api/systemd/services` | GET | Systemd 服务列表 |
+| `/api/systemd/action` | POST | 服务操作（管理员） |
+| `/api/cron/jobs` | GET | Cron 任务列表 |
+| `/api/users` | GET/POST | 用户管理（管理员） |
 
-## 🐛 故障排查
-
-### CPU 使用率高
-1. 检查采集间隔（WebSocket 客户端）
-2. 查看进程数量（影响采集时间）
-3. 监控 Docker API 响应时间
-
-### 内存增长
-1. 检查 WebSocket 客户端泄漏
-2. 监控进程缓存大小
-3. 查看清理日志
-
-### Docker 无法工作
-1. 确认 docker-socket-proxy 运行正常
-2. 检查 DOCKER_HOST 环境变量
-3. 测试: `docker exec web-monitor-go curl http://docker-proxy:2375/version`
+详细 API 文档请参阅 [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)。
 
 ---
 
-## 📝 许可证
+## 🛡️ 安全建议
 
-CC BY-NC 4.0 - 仅限非商业用途
+1. **修改默认密码**：首次登录后立即修改 admin 密码
+2. **设置 JWT_SECRET**：生产环境务必设置强随机密钥
+3. **限制网络访问**：建议通过反向代理（Nginx）并启用 HTTPS
+4. **Docker Socket 代理**：使用 `docker-socket-proxy` 限制 Docker API 暴露面
+5. **定期更新**：关注项目更新以获取安全补丁
+
+---
+
+## 🔌 GPU 支持
+
+### NVIDIA GPU
+
+自动检测并通过 nvml 库采集：
+- GPU 使用率
+- 显存使用
+- 温度/功耗
+- GPU 进程
+
+需要在 Docker 中启用 NVIDIA Container Toolkit：
+
+```yaml
+environment:
+  - NVIDIA_VISIBLE_DEVICES=all
+  - NVIDIA_DRIVER_CAPABILITIES=all
+```
+
+---
+
+## 📊 架构设计
+
+详细架构图请参阅 [ARCHITECTURE.md](./ARCHITECTURE.md)。
+
+```
+┌─────────────┐     ┌──────────────────────────────────────┐
+│   Browser   │────▶│            Go Server                 │
+│  (WebSocket)│◀────│  ┌─────────┐  ┌──────────────────┐  │
+└─────────────┘     │  │ Router  │──│ WebSocket Hub    │  │
+                    │  └────┬────┘  └────────┬─────────┘  │
+                    │       │                │            │
+                    │  ┌────▼────┐  ┌────────▼─────────┐  │
+                    │  │ Cache   │◀─│ Stats Aggregator │  │
+                    │  └─────────┘  └────────┬─────────┘  │
+                    │                        │            │
+                    │         ┌──────────────┼──────────┐ │
+                    │         ▼              ▼          ▼ │
+                    │  ┌──────────┐ ┌──────────┐ ┌──────┐ │
+                    │  │Collectors│ │  Docker  │ │Systemd││
+                    │  │ (x11)    │ │  Client  │ │ D-Bus ││
+                    │  └──────────┘ └──────────┘ └──────┘ │
+                    └──────────────────────────────────────┘
+```
 
 ---
 
 ## 🤝 贡献
 
-欢迎贡献！请确保：
-1. 代码遵循 Go 最佳实践
-2. 考虑安全影响
-3. 评估性能影响
-4. 更新文档
+欢迎提交 Issue 和 Pull Request！
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 提交 Pull Request
+
+---
+
+## 📄 许可证
+
+本项目采用 [CC BY-NC 4.0 许可证](./LICENSE)（署名-非商业性使用）。
+
+---
+
+## 🙏 致谢
+
+- [gopsutil](https://github.com/shirou/gopsutil) - 跨平台系统信息采集
+- [go-nvml](https://github.com/NVIDIA/go-nvml) - NVIDIA GPU 监控
+- [gorilla/websocket](https://github.com/gorilla/websocket) - WebSocket 实现
+- [Chart.js](https://www.chartjs.org/) - 前端图表库
