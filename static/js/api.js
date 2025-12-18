@@ -1129,7 +1129,30 @@ document.addEventListener('DOMContentLoaded', () => {
 window.systemInfoPromise = fetch('/api/info')
     .then((response) => response.json());
 
-window.systemInfoPromise.then((data) => {
+window.systemInfoPromise.then(async (data) => {
+        // Store system info globally for ASCII logo detection
+        window.systemInfo = data;
+
+        // Render ASCII logo (async)
+        const asciiLogoEl = document.getElementById('ascii-logo');
+        if (asciiLogoEl) {
+            // Avoid a blank area if the logo script failed to load
+            if (!asciiLogoEl.innerHTML) asciiLogoEl.textContent = 'Loading...';
+
+            if (typeof getFormattedASCIILogo === 'function') {
+                try {
+                    asciiLogoEl.innerHTML = await getFormattedASCIILogo();
+                } catch (error) {
+                    console.warn('Failed to render ASCII logo:', error);
+                    asciiLogoEl.textContent = 'Linux';
+                }
+            } else {
+                // Script not loaded / cached stale page
+                asciiLogoEl.textContent = 'Linux';
+            }
+        }
+
+        // Render system information
         const infoList = document.getElementById('sys-info-list');
         infoList.innerHTML = `
             <div style="color: var(--accent-cpu); font-weight: bold; margin-bottom: 5px;">${data.header}</div>

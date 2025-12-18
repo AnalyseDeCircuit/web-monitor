@@ -41,6 +41,8 @@ function connectWebSocket(options = {}) {
     const statusDot = document.getElementById('status-dot');
 
     let opened = false;
+    let lastRenderTime = 0;
+    const MIN_RENDER_INTERVAL = 100; // Max 10 FPS for rendering updates
 
     websocket.onopen = function () {
         console.log('WebSocket connected');
@@ -56,6 +58,12 @@ function connectWebSocket(options = {}) {
     };
 
     websocket.onmessage = function (event) {
+        const now = Date.now();
+        if (now - lastRenderTime < MIN_RENDER_INTERVAL) {
+            return; // Skip frame if too fast
+        }
+        lastRenderTime = now;
+
         try {
             const data = JSON.parse(event.data);
             renderStats(data);

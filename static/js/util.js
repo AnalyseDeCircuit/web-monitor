@@ -46,3 +46,30 @@ function applyTheme(theme) {
 
 // 页面加载时初始化主题
 document.addEventListener('DOMContentLoaded', initTheme);
+
+/**
+ * Efficiently update a list of DOM elements by reusing existing ones.
+ * @param {string} containerId - ID of the container element
+ * @param {Array} items - Data items to render
+ * @param {Function} createFn - Function to create a new element: (item, index) => HTMLElement
+ * @param {Function} updateFn - Function to update an existing element: (el, item, index) => void
+ */
+function updateList(containerId, items, createFn, updateFn) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Remove excess
+    while (container.children.length > items.length) {
+        container.removeChild(container.lastChild);
+    }
+
+    items.forEach((item, index) => {
+        let el = container.children[index];
+        if (!el) {
+            el = createFn(item, index);
+            container.appendChild(el);
+        } else {
+            updateFn(el, item, index);
+        }
+    });
+}

@@ -16,250 +16,15 @@ type netDetailSnapshot struct {
 	SSHStats types.SSHStats
 }
 
-type dynamicResponseCollector struct {
-	started sync.Once
-	ready   chan struct{}
-
-	collect func() types.Response
-
-	ctx      context.Context
-	cancel   context.CancelFunc
-	updateCh chan time.Duration
-	last     atomic.Value // stores types.Response
-	wg       sync.WaitGroup // waits for goroutine to exit
-}
-
-func newDynamicResponseCollector(collect func() types.Response) *dynamicResponseCollector {
-	ctx, cancel := context.WithCancel(context.Background())
-	return &dynamicResponseCollector{
-		ready:    make(chan struct{}),
-		collect:  collect,
-		ctx:      ctx,
-		cancel:   cancel,
-		updateCh: make(chan time.Duration, 1),
-	}
-}
-
-func (c *dynamicResponseCollector) Start(initialInterval time.Duration) {
-	c.started.Do(func() {
-		if initialInterval <= 0 {
-			initialInterval = 5 * time.Second
-		}
-		c.wg.Add(1)
-		go func() {
-			defer c.wg.Done()
-			// Prime immediately.
-			c.last.Store(c.collect())
-			close(c.ready)
-
-			interval := initialInterval
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-c.ctx.Done():
-					log.Println("dynamicResponseCollector: shutting down")
-					return
-				case <-ticker.C:
-					c.last.Store(c.collect())
-				case d := <-c.updateCh:
-					if d <= 0 {
-						continue
-					}
-					if d == interval {
-						continue
-					}
-					ticker.Stop()
-					interval = d
-					ticker = time.NewTicker(interval)
-				}
-			}
-		}()
-	})
-}
-
-func (c *dynamicResponseCollector) Stop() {
-	if c.cancel != nil {
-		c.cancel()
-		c.cancel = nil
-	}
-	// Wait for goroutine to finish
-	c.wg.Wait()
-}
-
-func (c *dynamicResponseCollector) SetInterval(d time.Duration) {
-	if d <= 0 {
-		return
-	}
-	// Keep only the latest interval request.
-	select {
-	case <-c.updateCh:
-	default:
-	}
-	select {
-	case c.updateCh <- d:
-	default:
-	}
-}
-
-func (c *dynamicResponseCollector) WaitReady(timeout time.Duration) {
-	if timeout <= 0 {
-		<-c.ready
-		return
-	}
-	select {
-	case <-c.ready:
-	case <-time.After(timeout):
-	}
-}
-
-func (c *dynamicResponseCollector) Latest() (types.Response, bool) {
-	v := c.last.Load()
-	if v == nil {
-		return types.Response{}, false
-	}
-	stats, ok := v.(types.Response)
-	return stats, ok
-}
-
-type conditionalCollector[T any] struct {
-	interval time.Duration
-	collect  func() T
-
-	mu sync.Mutex
-	subs    int
-	running bool
-	ctx     context.Context
-	cancel  context.CancelFunc
-	ready   chan struct{}
-	last    atomic.Value // stores T
-	shutdown bool         // permanent shutdown flag
-	wg sync.WaitGroup // waits for goroutine to exit
-}
-
-func newConditionalCollector[T any](interval time.Duration, collect func() T) *conditionalCollector[T] {
-	if interval <= 0 {
-		interval = 15 * time.Second
-	}
-	return &conditionalCollector[T]{
-		interval: interval,
-		collect:  collect,
-	}
-}
-
-func (c *conditionalCollector[T]) Subscribe() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.shutdown {
-		return
-	}
-	c.subs++
-	if c.running {
-		return
-	}
-	c.running = true
-	c.ready = make(chan struct{})
-	c.ctx, c.cancel = context.WithCancel(context.Background())
-
-	go func() {
-		defer c.wg.Done()
-		// Prime immediately.
-		c.last.Store(c.collect())
-		close(c.ready)
-
-		ticker := time.NewTicker(c.interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-c.ctx.Done():
-				log.Println("conditionalCollector: shutting down")
-				return
-			case <-ticker.C:
-				c.last.Store(c.collect())
-			}
-		}
-	}()
-	c.wg.Add(1)
-}
-
-func (c *conditionalCollector[T]) Unsubscribe() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.subs > 0 {
-		c.subs--
-	}
-	if c.subs != 0 {
-		return
-	}
-	if !c.running {
-		return
-	}
-	c.running = false
-	if c.cancel != nil {
-		c.cancel()
-		c.cancel = nil
-	}
-}
-
-// Stop permanently stops the collector and prevents future subscriptions.
-func (c *conditionalCollector[T]) Stop() {
-	c.mu.Lock()
-	c.shutdown = true
-	c.subs = 0
-	var running bool
-	var cancel context.CancelFunc
-	if c.running {
-		running = true
-		c.running = false
-		cancel = c.cancel
-		c.cancel = nil
-	}
-	c.mu.Unlock()
-
-	if running && cancel != nil {
-		cancel()
-		// Wait for goroutine to finish
-		c.wg.Wait()
-	}
-}
-
-func (c *conditionalCollector[T]) WaitReady(timeout time.Duration) {
-	c.mu.Lock()
-	ready := c.ready
-	running := c.running
-	c.mu.Unlock()
-	if !running || ready == nil {
-		return
-	}
-	if timeout <= 0 {
-		<-ready
-		return
-	}
-	select {
-	case <-ready:
-	case <-time.After(timeout):
-	}
-}
-
-func (c *conditionalCollector[T]) Latest() (T, bool) {
-	v := c.last.Load()
-	if v == nil {
-		var zero T
-		return zero, false
-	}
-	vv, ok := v.(T)
-	return vv, ok
-}
-
+// statsHub manages the streaming aggregator and topic-based collectors
 type statsHub struct {
-	base *dynamicResponseCollector
+	// Streaming aggregator for base metrics (CPU, Memory, Disk, etc.)
+	aggregator *collectors.StatsAggregator
 
+	// Topic-based collectors for on-demand data
 	processes *conditionalCollector[[]types.ProcessInfo]
 	netDetail *conditionalCollector[netDetailSnapshot]
 
-	// 并行采集器
-	aggregator       *collectors.StatsAggregator
 	processCollector *collectors.ProcessCollector
 	netDetailColl    *collectors.NetworkDetailCollector
 	sshCollector     *collectors.SSHCollector
@@ -267,6 +32,7 @@ type statsHub struct {
 	mu             sync.Mutex
 	clientInterval map[uint64]time.Duration
 	shutdown       bool
+	ready          chan struct{}
 }
 
 func newStatsHub() *statsHub {
@@ -281,10 +47,10 @@ func newStatsHub() *statsHub {
 		netDetailColl:    netDetailColl,
 		sshCollector:     sshCollector,
 		clientInterval:   make(map[uint64]time.Duration),
+		ready:            make(chan struct{}),
 	}
 
-	// 使用新的并行采集器
-	h.base = newDynamicResponseCollector(aggregator.CollectBaseStats)
+	// Topic-based collectors (only run when subscribed)
 	h.processes = newConditionalCollector(15*time.Second, func() []types.ProcessInfo {
 		if data, ok := processCollector.Collect(context.Background()).([]types.ProcessInfo); ok {
 			return data
@@ -322,12 +88,19 @@ func newStatsHub() *statsHub {
 		return out
 	})
 
-	// Start base immediately with a sane default.
-	h.base.Start(5 * time.Second)
+	// Start the streaming aggregator (all collectors run independently)
+	aggregator.Start()
+
+	// Mark as ready after a short delay for initial data
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		close(h.ready)
+	}()
+
 	return h
 }
 
-// Shutdown gracefully stops all collectors and waits for them to finish
+// Shutdown gracefully stops all collectors
 func (h *statsHub) Shutdown() {
 	h.mu.Lock()
 	if h.shutdown {
@@ -338,9 +111,10 @@ func (h *statsHub) Shutdown() {
 	h.mu.Unlock()
 
 	log.Println("statsHub: shutting down all collectors...")
-	log.Println("statsHub: stopping base collector...")
-	h.base.Stop()
-	log.Println("statsHub: base collector stopped")
+
+	log.Println("statsHub: stopping aggregator...")
+	h.aggregator.Stop()
+	log.Println("statsHub: aggregator stopped")
 
 	log.Println("statsHub: stopping processes collector...")
 	h.processes.Stop()
@@ -359,7 +133,7 @@ func (h *statsHub) RegisterClient(id uint64, interval time.Duration) {
 	h.clientInterval[id] = interval
 	min := minIntervalLocked(h.clientInterval)
 	h.mu.Unlock()
-	h.base.SetInterval(min)
+	h.aggregator.SetInterval(min)
 }
 
 func (h *statsHub) UnregisterClient(id uint64) {
@@ -368,14 +142,13 @@ func (h *statsHub) UnregisterClient(id uint64) {
 	min := minIntervalLocked(h.clientInterval)
 	h.mu.Unlock()
 	if min > 0 {
-		h.base.SetInterval(min)
+		h.aggregator.SetInterval(min)
 	}
 }
 
 func (h *statsHub) Subscribe(topic string) {
 	switch topic {
 	case "processes", "top_processes":
-		// Both share the same collector - top_processes just returns fewer items
 		h.processes.Subscribe()
 	case "net_detail":
 		h.netDetail.Subscribe()
@@ -391,7 +164,7 @@ func (h *statsHub) Unsubscribe(topic string) {
 	}
 }
 
-// LatestTopProcesses returns top N processes from the shared collector.
+// LatestTopProcesses returns top N processes from the shared collector
 func (h *statsHub) LatestTopProcesses(n int) ([]types.ProcessInfo, bool) {
 	procs, ok := h.processes.Latest()
 	if !ok || len(procs) == 0 {
@@ -404,11 +177,19 @@ func (h *statsHub) LatestTopProcesses(n int) ([]types.ProcessInfo, bool) {
 }
 
 func (h *statsHub) WaitReady(timeout time.Duration) {
-	h.base.WaitReady(timeout)
+	if timeout <= 0 {
+		<-h.ready
+		return
+	}
+	select {
+	case <-h.ready:
+	case <-time.After(timeout):
+	}
 }
 
+// LatestBase returns the latest merged stats (non-blocking, instant)
 func (h *statsHub) LatestBase() (types.Response, bool) {
-	return h.base.Latest()
+	return h.aggregator.CollectBaseStats(), true
 }
 
 func (h *statsHub) LatestProcesses() ([]types.ProcessInfo, bool) {
@@ -418,6 +199,136 @@ func (h *statsHub) LatestProcesses() ([]types.ProcessInfo, bool) {
 func (h *statsHub) LatestNetDetail() (netDetailSnapshot, bool) {
 	return h.netDetail.Latest()
 }
+
+// ========== Conditional Collector (unchanged) ==========
+
+type conditionalCollector[T any] struct {
+	interval time.Duration
+	collect  func() T
+
+	mu       sync.Mutex
+	subs     int
+	running  bool
+	ctx      context.Context
+	cancel   context.CancelFunc
+	ready    chan struct{}
+	last     atomic.Value
+	shutdown bool
+	wg       sync.WaitGroup
+}
+
+func newConditionalCollector[T any](interval time.Duration, collect func() T) *conditionalCollector[T] {
+	if interval <= 0 {
+		interval = 15 * time.Second
+	}
+	return &conditionalCollector[T]{
+		interval: interval,
+		collect:  collect,
+	}
+}
+
+func (c *conditionalCollector[T]) Subscribe() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.shutdown {
+		return
+	}
+	c.subs++
+	if c.running {
+		return
+	}
+	c.running = true
+	c.ready = make(chan struct{})
+	c.ctx, c.cancel = context.WithCancel(context.Background())
+
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		c.last.Store(c.collect())
+		close(c.ready)
+
+		ticker := time.NewTicker(c.interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-c.ctx.Done():
+				log.Println("conditionalCollector: shutting down")
+				return
+			case <-ticker.C:
+				c.last.Store(c.collect())
+			}
+		}
+	}()
+}
+
+func (c *conditionalCollector[T]) Unsubscribe() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.subs > 0 {
+		c.subs--
+	}
+	if c.subs != 0 {
+		return
+	}
+	if !c.running {
+		return
+	}
+	c.running = false
+	if c.cancel != nil {
+		c.cancel()
+		c.cancel = nil
+	}
+}
+
+func (c *conditionalCollector[T]) Stop() {
+	c.mu.Lock()
+	c.shutdown = true
+	c.subs = 0
+	var running bool
+	var cancel context.CancelFunc
+	if c.running {
+		running = true
+		c.running = false
+		cancel = c.cancel
+		c.cancel = nil
+	}
+	c.mu.Unlock()
+
+	if running && cancel != nil {
+		cancel()
+		c.wg.Wait()
+	}
+}
+
+func (c *conditionalCollector[T]) WaitReady(timeout time.Duration) {
+	c.mu.Lock()
+	ready := c.ready
+	running := c.running
+	c.mu.Unlock()
+	if !running || ready == nil {
+		return
+	}
+	if timeout <= 0 {
+		<-ready
+		return
+	}
+	select {
+	case <-ready:
+	case <-time.After(timeout):
+	}
+}
+
+func (c *conditionalCollector[T]) Latest() (T, bool) {
+	v := c.last.Load()
+	if v == nil {
+		var zero T
+		return zero, false
+	}
+	vv, ok := v.(T)
+	return vv, ok
+}
+
+// ========== Helpers ==========
 
 func clampInterval(d time.Duration) time.Duration {
 	if d < 2*time.Second {

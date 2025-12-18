@@ -123,26 +123,6 @@ function getSensorItemKey(item) {
             }
         }
 
-function updateList(containerId, items, createFn, updateFn) {
-            const container = document.getElementById(containerId);
-            const children = Array.from(container.children);
-            
-            // Remove excess
-            while (container.children.length > items.length) {
-                container.removeChild(container.lastChild);
-            }
-
-            items.forEach((item, index) => {
-                let el = container.children[index];
-                if (!el) {
-                    el = createFn(item, index);
-                    container.appendChild(el);
-                } else {
-                    updateFn(el, item, index);
-                }
-            });
-        }
-
         function onNetworkInterfaceChange() {
             const select = document.getElementById('net-interface-select');
             if (!select) return;
@@ -834,6 +814,53 @@ function _renderStatsInternal(data) {
                             el.querySelector('.iface-recv').innerText = iface.bytes_recv;
                         }
                     );
+                }
+            }
+
+            // GPU Summary (General Page)
+            const gpuListContainer = document.getElementById('general-gpu-list');
+            if (gpuListContainer) {
+                if (data.gpu && data.gpu.length > 0) {
+                    updateList('general-gpu-list', data.gpu,
+                        (gpu) => {
+                            const div = document.createElement('div');
+                            div.style.padding = '10px';
+                            div.style.background = 'rgba(255,255,255,0.03)';
+                            div.style.borderRadius = '6px';
+                            div.style.borderLeft = '3px solid var(--accent-net)';
+                            div.innerHTML = `
+                                <div class="gpu-summary-name" style="font-size: 0.9rem; font-weight: bold; color: var(--accent-net); margin-bottom: 8px;"></div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
+                                    <div>
+                                        <div style="color: var(--text-dim);">Temp</div>
+                                        <div class="gpu-summary-temp" style="font-weight: bold;">-</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: var(--text-dim);">Load</div>
+                                        <div class="gpu-summary-load" style="font-weight: bold;">-</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: var(--text-dim);">Freq</div>
+                                        <div class="gpu-summary-freq" style="font-weight: bold;">-</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: var(--text-dim);">VRAM</div>
+                                        <div class="gpu-summary-vram" style="font-weight: bold;">-</div>
+                                    </div>
+                                </div>
+                            `;
+                            return div;
+                        },
+                        (el, gpu) => {
+                            el.querySelector('.gpu-summary-name').innerText = gpu.name || '-';
+                            el.querySelector('.gpu-summary-temp').innerText = gpu.temp_c ? `${gpu.temp_c.toFixed(1)}°C` : '-';
+                            el.querySelector('.gpu-summary-load').innerText = gpu.load_percent ? `${gpu.load_percent.toFixed(1)}%` : '-';
+                            el.querySelector('.gpu-summary-freq').innerText = gpu.freq_mhz ? `${gpu.freq_mhz.toFixed(0)} MHz` : '-';
+                            el.querySelector('.gpu-summary-vram').innerText = gpu.vram_used && gpu.vram_total ? `${gpu.vram_used} / ${gpu.vram_total}` : '-';
+                        }
+                    );
+                } else {
+                    gpuListContainer.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 20px;">No GPU detected</div>';
                 }
             }
 

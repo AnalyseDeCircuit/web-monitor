@@ -352,6 +352,7 @@
             height: 100%;
             border-radius: 4px;
             transition: width 0.5s ease;
+            will-change: width;
         }
 
         /* Specific Colors */
@@ -610,32 +611,47 @@
             box-shadow: 0 0 10px rgba(46, 213, 115, 0.5);
         }
 
-        /* Fastfetch Style */
+        /* Fastfetch Style - 更大更清晰的显示 */
         .fastfetch-container {
             display: flex;
-            align-items: center;
-            gap: 30px;
-            font-family: 'Courier New', Courier, monospace;
+            align-items: flex-start;
+            gap: 10px;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            padding: 12px;
         }
         
+
         .ascii-logo {
-            color: var(--accent-net);
-            font-weight: bold;
-            font-size: 0.8rem;
-            line-height: 1.2;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-weight: 500;
+            font-size: 15px;  /* 更大的字体 */
+            line-height: 1.0;  /* 严格的行高，避免重叠 */
             white-space: pre;
+            flex-shrink: 0;
+            min-width: 350px;
+            max-width: 500px;
+            opacity: 0.98;
+            letter-spacing: 0;
+            font-feature-settings: "liga" 0;
+            tab-size: 4;
+            /* 确保等宽字体渲染 */
+            font-variant-ligatures: none;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         .sys-info-list {
             display: flex;
             flex-direction: column;
             gap: 8px;
-            font-size: 0.9rem;
+            font-size: 14px;
+            line-height: 1.0;
+            flex-grow: 1;
         }
 
         .sys-key {
             color: var(--accent-mem);
-            font-weight: bold;
+            font-weight: 600;
             min-width: 100px;
             display: inline-block;
         }
@@ -780,11 +796,13 @@
             .fastfetch-container {
                 flex-direction: column;
                 align-items: flex-start;
-                gap: 10px;
+                gap: 20px;
             }
             
             .ascii-logo {
-                display: none;
+                font-size: 11px;  /* 平板上缩小一点 */
+                min-width: 280px;
+                max-width: 400px;
             }
 
             #proc-detail-modal > div {
@@ -955,7 +973,14 @@
                 gap: 10px;
             }
             .ascii-logo {
-                display: none; /* Hide ASCII on small screens to save space */
+                /* Keep logo visible on narrow viewports; just shrink it */
+                font-size: 10px;
+                min-width: 0;
+                max-width: 100%;
+                overflow-x: auto;
+            }
+            .sys-info-list {
+                font-size: 0.85rem;
             }
         }
         /* Switch */

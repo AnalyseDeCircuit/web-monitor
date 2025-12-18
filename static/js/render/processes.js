@@ -57,66 +57,85 @@ function filterAndRenderProcesses() {
 
 function renderProcessList(processes) {
     const container = document.getElementById('process-container');
-    container.innerHTML = '';
-
+    
     if (processes.length === 0) {
         container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">No processes found</div>';
         return;
     }
 
-    processes.forEach((proc) => {
-        const div = document.createElement('div');
-        div.className = 'process-item level-0';
-        div.style.cursor = 'pointer';
-
-        const cpuPercent = (proc.cpu_percent || 0).toFixed(1);
-        const memPercent = (proc.memory_percent || 0).toFixed(1);
-        const uptime = proc.uptime || '-';
-
-        const role = localStorage.getItem('role');
-        const isAdmin = role === 'admin';
-
-        div.innerHTML = `
-            <div class="process-info">
-                <div class="process-name">[${proc.pid}] ${proc.name}</div>
-                <div class="process-meta">${proc.username || '-'} • ${proc.num_threads || 0} threads • ${uptime}</div>
-            </div>
-            <div class="process-bars">
-                <div style="display: flex; gap: 15px; align-items: center;">
-                    <div style="min-width: 80px;">
-                        <div style="font-size: 0.75rem; color: var(--text-dim);">CPU</div>
-                        <div class="progress-bg" style="height: 4px;">
-                            <div class="progress-fill" style="width: ${cpuPercent}%; background: var(--accent-cpu);"></div>
-                        </div>
-                        <div style="font-size: 0.75rem; color: var(--accent-cpu);">${cpuPercent}%</div>
-                    </div>
-                    <div style="min-width: 80px;">
-                        <div style="font-size: 0.75rem; color: var(--text-dim);">Memory</div>
-                        <div class="progress-bg" style="height: 4px;">
-                            <div class="progress-fill" style="width: ${memPercent}%; background: var(--accent-mem);"></div>
-                        </div>
-                        <div style="font-size: 0.75rem; color: var(--accent-mem);">${memPercent}%</div>
-                    </div>
-                    ${isAdmin && proc.pid > 1 ? `
-                    <div style="margin-left: 10px; display: flex; align-items: center;">
-                        <button onclick="event.stopPropagation(); handleKillProcess(${proc.pid});" style="background: var(--accent-cpu); border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;" title="Kill process">
-                            <i class=\"fas fa-times\" style=\"margin-right: 6px;\"></i>Kill
-                        </button>
-                    </div>
-                    ` : ''}
+    // Use updateList for efficient DOM reuse
+    updateList('process-container', processes, 
+        (proc) => {
+            const div = document.createElement('div');
+            div.className = 'process-item level-0';
+            div.style.cursor = 'pointer';
+            div.innerHTML = `
+                <div class="process-info">
+                    <div class="process-name"></div>
+                    <div class="process-meta"></div>
                 </div>
-            </div>
-        `;
+                <div class="process-bars">
+                    <div style="display: flex; gap: 15px; align-items: center;">
+                        <div style="min-width: 80px;">
+                            <div style="font-size: 0.75rem; color: var(--text-dim);">CPU</div>
+                            <div class="progress-bg" style="height: 4px;">
+                                <div class="progress-fill cpu-fill" style="width: 0%; background: var(--accent-cpu);"></div>
+                            </div>
+                            <div class="cpu-val" style="font-size: 0.75rem; color: var(--accent-cpu);">0%</div>
+                        </div>
+                        <div style="min-width: 80px;">
+                            <div style="font-size: 0.75rem; color: var(--text-dim);">Memory</div>
+                            <div class="progress-bg" style="height: 4px;">
+                                <div class="progress-fill mem-fill" style="width: 0%; background: var(--accent-mem);"></div>
+                            </div>
+                            <div class="mem-val" style="font-size: 0.75rem; color: var(--accent-mem);">0%</div>
+                        </div>
+                        <div class="admin-actions"></div>
+                    </div>
+                </div>
+            `;
+            div.addEventListener('click', () => showProcDetail(proc.pid));
+            return div;
+        },
+        (el, proc) => {
+            const cpuPercent = (proc.cpu_percent || 0).toFixed(1);
+            const memPercent = (proc.memory_percent || 0).toFixed(1);
+            const uptime = proc.uptime || '-';
+            const role = localStorage.getItem('role');
+            const isAdmin = role === 'admin';
 
-        div.addEventListener('click', () => showProcDetail(proc.pid));
-        container.appendChild(div);
-    });
+            el.querySelector('.process-name').innerText = `[${proc.pid}] ${proc.name}`;
+            el.querySelector('.process-meta').innerText = `${proc.username || '-'} • ${proc.num_threads || 0} threads • ${uptime}`;
+            
+            const cpuFill = el.querySelector('.cpu-fill');
+            cpuFill.style.width = `${cpuPercent}%`;
+            el.querySelector('.cpu-val').innerText = `${cpuPercent}%`;
+
+            const memFill = el.querySelector('.mem-fill');
+            memFill.style.width = `${memPercent}%`;
+            el.querySelector('.mem-val').innerText = `${memPercent}%`;
+
+            const actions = el.querySelector('.admin-actions');
+            if (isAdmin && proc.pid > 1) {
+                if (!actions.innerHTML) {
+                    actions.innerHTML = `
+                        <div style="margin-left: 10px; display: flex; align-items: center;">
+                            <button onclick="event.stopPropagation(); handleKillProcess(${proc.pid});" style="background: var(--accent-cpu); border: none; color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;" title="Kill process">
+                                <i class="fas fa-times" style="margin-right: 6px;"></i>Kill
+                            </button>
+                        </div>
+                    `;
+                }
+            } else {
+                actions.innerHTML = '';
+            }
+        }
+    );
 }
 
 function renderProcessTree(processes) {
     const container = document.getElementById('process-container');
-    container.innerHTML = '';
-
+    
     if (processes.length === 0) {
         container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">No processes found</div>';
         return;
@@ -129,9 +148,14 @@ function renderProcessTree(processes) {
 
     const rootProcesses = processes.filter((p) => !pidMap[p.ppid]);
 
+    // Use DocumentFragment to minimize reflows
+    const fragment = document.createDocumentFragment();
     rootProcesses.forEach((root) => {
-        renderProcessTreeNode(root, processes, pidMap, 0, container);
+        renderProcessTreeNode(root, processes, pidMap, 0, fragment);
     });
+
+    container.innerHTML = '';
+    container.appendChild(fragment);
 }
 
 function renderProcessTreeNode(proc, allProcs, pidMap, level, container) {

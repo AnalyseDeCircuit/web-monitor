@@ -1,6 +1,6 @@
 function drawMemoryPieChart(memoryData) {
-    const svg = document.getElementById('mem-pie-chart');
-    if (!svg) return;
+    const canvas = document.getElementById('mem-pie-chart');
+    if (!canvas) return;
 
     function parseMemory(str) {
         const match = String(str || '').match(/(\d+\.?\d*)\s*([GMK]iB)/);
@@ -32,34 +32,47 @@ function drawMemoryPieChart(memoryData) {
         { label: 'Free', value: Math.max(0, freeBytes), color: '#888' },
     ].filter((s) => s.value > 0);
 
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+
+    if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+    }
+
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, width, height);
+
     let currentAngle = -Math.PI / 2;
     const radius = 70;
-    const centerX = 90;
-    const centerY = 90;
-
-    svg.innerHTML = '';
+    const centerX = width / 2;
+    const centerY = height / 2;
 
     segments.forEach((segment) => {
         const percentage = totalBytes > 0 ? segment.value / totalBytes : 0;
         const sliceAngle = percentage * 2 * Math.PI;
 
-        const x1 = centerX + radius * Math.cos(currentAngle);
-        const y1 = centerY + radius * Math.sin(currentAngle);
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + sliceAngle);
+        ctx.closePath();
+
+        ctx.fillStyle = segment.color;
+        ctx.fill();
+        
+        ctx.strokeStyle = '#121212';
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
         currentAngle += sliceAngle;
-
-        const x2 = centerX + radius * Math.cos(currentAngle);
-        const y2 = centerY + radius * Math.sin(currentAngle);
-
-        const largeArc = sliceAngle > Math.PI ? 1 : 0;
-
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', `M ${centerX} ${centerY} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`);
-        path.setAttribute('fill', segment.color);
-        path.setAttribute('stroke', '#121212');
-        path.setAttribute('stroke-width', '2');
-        svg.appendChild(path);
     });
+
+    // Reset scale for next call
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const legend = document.getElementById('mem-pie-legend');
     if (legend) {

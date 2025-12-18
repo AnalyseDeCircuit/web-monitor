@@ -53,10 +53,13 @@
 - **Chart Visualization**: Real-time charts powered by Chart.js
 
 ### ⚡ High-Performance Design
-- **Parallel Collection**: 11 collectors running concurrently
+- **Streaming Data Collection**: Each module runs independently with its own interval
 - **Smart Caching**: TTL-based cache to reduce system load
-- **Dynamic Intervals**: Auto-adjusts based on client demand
+- **Canvas Charts**: HiDPI-aware Canvas rendering for better performance
+- **DOM Reuse**: Smart list updates without recreating DOM elements
+- **Render Throttling**: 10 FPS max render rate for WebSocket data
 - **Graceful Shutdown**: Signal handling and smooth exit
+- **Modular Architecture**: Enable/disable features via environment variables
 
 ---
 
@@ -134,6 +137,24 @@ ENABLE_DOCKER=false ENABLE_GPU=false make up
 | `make restart` | Restart services |
 | `make logs` | View real-time logs |
 | `make rebuild` | Rebuild images and restart |
+| `make stats` | Show service resource usage |
+
+### Streaming Aggregator Architecture
+
+This project uses a streaming data collection architecture where each collector runs independently without blocking others:
+
+| Collector | Update Interval | Description |
+| :--- | :--- | :--- |
+| CPU, Memory, Network | User-defined (2-60s) | Fast metrics, responds to user selection |
+| Disk, Sensors, GPU | 2s | Medium-speed metrics |
+| Power | 3s | Battery/Power consumption |
+| SSH | 5s | Session monitoring |
+| System Info | 10s | Process list, etc. |
+
+**Benefits**:
+- Fast metrics (CPU/Memory) are not affected by slow metrics (SSH)
+- Each module uses atomic storage, instant merge during WebSocket push
+- No goroutine blocking, stable memory usage
 
 ### Bare-Metal Deployment
 

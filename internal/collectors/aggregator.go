@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
@@ -11,8 +12,21 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
 
-// StatsAggregator 并行采集所有基础指标并聚合结果
-type StatsAggregator struct {
+// ModuleData holds the latest data from a single collector module
+type ModuleData struct {
+	value atomic.Value
+}
+
+func (m *ModuleData) Store(v interface{}) {
+	m.value.Store(v)
+}
+
+func (m *ModuleData) Load() interface{} {
+	return m.value.Load()
+}
+
+// StreamingAggregator runs collectors independently and merges results on demand
+type StreamingAggregator struct {
 	cpu     *CPUCollector
 	memory  *MemoryCollector
 	disk    *DiskCollector
@@ -23,12 +37,27 @@ type StatsAggregator struct {
 	ssh     *SSHCollector
 	system  *SystemCollector
 
-	timeout time.Duration
+	// Atomic storage for each module's latest data
+	cpuData     ModuleData
+	memoryData  ModuleData
+	diskData    ModuleData
+	networkData ModuleData
+	sensorsData ModuleData
+	powerData   ModuleData
+	gpuData     ModuleData
+	sshData     ModuleData
+	systemData  ModuleData
+
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	interval atomic.Int64 // in milliseconds
 }
 
-// NewStatsAggregator 创建统计聚合器
-func NewStatsAggregator() *StatsAggregator {
-	return &StatsAggregator{
+// NewStreamingAggregator creates a new streaming aggregator
+func NewStreamingAggregator() *StreamingAggregator {
+	ctx, cancel := context.WithCancel(context.Background())
+	a := &StreamingAggregator{
 		cpu:     NewCPUCollector(),
 		memory:  NewMemoryCollector(),
 		disk:    NewDiskCollector(),
@@ -38,15 +67,100 @@ func NewStatsAggregator() *StatsAggregator {
 		gpu:     NewGPUCollector(),
 		ssh:     NewSSHCollector(),
 		system:  NewSystemCollector(),
-		timeout: 8 * time.Second, // 单次采集超时
+		ctx:     ctx,
+		cancel:  cancel,
+	}
+	a.interval.Store(5000) // default 5s
+	return a
+}
+
+// SetInterval changes the collection interval dynamically
+func (a *StreamingAggregator) SetInterval(d time.Duration) {
+	if d < time.Second {
+		d = time.Second
+	}
+	a.interval.Store(d.Milliseconds())
+}
+
+// Start begins all independent collector goroutines
+func (a *StreamingAggregator) Start() {
+	cfg := config.Load()
+
+	type collectorDef struct {
+		name     string
+		enabled  bool
+		collect  func(context.Context) interface{}
+		store    *ModuleData
+		interval time.Duration // custom interval, 0 = use default
+	}
+
+	// Fast collectors: CPU, Memory, Network (core metrics)
+	// Slow collectors: Disk, Sensors, GPU, SSH, System
+	collectors := []collectorDef{
+		{"cpu", cfg.EnableCPU, a.cpu.Collect, &a.cpuData, 0},
+		{"memory", cfg.EnableMemory, a.memory.Collect, &a.memoryData, 0},
+		{"network", cfg.EnableNetwork, a.network.Collect, &a.networkData, 0},
+		{"disk", cfg.EnableDisk, a.disk.Collect, &a.diskData, 2 * time.Second},             // slower
+		{"sensors", cfg.EnableSensors, a.sensors.Collect, &a.sensorsData, 2 * time.Second}, // slower
+		{"power", cfg.EnablePower, a.power.Collect, &a.powerData, 3 * time.Second},         // slowest
+		{"gpu", cfg.EnableGPU, a.gpu.Collect, &a.gpuData, 2 * time.Second},                 // slower
+		{"ssh", cfg.EnableSSH, a.ssh.Collect, &a.sshData, 5 * time.Second},                 // slowest
+		{"system", cfg.EnableSystem, a.system.Collect, &a.systemData, 10 * time.Second},    // very slow, rarely changes
+	}
+
+	for _, c := range collectors {
+		if !c.enabled {
+			continue
+		}
+		a.wg.Add(1)
+		go a.runCollector(c.name, c.collect, c.store, c.interval)
 	}
 }
 
-// CollectBaseStats 并行采集所有基础指标
-func (a *StatsAggregator) CollectBaseStats() types.Response {
-	ctx, cancel := context.WithTimeout(context.Background(), a.timeout)
-	defer cancel()
+func (a *StreamingAggregator) runCollector(name string, collect func(context.Context) interface{}, store *ModuleData, customInterval time.Duration) {
+	defer a.wg.Done()
 
+	// Collect immediately on start
+	ctx, cancel := context.WithTimeout(a.ctx, 8*time.Second)
+	data := collect(ctx)
+	cancel()
+	if data != nil {
+		store.Store(data)
+	}
+
+	for {
+		// Determine interval
+		interval := time.Duration(a.interval.Load()) * time.Millisecond
+		if customInterval > 0 && customInterval > interval {
+			interval = customInterval
+		}
+
+		select {
+		case <-a.ctx.Done():
+			log.Printf("collector %s: shutting down", name)
+			return
+		case <-time.After(interval):
+			ctx, cancel := context.WithTimeout(a.ctx, 8*time.Second)
+			data := collect(ctx)
+			cancel()
+			if data != nil {
+				store.Store(data)
+			}
+		}
+	}
+}
+
+// Stop gracefully stops all collectors
+func (a *StreamingAggregator) Stop() {
+	if a.cancel != nil {
+		a.cancel()
+	}
+	a.wg.Wait()
+}
+
+// GetLatestStats merges all latest module data into a single Response
+// This is very fast as it just reads atomic values, no blocking
+func (a *StreamingAggregator) GetLatestStats() types.Response {
 	var resp types.Response
 
 	// Initialize all fields to avoid null in JSON
@@ -67,120 +181,82 @@ func (a *StatsAggregator) CollectBaseStats() types.Response {
 		OOMRiskProcesses: []types.ProcessInfo{},
 	}
 
-	// 使用 WaitGroup 和 Channel 并行采集
-	type result struct {
-		name string
-		data interface{}
-	}
-	resultCh := make(chan result, 9)
-
-	var wg sync.WaitGroup
-
-	// 启动所有采集器
-	cfg := config.Load()
-	type collectorItem struct {
-		name    string
-		collect func(context.Context) interface{}
-		enabled bool
-	}
-
-	allCollectors := []collectorItem{
-		{"cpu", a.cpu.Collect, cfg.EnableCPU},
-		{"memory", a.memory.Collect, cfg.EnableMemory},
-		{"disk", a.disk.Collect, cfg.EnableDisk},
-		{"network", a.network.Collect, cfg.EnableNetwork},
-		{"sensors", a.sensors.Collect, cfg.EnableSensors},
-		{"power", a.power.Collect, cfg.EnablePower},
-		{"gpu", a.gpu.Collect, cfg.EnableGPU},
-		{"ssh", a.ssh.Collect, cfg.EnableSSH},
-		{"system", a.system.Collect, cfg.EnableSystem},
-	}
-
-	for _, c := range allCollectors {
-		if !c.enabled {
-			continue
-		}
-		wg.Add(1)
-		go func(name string, collect func(context.Context) interface{}) {
-			defer wg.Done()
-			data := collect(ctx)
-			select {
-			case resultCh <- result{name: name, data: data}:
-			case <-ctx.Done():
-				log.Printf("collector %s timed out", name)
-			}
-		}(c.name, c.collect)
-	}
-
-	// 等待所有采集完成或超时
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	// 收集结果并组装 Response
-	for r := range resultCh {
-		switch r.name {
-		case "cpu":
-			if data, ok := r.data.(CPUData); ok {
-				resp.CPU.Percent = data.Percent
-				resp.CPU.PerCore = data.PerCore
-				resp.CPU.Info = data.Info
-				resp.CPU.LoadAvg = data.LoadAvg
-				resp.CPU.Stats = data.Stats
-				resp.CPU.Times = data.Times
-				resp.CPU.Freq = data.Freq
-			}
-
-		case "memory":
-			if data, ok := r.data.(MemoryData); ok {
-				resp.Memory = data.Memory
-				resp.Swap = data.Swap
-			}
-
-		case "disk":
-			if data, ok := r.data.(DiskData); ok {
-				resp.Disk = data.Disks
-				resp.Inodes = data.Inodes
-				resp.DiskIO = data.IO
-			}
-
-		case "network":
-			if data, ok := r.data.(NetworkData); ok {
-				resp.Network.BytesSent = data.BytesSent
-				resp.Network.BytesRecv = data.BytesRecv
-				resp.Network.RawSent = data.RawSent
-				resp.Network.RawRecv = data.RawRecv
-			}
-
-		case "sensors":
-			resp.Sensors = r.data
-
-		case "power":
-			resp.Power = r.data
-
-		case "gpu":
-			if data, ok := r.data.([]types.GPUDetail); ok {
-				resp.GPU = data
-			}
-
-		case "ssh":
-			if data, ok := r.data.(types.SSHStats); ok {
-				resp.SSHStats = data
-			}
-
-		case "system":
-			if data, ok := r.data.(SystemData); ok {
-				resp.BootTime = data.BootTime
-			}
+	// Merge CPU data
+	if data := a.cpuData.Load(); data != nil {
+		if cpuData, ok := data.(CPUData); ok {
+			resp.CPU.Percent = cpuData.Percent
+			resp.CPU.PerCore = cpuData.PerCore
+			resp.CPU.Info = cpuData.Info
+			resp.CPU.LoadAvg = cpuData.LoadAvg
+			resp.CPU.Stats = cpuData.Stats
+			resp.CPU.Times = cpuData.Times
+			resp.CPU.Freq = cpuData.Freq
 		}
 	}
 
-	// 更新温度历史（需要从 sensors 数据中提取）
+	// Merge Memory data
+	if data := a.memoryData.Load(); data != nil {
+		if memData, ok := data.(MemoryData); ok {
+			resp.Memory = memData.Memory
+			resp.Swap = memData.Swap
+		}
+	}
+
+	// Merge Disk data
+	if data := a.diskData.Load(); data != nil {
+		if diskData, ok := data.(DiskData); ok {
+			resp.Disk = diskData.Disks
+			resp.Inodes = diskData.Inodes
+			resp.DiskIO = diskData.IO
+		}
+	}
+
+	// Merge Network data
+	if data := a.networkData.Load(); data != nil {
+		if netData, ok := data.(NetworkData); ok {
+			resp.Network.BytesSent = netData.BytesSent
+			resp.Network.BytesRecv = netData.BytesRecv
+			resp.Network.RawSent = netData.RawSent
+			resp.Network.RawRecv = netData.RawRecv
+		}
+	}
+
+	// Merge Sensors data
+	if data := a.sensorsData.Load(); data != nil {
+		resp.Sensors = data
+	}
+
+	// Merge Power data
+	if data := a.powerData.Load(); data != nil {
+		resp.Power = data
+	}
+
+	// Merge GPU data
+	if data := a.gpuData.Load(); data != nil {
+		if gpuData, ok := data.([]types.GPUDetail); ok {
+			resp.GPU = gpuData
+		}
+	}
+
+	// Merge SSH data
+	if data := a.sshData.Load(); data != nil {
+		if sshData, ok := data.(types.SSHStats); ok {
+			resp.SSHStats = sshData
+		}
+	}
+
+	// Merge System data
+	if data := a.systemData.Load(); data != nil {
+		if sysData, ok := data.(SystemData); ok {
+			resp.BootTime = sysData.BootTime
+		}
+	}
+
+	// Update temperature history
 	currentTemp := extractAvgTemp(resp.Sensors)
 	resp.CPU.TempHistory = a.cpu.UpdateTempHistory(currentTemp)
 
-	// 计算最大磁盘使用率
+	// Calculate max disk usage for alerts
 	maxDisk := 0.0
 	for _, d := range resp.Disk {
 		if d.Percent > maxDisk {
@@ -188,13 +264,13 @@ func (a *StatsAggregator) CollectBaseStats() types.Response {
 		}
 	}
 
-	// 检查告警
+	// Check alerts
 	monitoring.CheckAlerts(resp.CPU.Percent, resp.Memory.Percent, maxDisk)
 
 	return resp
 }
 
-// extractAvgTemp 从传感器数据中提取平均温度
+// extractAvgTemp extracts average temperature from sensors data
 func extractAvgTemp(sensors interface{}) float64 {
 	if sensorsMap, ok := sensors.(map[string][]interface{}); ok {
 		count := 0.0
@@ -214,4 +290,38 @@ func extractAvgTemp(sensors interface{}) float64 {
 		}
 	}
 	return 0
+}
+
+// ========== Legacy support (for backward compatibility) ==========
+
+// StatsAggregator is kept for backward compatibility
+type StatsAggregator struct {
+	streaming *StreamingAggregator
+}
+
+// NewStatsAggregator creates a new aggregator using the streaming backend
+func NewStatsAggregator() *StatsAggregator {
+	return &StatsAggregator{
+		streaming: NewStreamingAggregator(),
+	}
+}
+
+// Start begins the streaming collectors
+func (a *StatsAggregator) Start() {
+	a.streaming.Start()
+}
+
+// Stop gracefully stops the collectors
+func (a *StatsAggregator) Stop() {
+	a.streaming.Stop()
+}
+
+// SetInterval changes the collection interval
+func (a *StatsAggregator) SetInterval(d time.Duration) {
+	a.streaming.SetInterval(d)
+}
+
+// CollectBaseStats returns the latest merged stats (non-blocking)
+func (a *StatsAggregator) CollectBaseStats() types.Response {
+	return a.streaming.GetLatestStats()
 }

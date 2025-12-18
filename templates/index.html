@@ -144,6 +144,9 @@
         <div class="card" style="grid-column: 1 / -1;">
             <div class="card-title">System Information</div>
             <div class="fastfetch-container">
+                <div class="ascii-logo" id="ascii-logo">
+                    <!-- ASCII logo will be injected here -->
+                </div>
                 <div class="sys-info-list" id="sys-info-list">
                     <div>Loading system info...</div>
                 </div>
@@ -283,29 +286,11 @@
         <!-- GPU Summary Card (General Page) -->
         <div class="card">
             <div class="card-title">GPU Summary</div>
-            <div style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 8px;">
-                <span>Name:</span>
-                <span id="general-gpu-name" style="font-weight: bold; margin-left: 5px;">-</span>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85rem;">
-                <div>
-                    <div style="color: var(--text-dim);">Temp</div>
-                    <div id="general-gpu-temp" style="font-weight: bold;">-</div>
-                </div>
-                <div>
-                    <div style="color: var(--text-dim);">Load</div>
-                    <div id="general-gpu-load" style="font-weight: bold;">-</div>
-                </div>
-                <div>
-                    <div style="color: var(--text-dim);">Freq</div>
-                    <div id="general-gpu-freq" style="font-weight: bold;">-</div>
-                </div>
-                <div>
-                    <div style="color: var(--text-dim);">VRAM</div>
-                    <div id="general-gpu-vram" style="font-weight: bold;">-</div>
+            <div id="general-gpu-container" style="max-height: 200px; overflow-y: auto;">
+                <div id="general-gpu-list" style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- GPU items injected here -->
                 </div>
             </div>
-            <div id="general-gpu-note" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-dim);"></div>
         </div>
 
         <!-- Disk Card -->
@@ -498,7 +483,7 @@
             <div class="card">
                 <div class="card-title">Memory Distribution</div>
                 <div style="display: flex; flex-direction: column; gap: 15px; align-items: center; padding: 10px;">
-                    <svg id="mem-pie-chart" width="180" height="180" style="margin: 0 auto;"></svg>
+                    <canvas id="mem-pie-chart" width="180" height="180" style="margin: 0 auto;"></canvas>
                     <div id="mem-pie-legend" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; font-size: 0.85rem;">
                         <!-- Legend injected here -->
                     </div>
@@ -1164,6 +1149,7 @@
     <script src="{{ asset "/static/js/auth.js" }}"></script>
     <script src="{{ asset "/static/js/state.js" }}"></script>
     <script src="{{ asset "/static/js/util.js" }}"></script>
+    <script src="{{ asset "/static/js/ascii-logos.js" }}"></script>
     <script src="{{ asset "/static/js/api.js" }}"></script>
     <script src="{{ asset "/static/js/charts/sparkline.js" }}"></script>
     <script src="{{ asset "/static/js/charts/memoryPie.js" }}"></script>

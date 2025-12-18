@@ -53,9 +53,11 @@
 - **图表可视化**：Chart.js 驱动的实时图表
 
 ### ⚡ 高性能设计
-- **并行采集**：9 个基础采集器并发运行，2 个按需采集器懒加载
+- **流式数据采集**：各模块独立采集周期，无阻塞式数据流
 - **智能缓存**：TTL 缓存减少系统负载
-- **动态采集频率**：根据客户端需求自动调整
+- **Canvas 图表**：HiDPI 支持的 Canvas 渲染，性能更优
+- **DOM 复用**：智能列表更新，避免重复创建 DOM 元素
+- **渲染节流**：WebSocket 数据 10 FPS 最大渲染频率
 - **优雅关闭**：支持信号处理和平滑退出
 - **模块化架构**：通过环境变量按需启用/禁用功能（Docker, GPU, SSH 等）
 
@@ -91,10 +93,11 @@ graph LR
             MetricsCache[Metrics Cache]
         end
         
-        subgraph Collection["Data Collection"]
-            Aggregator[Stats Aggregator]
-            BaseCollectors["9 Base Collectors"]
-            ConditionalColl["Conditional Collectors"]
+        subgraph Collection["Streaming Aggregator"]
+            direction TB
+            FastCollectors["Fast Collectors<br/>(CPU/Mem/Net)"]
+            SlowCollectors["Slow Collectors<br/>(Disk/GPU/SSH)"]
+            AtomicStorage["Atomic Storage"]
         end
         
         subgraph Management["Management (Optional)"]
@@ -118,20 +121,21 @@ graph LR
     
     Entry --> ConfigLayer
     ConfigLayer -->|Enable Flags| Router
-    ConfigLayer -->|Enable Flags| Aggregator
+    ConfigLayer -->|Enable Flags| FastCollectors
+    ConfigLayer -->|Enable Flags| SlowCollectors
     
     Router -->|Conditional| Management
     Router --> Monitor
     WSHandler --> WSHub
     
     Monitor <--> MetricsCache
-    Monitor --> Aggregator
-    WSHub --> Aggregator
-    WSHub --> ConditionalColl
+    WSHub --> AtomicStorage
     
-    Aggregator -->|Skip Disabled| BaseCollectors
-    BaseCollectors --> Host
-    BaseCollectors --> ProcFS
+    FastCollectors -->|2-60s| AtomicStorage
+    SlowCollectors -->|2-10s| AtomicStorage
+    FastCollectors --> Host
+    FastCollectors --> ProcFS
+    SlowCollectors --> Host
     Management --> Docker
     Management --> SystemD
 ```
@@ -212,6 +216,24 @@ ENABLE_DOCKER=false ENABLE_GPU=false make up
 | `make restart` | 重启服务 |
 | `make logs` | 查看实时日志 |
 | `make rebuild` | 重新构建镜像并重启 |
+| `make stats` | 显示服务资源使用统计 |
+
+### 流式聚合器架构
+
+本项目采用流式数据采集架构，各采集器独立运行，不互相阻塞：
+
+| 采集器 | 更新间隔 | 说明 |
+| :--- | :--- | :--- |
+| CPU, 内存, 网络 | 用户设定 (2-60s) | 快速指标，响应用户选择 |
+| 磁盘, 传感器, GPU | 2s | 中速指标 |
+| 电源 | 3s | 电池/功耗 |
+| SSH | 5s | 会话监控 |
+| 系统信息 | 10s | 进程列表等 |
+
+**优势**：
+- 快速指标（CPU/内存）不受慢指标（SSH）影响
+- 各模块原子存储，WebSocket 推送时瞬时合并
+- 无 goroutine 阻塞，内存占用稳定
 
 ### 裸机部署
 

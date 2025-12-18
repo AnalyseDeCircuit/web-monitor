@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs build rebuild dev clean up-minimal up-server up-no-docker
+.PHONY: help up down restart logs stats build rebuild dev clean up-minimal up-server up-no-docker
 
 # Default target: show help
 default: help
@@ -13,6 +13,7 @@ help:
 	@echo "  make down          - Stop and remove containers"
 	@echo "  make restart       - Restart services"
 	@echo "  make logs          - View logs"
+	@echo "  make stats         - View container resource usage"
 	@echo "  make build         - Rebuild images"
 	@echo "  make dev           - Run locally (Go)"
 	@echo "  make clean         - Clean up build artifacts"
@@ -21,7 +22,7 @@ help:
 
 # 1. Full Mode (Default)
 up:
-	docker-compose up -d
+	docker compose up -d
 
 # 2. Minimal Mode: Core system metrics only.
 # Disables: Docker, GPU, Cron, SSH, Systemd, Sensors, Power, System(Processes)
@@ -58,6 +59,9 @@ restart: down up
 
 logs:
 	docker compose logs -f
+
+stats:
+	docker compose stats
 
 build:
 	docker compose build
