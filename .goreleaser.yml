@@ -1,0 +1,36 @@
+project_name: web-monitor
+
+builds:
+  - id: server
+    main: ./cmd/server
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: default
+    format: tar.gz
+    files:
+      - LICENSE
+      - README.md
+
+dockers:
+  - image_templates:
+      - "ghcr.io/AnalyseDeCircuit/web-monitor:{{ .Tag }}"
+      - "ghcr.io/AnalyseDeCircuit/web-monitor:latest"
+    dockerfile: Dockerfile
+    buildx: true
+    platforms:
+      - linux/amd64
+      - linux/arm64
+
+release:
+  github:
+    owner: AnalyseDeCircuit
+    name: web-monitor
