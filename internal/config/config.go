@@ -28,6 +28,20 @@ type Config struct {
 
 	// HostRun 是宿主机 /run 目录的路径
 	HostRun string
+
+	// Module flags
+	EnableCPU     bool
+	EnableMemory  bool
+	EnableDisk    bool
+	EnableNetwork bool
+	EnableSensors bool
+	EnablePower   bool
+	EnableGPU     bool
+	EnableSSH     bool
+	EnableSystem  bool
+	EnableDocker  bool
+	EnableCron    bool
+	EnableSystemd bool
 }
 
 var (
@@ -46,6 +60,19 @@ func Load() *Config {
 			HostEtc:  getEnv("HOST_ETC", "/hostfs/etc"),
 			HostVar:  getEnv("HOST_VAR", "/hostfs/var"),
 			HostRun:  getEnv("HOST_RUN", "/hostfs/run"),
+
+			EnableCPU:     getEnvBool("ENABLE_CPU", true),
+			EnableMemory:  getEnvBool("ENABLE_MEMORY", true),
+			EnableDisk:    getEnvBool("ENABLE_DISK", true),
+			EnableNetwork: getEnvBool("ENABLE_NETWORK", true),
+			EnableSensors: getEnvBool("ENABLE_SENSORS", true),
+			EnablePower:   getEnvBool("ENABLE_POWER", true),
+			EnableGPU:     getEnvBool("ENABLE_GPU", true),
+			EnableSSH:     getEnvBool("ENABLE_SSH", true),
+			EnableSystem:  getEnvBool("ENABLE_SYSTEM", true),
+			EnableDocker:  getEnvBool("ENABLE_DOCKER", true),
+			EnableCron:    getEnvBool("ENABLE_CRON", true),
+			EnableSystemd: getEnvBool("ENABLE_SYSTEMD", true),
 		}
 
 		// 如果 HOST_FS 为空（Bare Metal 模式），则调整其他路径的默认值
@@ -96,6 +123,15 @@ func HostPath(path string) string {
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
+	}
+	return defaultValue
+}
+
+// getEnvBool 获取布尔类型环境变量
+func getEnvBool(key string, defaultValue bool) bool {
+	if value, exists := os.LookupEnv(key); exists {
+		value = strings.ToLower(value)
+		return value == "true" || value == "1" || value == "yes" || value == "on"
 	}
 	return defaultValue
 }

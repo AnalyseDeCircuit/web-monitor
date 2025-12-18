@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
@@ -76,22 +77,29 @@ func (a *StatsAggregator) CollectBaseStats() types.Response {
 	var wg sync.WaitGroup
 
 	// 启动所有采集器
-	collectors := []struct {
+	cfg := config.Load()
+	type collectorItem struct {
 		name    string
 		collect func(context.Context) interface{}
-	}{
-		{"cpu", a.cpu.Collect},
-		{"memory", a.memory.Collect},
-		{"disk", a.disk.Collect},
-		{"network", a.network.Collect},
-		{"sensors", a.sensors.Collect},
-		{"power", a.power.Collect},
-		{"gpu", a.gpu.Collect},
-		{"ssh", a.ssh.Collect},
-		{"system", a.system.Collect},
+		enabled bool
 	}
 
-	for _, c := range collectors {
+	allCollectors := []collectorItem{
+		{"cpu", a.cpu.Collect, cfg.EnableCPU},
+		{"memory", a.memory.Collect, cfg.EnableMemory},
+		{"disk", a.disk.Collect, cfg.EnableDisk},
+		{"network", a.network.Collect, cfg.EnableNetwork},
+		{"sensors", a.sensors.Collect, cfg.EnableSensors},
+		{"power", a.power.Collect, cfg.EnablePower},
+		{"gpu", a.gpu.Collect, cfg.EnableGPU},
+		{"ssh", a.ssh.Collect, cfg.EnableSSH},
+		{"system", a.system.Collect, cfg.EnableSystem},
+	}
+
+	for _, c := range allCollectors {
+		if !c.enabled {
+			continue
+		}
 		wg.Add(1)
 		go func(name string, collect func(context.Context) interface{}) {
 			defer wg.Done()
@@ -172,8 +180,16 @@ func (a *StatsAggregator) CollectBaseStats() types.Response {
 	currentTemp := extractAvgTemp(resp.Sensors)
 	resp.CPU.TempHistory = a.cpu.UpdateTempHistory(currentTemp)
 
+	// 计算最大磁盘使用率
+	maxDisk := 0.0
+	for _, d := range resp.Disk {
+		if d.Percent > maxDisk {
+			maxDisk = d.Percent
+		}
+	}
+
 	// 检查告警
-	monitoring.CheckAlerts(resp.CPU.Percent, resp.Memory.Percent, 0)
+	monitoring.CheckAlerts(resp.CPU.Percent, resp.Memory.Percent, maxDisk)
 
 	return resp
 }

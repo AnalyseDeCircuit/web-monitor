@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -21,12 +22,23 @@ var (
 	lastAlertTime time.Time
 )
 
+func getDataDir() string {
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		return v
+	}
+	if _, err := os.Stat("/data"); err == nil {
+		return "/data"
+	}
+	return "./data"
+}
+
 // LoadAlerts 加载告警配置
 func LoadAlerts() {
 	alertMutex.Lock()
 	defer alertMutex.Unlock()
 
-	data, err := os.ReadFile("/data/alerts.json")
+	path := filepath.Join(getDataDir(), "alerts.json")
+	data, err := os.ReadFile(path)
 	if err != nil {
 		// Default config
 		alertConfig = types.AlertConfig{
@@ -49,7 +61,8 @@ func SaveAlerts() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile("/data/alerts.json", data, 0666)
+	path := filepath.Join(getDataDir(), "alerts.json")
+	return os.WriteFile(path, data, 0666)
 }
 
 // CheckAlerts 检查告警条件

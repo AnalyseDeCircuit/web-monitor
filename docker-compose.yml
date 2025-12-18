@@ -35,6 +35,20 @@ services:
       # NVIDIA GPU Support (Dynamic)
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
+      
+      # --- Modules Configuration (Optional, default is true) ---
+      - ENABLE_CPU=${ENABLE_CPU:-true}
+      - ENABLE_MEMORY=${ENABLE_MEMORY:-true}
+      - ENABLE_DISK=${ENABLE_DISK:-true}
+      - ENABLE_NETWORK=${ENABLE_NETWORK:-true}
+      - ENABLE_SENSORS=${ENABLE_SENSORS:-true}
+      - ENABLE_POWER=${ENABLE_POWER:-true}
+      - ENABLE_GPU=${ENABLE_GPU:-true}
+      - ENABLE_SSH=${ENABLE_SSH:-true}
+      - ENABLE_SYSTEM=${ENABLE_SYSTEM:-true}
+      - ENABLE_DOCKER=${ENABLE_DOCKER:-true}
+      - ENABLE_CRON=${ENABLE_CRON:-true}
+      - ENABLE_SYSTEMD=${ENABLE_SYSTEMD:-true}
     volumes:
       - /:/hostfs
       - /sys:/sys

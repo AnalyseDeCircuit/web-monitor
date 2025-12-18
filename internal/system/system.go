@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/gpu"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/shirou/gopsutil/v3/disk"
@@ -21,22 +22,24 @@ import (
 
 // StaticInfo 静态系统信息
 type StaticInfo struct {
-	Header string `json:"header"`
-	OS     string `json:"os"`
-	Kernel string `json:"kernel"`
-	Uptime string `json:"uptime"`
-	Shell  string `json:"shell"`
-	CPU    string `json:"cpu"`
-	GPU    string `json:"gpu"`
-	Memory string `json:"memory"`
-	Swap   string `json:"swap"`
-	Disk   string `json:"disk"`
-	IP     string `json:"ip"`
-	Locale string `json:"locale"`
+	Header         string          `json:"header"`
+	OS             string          `json:"os"`
+	Kernel         string          `json:"kernel"`
+	Uptime         string          `json:"uptime"`
+	Shell          string          `json:"shell"`
+	CPU            string          `json:"cpu"`
+	GPU            string          `json:"gpu"`
+	Memory         string          `json:"memory"`
+	Swap           string          `json:"swap"`
+	Disk           string          `json:"disk"`
+	IP             string          `json:"ip"`
+	Locale         string          `json:"locale"`
+	EnabledModules map[string]bool `json:"enabled_modules"`
 }
 
 // GetStaticInfo 获取静态系统信息
 func GetStaticInfo() *StaticInfo {
+	cfg := config.Load()
 	info := &StaticInfo{
 		Header: getHostname(),
 		OS:     getOSInfo(),
@@ -50,6 +53,20 @@ func GetStaticInfo() *StaticInfo {
 		Disk:   getDiskInfo(),
 		IP:     getLocalIP(),
 		Locale: getLocale(),
+		EnabledModules: map[string]bool{
+			"cpu":     cfg.EnableCPU,
+			"memory":  cfg.EnableMemory,
+			"disk":    cfg.EnableDisk,
+			"network": cfg.EnableNetwork,
+			"sensors": cfg.EnableSensors,
+			"power":   cfg.EnablePower,
+			"gpu":     cfg.EnableGPU,
+			"ssh":     cfg.EnableSSH,
+			"system":  cfg.EnableSystem,
+			"docker":  cfg.EnableDocker,
+			"cron":    cfg.EnableCron,
+			"systemd": cfg.EnableSystemd,
+		},
 	}
 	return info
 }

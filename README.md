@@ -53,46 +53,51 @@
 - **图表可视化**：Chart.js 驱动的实时图表
 
 ### ⚡ 高性能设计
-- **并行采集**：11 个采集器并发运行
+- **并行采集**：9 个基础采集器并发运行，2 个按需采集器懒加载
 - **智能缓存**：TTL 缓存减少系统负载
 - **动态采集频率**：根据客户端需求自动调整
 - **优雅关闭**：支持信号处理和平滑退出
-、
+- **模块化架构**：通过环境变量按需启用/禁用功能（Docker, GPU, SSH 等）
+
 ```mermaid
 graph LR
     Browser[Web Browser]
     
     subgraph Server["Go Server"]
-        Entry[Entry Point<br/>cmd/server/main.go]
-        Config[Config<br/>Manager]
+        Entry[Entry Point]
         
-        subgraph Middleware["Middleware Layer"]
-            SecHeaders[Security<br/>Headers]
-            AuthMW[Auth<br/>Middleware]
-            RateLimit[Rate<br/>Limiter]
+        subgraph ConfigLayer["Configuration"]
+            Config[Config Manager]
+            ModuleFlags["Module Flags<br/>ENABLE_*"]
         end
         
-        Router[HTTP Router]
-        WSHandler[WebSocket Handler]
+        subgraph Middleware["Middleware"]
+            SecHeaders[Security Headers]
+            AuthMW[Auth]
+            RateLimit[Rate Limiter]
+        end
+        
+        Router["Router<br/>(Conditional Routes)"]
+        WSHandler[WebSocket]
         
         subgraph Services["Core Services"]
             Auth[Auth Service]
-            Monitor[Monitoring Service]
+            Monitor[Monitoring]
             WSHub[WebSocket Hub]
             Alerts[Alert Manager]
-            Logs[Operation Logs]
         end
         
-        subgraph Cache["Cache Layer"]
-            MetricsCache[Metrics Cache<br/>TTL-based]
+        subgraph Cache["Cache"]
+            MetricsCache[Metrics Cache]
         end
         
         subgraph Collection["Data Collection"]
             Aggregator[Stats Aggregator]
-            Collectors[11 Parallel<br/>Collectors]
+            BaseCollectors["9 Base Collectors"]
+            ConditionalColl["Conditional Collectors"]
         end
         
-        subgraph Management["Management Modules"]
+        subgraph Management["Management (Optional)"]
             DockerMgmt[Docker]
             SystemdMgmt[Systemd]
             CronMgmt[Cron]
@@ -100,36 +105,33 @@ graph LR
     end
     
     subgraph Sources["Data Sources"]
-        Host["Host System<br/>CPU/Memory/Disk/GPU<br/>Network/Sensors"]
-        Docker["Docker Daemon"]
+        Host["Host System"]
+        Docker["Docker"]
         SystemD[Systemd]
-        ProcFS["/proc and /sys"]
+        ProcFS["/proc /sys"]
     end
     
     Browser -->|HTTP/WS| SecHeaders
-    SecHeaders --> AuthMW
-    AuthMW --> RateLimit
+    SecHeaders --> AuthMW --> RateLimit
     RateLimit --> Router
     RateLimit --> WSHandler
     
-    Entry --> Config
-    Entry --> Auth
-    Entry --> Alerts
-    Entry --> Logs
+    Entry --> ConfigLayer
+    ConfigLayer -->|Enable Flags| Router
+    ConfigLayer -->|Enable Flags| Aggregator
     
-    Router --> Auth
+    Router -->|Conditional| Management
     Router --> Monitor
-    Router --> Management
     WSHandler --> WSHub
     
     Monitor <--> MetricsCache
     Monitor --> Aggregator
     WSHub --> Aggregator
+    WSHub --> ConditionalColl
     
-    Aggregator --> Collectors
-    
-    Collectors --> Host
-    Collectors --> ProcFS
+    Aggregator -->|Skip Disabled| BaseCollectors
+    BaseCollectors --> Host
+    BaseCollectors --> ProcFS
     Management --> Docker
     Management --> SystemD
 ```
@@ -140,16 +142,21 @@ graph LR
 
 ### Docker 部署（推荐）
 
+我们提供了 `Makefile` 来简化常用操作。
+
 ```bash
 # 克隆仓库
 git clone https://github.com/AnalyseDeCircuit/web-monitor.git
 cd web-monitor
 
-# 设置环境变量（可选）
-export JWT_SECRET="your-secure-secret-key"
+# 启动服务 (全量模式)
+make up
 
-# 启动服务
-docker compose up -d
+# 启动极简模式 (仅 CPU/内存/磁盘/网络)
+make up-minimal
+
+# 查看日志
+make logs
 ```
 
 访问 `http://localhost:38080`，默认账户：
@@ -157,6 +164,54 @@ docker compose up -d
 - 密码：`admin123`
 
 > ⚠️ **首次登录后请立即修改密码！**
+
+### 基础配置 (.env)
+
+项目根目录下的 `.env` 文件用于配置核心安全和网络选项。首次部署前请务必检查：
+
+```dotenv
+# 必须修改！设置一个长且随机的字符串作为 JWT 签名密钥
+JWT_SECRET=change-me-to-a-long-random-string
+
+# 如果通过域名或反向代理访问，请设置允许的 WebSocket 来源
+# 多个来源用逗号分隔
+WS_ALLOWED_ORIGINS=https://your-domain.com
+
+# 服务端口 (仅影响 Docker 内部映射，宿主机端口在 docker-compose.yml 中修改)
+PORT=38080
+```
+
+### 模块化配置
+
+你可以通过环境变量控制启用的模块。在 `docker-compose.yml` 中修改或在启动时指定：
+
+| 变量名 | 默认值 | 描述 |
+| :--- | :--- | :--- |
+| `ENABLE_DOCKER` | `true` | 启用 Docker 管理 |
+| `ENABLE_GPU` | `true` | 启用 NVIDIA GPU 监控 |
+| `ENABLE_SSH` | `true` | 启用 SSH 会话监控 |
+| `ENABLE_CRON` | `true` | 启用 Cron 任务管理 |
+| `ENABLE_SYSTEMD` | `true` | 启用 Systemd 服务管理 |
+| `ENABLE_SENSORS` | `true` | 启用硬件传感器 (温度/风扇) |
+| `ENABLE_POWER` | `true` | 启用电源管理 (电池/性能模式) |
+
+**示例：仅禁用 Docker 和 GPU**
+```bash
+ENABLE_DOCKER=false ENABLE_GPU=false make up
+```
+
+### 常用命令
+
+| 命令 | 作用 |
+| :--- | :--- |
+| `make up` | 启动所有服务 (后台运行) |
+| `make up-minimal` | 启动极简模式 (仅核心指标) |
+| `make up-server` | 启动服务器模式 (无 GPU/电源) |
+| `make up-no-docker` | 启动无 Docker 模式 |
+| `make down` | 停止并移除容器 |
+| `make restart` | 重启服务 |
+| `make logs` | 查看实时日志 |
+| `make rebuild` | 重新构建镜像并重启 |
 
 ### 裸机部署
 

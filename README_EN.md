@@ -64,16 +64,21 @@
 
 ### Docker Deployment (Recommended)
 
+We provide a `Makefile` to simplify common operations.
+
 ```bash
 # Clone the repository
 git clone https://github.com/AnalyseDeCircuit/web-monitor.git
 cd web-monitor
 
-# Set environment variables (optional)
-export JWT_SECRET="your-secure-secret-key"
+# Start service (Full Mode)
+make up
 
-# Start the service
-docker compose up -d
+# Start minimal mode (Core metrics only)
+make up-minimal
+
+# View logs
+make logs
 ```
 
 Access `http://localhost:38080` with default credentials:
@@ -81,6 +86,54 @@ Access `http://localhost:38080` with default credentials:
 - Password: `admin123`
 
 > ⚠️ **Change the default password immediately after first login!**
+
+### Basic Configuration (.env)
+
+The `.env` file in the root directory controls core security and network settings. Please check it before deployment:
+
+```dotenv
+# REQUIRED! Set a long, random string for JWT signing
+JWT_SECRET=change-me-to-a-long-random-string
+
+# If accessing via a domain or reverse proxy, set allowed WebSocket origins
+# Comma-separated
+WS_ALLOWED_ORIGINS=https://your-domain.com
+
+# Service Port (Internal Docker port, change host port in docker-compose.yml)
+PORT=38080
+```
+
+### Modular Configuration
+
+You can control enabled modules via environment variables. Modify `docker-compose.yml` or specify them at startup:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `ENABLE_DOCKER` | `true` | Enable Docker management |
+| `ENABLE_GPU` | `true` | Enable NVIDIA GPU monitoring |
+| `ENABLE_SSH` | `true` | Enable SSH session monitoring |
+| `ENABLE_CRON` | `true` | Enable Cron job management |
+| `ENABLE_SYSTEMD` | `true` | Enable Systemd service management |
+| `ENABLE_SENSORS` | `true` | Enable hardware sensors (Temp/Fan) |
+| `ENABLE_POWER` | `true` | Enable power management (Battery/Profile) |
+
+**Example: Disable Docker and GPU only**
+```bash
+ENABLE_DOCKER=false ENABLE_GPU=false make up
+```
+
+### Common Commands
+
+| Command | Description |
+| :--- | :--- |
+| `make up` | Start all services (Background) |
+| `make up-minimal` | Start minimal mode (Core metrics only) |
+| `make up-server` | Start server mode (No GPU/Power) |
+| `make up-no-docker` | Start without Docker management |
+| `make down` | Stop and remove containers |
+| `make restart` | Restart services |
+| `make logs` | View real-time logs |
+| `make rebuild` | Rebuild images and restart |
 
 ### Bare-Metal Deployment
 

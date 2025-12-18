@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 
 	httpSwagger "github.com/swaggo/http-swagger/v2"
@@ -41,42 +42,55 @@ func SetupRouter() *Router {
 	router.mux.HandleFunc("/api/logs", LogsHandler)
 
 	// 监控数据路由
-	router.mux.HandleFunc("/api/info", StaticInfoHandler)            // Static system information for header
-	router.mux.HandleFunc("/api/system/info", SystemInfoHandler)     // Real-time monitoring data
-	router.mux.HandleFunc("/api/alerts", AlertsHandler)              // Legacy-compatible alerts config
-	router.mux.HandleFunc("/api/power/profile", PowerProfileHandler) // Legacy-compatible power profile
-	router.mux.HandleFunc("/api/gui/status", GUIStatusHandler)
-	router.mux.HandleFunc("/api/gui/action", GUIActionHandler)
-	router.mux.HandleFunc("/api/docker/containers", DockerContainersHandler)
-	router.mux.HandleFunc("/api/docker/images", DockerImagesHandler)
-	router.mux.HandleFunc("/api/docker/action", DockerActionHandler)
-	router.mux.HandleFunc("/api/docker/image/remove", DockerImageRemoveHandler)
-	router.mux.HandleFunc("/api/docker/prune", DockerPruneHandler)
-	router.mux.HandleFunc("/api/docker/logs", DockerLogsHandler)
-	router.mux.HandleFunc("/api/systemd/services", SystemdServicesHandler)
-	router.mux.HandleFunc("/api/systemd/action", SystemdActionHandler)
+	cfg := config.Load()
+	router.mux.HandleFunc("/api/info", StaticInfoHandler)        // Static system information for header
+	router.mux.HandleFunc("/api/system/info", SystemInfoHandler) // Real-time monitoring data
+	router.mux.HandleFunc("/api/alerts", AlertsHandler)          // Legacy-compatible alerts config
 	router.mux.HandleFunc("/api/network/info", NetworkInfoHandler)
-	router.mux.HandleFunc("/api/power/info", PowerInfoHandler)
 	router.mux.HandleFunc("/api/cache/info", CacheInfoHandler)
 	router.mux.HandleFunc("/api/health", HealthCheckHandler)
 	router.mux.HandleFunc("/api/metrics", PrometheusMetricsHandler)
 
-	// 电源操作路由
-	router.mux.HandleFunc("/api/power/action", PowerActionHandler)
-	router.mux.HandleFunc("/api/power/shutdown-status", ShutdownStatusHandler)
+	if cfg.EnablePower {
+		router.mux.HandleFunc("/api/power/profile", PowerProfileHandler) // Legacy-compatible power profile
+		router.mux.HandleFunc("/api/power/info", PowerInfoHandler)
+		router.mux.HandleFunc("/api/power/action", PowerActionHandler)
+		router.mux.HandleFunc("/api/power/shutdown-status", ShutdownStatusHandler)
+	}
+
+	router.mux.HandleFunc("/api/gui/status", GUIStatusHandler)
+	router.mux.HandleFunc("/api/gui/action", GUIActionHandler)
+
+	if cfg.EnableDocker {
+		router.mux.HandleFunc("/api/docker/containers", DockerContainersHandler)
+		router.mux.HandleFunc("/api/docker/images", DockerImagesHandler)
+		router.mux.HandleFunc("/api/docker/action", DockerActionHandler)
+		router.mux.HandleFunc("/api/docker/image/remove", DockerImageRemoveHandler)
+		router.mux.HandleFunc("/api/docker/prune", DockerPruneHandler)
+		router.mux.HandleFunc("/api/docker/logs", DockerLogsHandler)
+	}
+
+	if cfg.EnableSystemd {
+		router.mux.HandleFunc("/api/systemd/services", SystemdServicesHandler)
+		router.mux.HandleFunc("/api/systemd/action", SystemdActionHandler)
+	}
 
 	// Cron任务路由
-	router.mux.HandleFunc("/api/cron", CronLegacyHandler)
-	router.mux.HandleFunc("/api/cron/jobs", CronJobsHandler)
-	router.mux.HandleFunc("/api/cron/action", CronActionHandler)
-	router.mux.HandleFunc("/api/cron/logs", CronLogsHandler)
+	if cfg.EnableCron {
+		router.mux.HandleFunc("/api/cron", CronLegacyHandler)
+		router.mux.HandleFunc("/api/cron/jobs", CronJobsHandler)
+		router.mux.HandleFunc("/api/cron/action", CronActionHandler)
+		router.mux.HandleFunc("/api/cron/logs", CronLogsHandler)
+	}
 
 	// Process 管理路由
 	router.mux.HandleFunc("/api/process/io", ProcessIOHandler)     // 懒加载进程 IO 数据
 	router.mux.HandleFunc("/api/process/kill", ProcessKillHandler) // 仅管理员
 
 	// SSH stats (manual refresh)
-	router.mux.HandleFunc("/api/ssh/stats", SSHStatsHandler)
+	if cfg.EnableSSH {
+		router.mux.HandleFunc("/api/ssh/stats", SSHStatsHandler)
+	}
 
 	// WebSocket路由
 	router.mux.HandleFunc("/ws/stats", websocket.HandleWebSocket)

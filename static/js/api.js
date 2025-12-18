@@ -895,11 +895,23 @@ async function handleChangePassword(e) {
 function checkRole() {
     const role = localStorage.getItem('role');
     if (role === 'admin') {
-        document.getElementById('nav-users').style.display = 'flex';
-        document.getElementById('nav-logs').style.display = 'flex';
+        const navUsers = document.getElementById('nav-users');
+        const navLogs = document.getElementById('nav-logs');
+        if (navUsers) navUsers.style.display = 'flex';
+        if (navLogs) navLogs.style.display = 'flex';
     }
     loadGuiStatus();
-    loadPowerProfile();
+    
+    if (window.systemInfoPromise) {
+        window.systemInfoPromise.then(info => {
+             if (!info.enabled_modules || info.enabled_modules.power !== false) {
+                 loadPowerProfile();
+             }
+        });
+    } else {
+        loadPowerProfile();
+    }
+
     loadAlerts();
 }
 
@@ -1114,9 +1126,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Fetch static info once
-fetch('/api/info')
-    .then((response) => response.json())
-    .then((data) => {
+window.systemInfoPromise = fetch('/api/info')
+    .then((response) => response.json());
+
+window.systemInfoPromise.then((data) => {
         const infoList = document.getElementById('sys-info-list');
         infoList.innerHTML = `
             <div style="color: var(--accent-cpu); font-weight: bold; margin-bottom: 5px;">${data.header}</div>
@@ -1133,4 +1146,67 @@ fetch('/api/info')
             <div><span class="sys-key">Local IP:</span><span class="sys-val">${data.ip}</span></div>
             <div><span class="sys-key">Locale:</span><span class="sys-val">${data.locale}</span></div>
         `;
+
+        if (data.enabled_modules) {
+            updateUIForModules(data.enabled_modules);
+        }
     });
+
+function updateUIForModules(modules) {
+    const hideSidebarItem = (onclickPattern) => {
+        const el = document.querySelector(`.nav-item[onclick*="${onclickPattern}"]`);
+        if (el) el.style.display = 'none';
+    };
+
+    const hideCard = (childId) => {
+        const el = document.getElementById(childId);
+        if (el) {
+            const card = el.closest('.card');
+            if (card) card.style.display = 'none';
+        }
+    };
+
+    if (modules.cpu === false) {
+        hideSidebarItem("switchPage('cpu')");
+        hideCard('cpu-freq');
+    }
+    if (modules.memory === false) {
+        hideSidebarItem("switchPage('memory')");
+        hideCard('mem-text');
+    }
+    if (modules.disk === false) {
+        hideSidebarItem("switchPage('storage')");
+        hideCard('disk-container');
+    }
+    if (modules.gpu === false) {
+        hideSidebarItem("switchPage('gpu')");
+        hideCard('general-gpu-name');
+    }
+    if (modules.network === false) {
+        hideSidebarItem("toggleNetworkSubmenu()");
+        hideCard('net-interface-select');
+    }
+    if (modules.ssh === false) {
+        hideSidebarItem("switchPage('ssh')");
+        hideCard('general-ssh-status');
+    }
+    if (modules.docker === false) {
+        hideSidebarItem("switchPage('docker')");
+    }
+    if (modules.systemd === false) {
+        hideSidebarItem("switchPage('services')");
+    }
+    if (modules.cron === false) {
+        hideSidebarItem("switchPage('cron')");
+    }
+    if (modules.power === false) {
+        const powerCard = document.getElementById('power-profile-card');
+        if (powerCard) powerCard.style.display = 'none';
+    }
+    if (modules.sensors === false) {
+        hideCard('sensors-container');
+    }
+    if (modules.system === false) {
+        hideSidebarItem("switchPage('processes')");
+    }
+}
