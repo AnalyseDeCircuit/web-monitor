@@ -34,13 +34,23 @@ var (
 	reContainerAction = regexp.MustCompile(`^/containers/([^/]+)/(start|stop|restart)$`)
 	reContainerRemove = regexp.MustCompile(`^/containers/([^/]+)$`)
 	reImageRemove     = regexp.MustCompile(`^/images/([^/]+)$`)
-	reSystemPrune     = regexp.MustCompile(`^/system/prune$`)
+	reContainersPrune = regexp.MustCompile(`^/containers/prune$`)
+	reImagesPrune     = regexp.MustCompile(`^/images/prune$`)
+	reNetworksPrune   = regexp.MustCompile(`^/networks/prune$`)
+	reBuildPrune      = regexp.MustCompile(`^/build/prune$`)
 )
 
 func allowed(method, path string) bool {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	if method == "" {
 		return false
+	}
+
+	// Strip Docker API version prefix (e.g., /v1.41/containers/json -> /containers/json)
+	if strings.HasPrefix(path, "/v") {
+		if idx := strings.Index(path[1:], "/"); idx > 0 {
+			path = path[idx+1:]
+		}
 	}
 
 	// Read-only
@@ -64,7 +74,13 @@ func allowed(method, path string) bool {
 		switch {
 		case reContainerAction.MatchString(path):
 			return true
-		case reSystemPrune.MatchString(path):
+		case reContainersPrune.MatchString(path):
+			return true
+		case reImagesPrune.MatchString(path):
+			return true
+		case reNetworksPrune.MatchString(path):
+			return true
+		case reBuildPrune.MatchString(path):
 			return true
 		default:
 			return false

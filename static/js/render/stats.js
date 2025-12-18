@@ -187,15 +187,13 @@ function updateList(containerId, items, createFn, updateFn) {
             if (!iface || name === '__all__') {
                 ipEl.innerText = 'Aggregated across all interfaces';
                 statusEl.innerText = 'MULTI';
-                statusEl.style.background = 'rgba(255,255,255,0.06)';
-                statusEl.style.color = 'var(--text-dim)';
+                statusEl.className = 'net-status-badge multi';
                 return;
             }
 
             ipEl.innerText = iface.ip || 'No IP assigned';
             statusEl.innerText = iface.is_up ? 'UP' : 'DOWN';
-            statusEl.style.background = iface.is_up ? 'rgba(46, 213, 115, 0.2)' : 'rgba(255, 71, 87, 0.15)';
-            statusEl.style.color = iface.is_up ? '#2ed573' : '#ff6b6b';
+            statusEl.className = 'net-status-badge ' + (iface.is_up ? 'up' : 'down');
         }
 
         function renderStats(data) {
@@ -342,15 +340,14 @@ function _renderStatsInternal(data) {
                 updateList('cpu-detailed-cores', data.cpu.per_core,
                     (core, index) => {
                         const div = document.createElement('div');
-                        div.className = 'card';
+                        div.className = 'card cpu-core-card';
                         div.style.padding = '10px';
                         div.style.marginBottom = '0';
                         div.style.textAlign = 'center';
-                        div.style.background = 'rgba(255,255,255,0.03)';
                         div.innerHTML = `
                             <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 5px;">Core ${index}</div>
                             <div class="core-val" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu); margin-bottom: 5px;"></div>
-                            <div class="progress-bg" style="height: 4px; background: rgba(255,255,255,0.1);">
+                            <div class="progress-bg" style="height: 4px;">
                                 <div class="progress-fill core-fill" style="width: 0%; background: var(--accent-cpu);"></div>
                             </div>
                             <div class="core-freq" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 5px;"></div>

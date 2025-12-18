@@ -153,22 +153,30 @@
         <!-- Power Profile Card -->
         <div class="card" id="power-profile-card" style="display: none; grid-column: 1 / -1;">
             <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
-                <span>Power & GUI</span>
-                <button id="power-profile-refresh" onclick="loadPowerProfile(); loadGuiStatus();" style="margin-left: auto; background: none; border: none; color: var(--text-dim); cursor: pointer;">
+                <span><i class="fas fa-bolt" style="margin-right: 8px; color: var(--accent-disk);"></i>Power & GUI</span>
+                <button id="power-profile-refresh" onclick="loadPowerProfile(); loadGuiStatus();" title="刷新状态" style="margin-left: auto; background: none; border: none; color: var(--text-dim); cursor: pointer;">
                     <i class="fas fa-sync-alt"></i>
                 </button>
             </div>
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;" id="power-profile-controls">
-                <!-- Buttons will be injected here -->
+            <!-- Power Profile Section -->
+            <div style="margin-bottom: 12px;">
+                <div class="power-section-label"><i class="fas fa-tachometer-alt" style="margin-right: 6px;"></i>Power Mode</div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px;" id="power-profile-controls">
+                    <!-- Buttons will be injected here -->
+                </div>
+                <div id="power-profile-hint" class="power-hint" style="display: none;"></div>
             </div>
-            <div id="power-profile-hint" style="font-size: 0.85rem; color: var(--text-dim); margin-top: 8px; display: none;"></div>
-            <div id="gui-controls" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <div style="font-weight: bold; color: var(--text-main);">GUI Session:</div>
-                <span id="gui-status-text" style="font-size: 0.9rem; color: var(--text-dim);">Unknown</span>
-                <span id="gui-default-target" style="font-size: 0.85rem; color: var(--text-dim); background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 6px; display: none;"></span>
-                <button id="gui-toggle-btn" onclick="toggleGuiSession()" style="background: var(--accent-net); border: none; color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; display: none;">
-                    Toggle
-                </button>
+            <!-- GUI Session Section -->
+            <div id="gui-controls" style="margin-top: 15px; padding-top: 12px;">
+                <div class="power-section-label"><i class="fas fa-desktop" style="margin-right: 6px;"></i>GUI Session</div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px;">
+                    <span id="gui-status-text" class="gui-status-badge">Detecting...</span>
+                    <span id="gui-default-target" class="gui-target-badge" style="display: none;"></span>
+                    <button id="gui-toggle-btn" class="gui-toggle-btn" onclick="toggleGuiSession()" style="display: none;">
+                        Toggle
+                    </button>
+                    <span id="gui-admin-hint" style="font-size: 0.8rem; color: var(--text-dim); display: none;">(Admin only)</span>
+                </div>
             </div>
         </div>
 
@@ -324,19 +332,19 @@
                     </div>
                     <div style="margin-bottom: 15px;">
                         <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Webhook URL</label>
-                        <input type="text" id="alert-webhook" style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); border-radius: 4px;" placeholder="https://hooks.slack.com/...">
+                        <input type="text" id="alert-webhook" class="form-input" style="width: 100%;" placeholder="https://hooks.slack.com/...">
                     </div>
                     <div style="margin-bottom: 15px;">
                         <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">CPU Threshold (%)</label>
-                        <input type="number" id="alert-cpu" min="0" max="100" style="width: 100px; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); border-radius: 4px;">
+                        <input type="number" id="alert-cpu" class="form-input" min="0" max="100" style="width: 100px;">
                     </div>
                     <div style="margin-bottom: 15px;">
                         <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Memory Threshold (%)</label>
-                        <input type="number" id="alert-mem" min="0" max="100" style="width: 100px; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); border-radius: 4px;">
+                        <input type="number" id="alert-mem" class="form-input" min="0" max="100" style="width: 100px;">
                     </div>
                     <div style="margin-bottom: 15px;">
                         <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Disk Threshold (%)</label>
-                        <input type="number" id="alert-disk" min="0" max="100" style="width: 100px; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); border-radius: 4px;">
+                        <input type="number" id="alert-disk" class="form-input" min="0" max="100" style="width: 100px;">
                     </div>
                     <button onclick="saveAlerts()" style="background: var(--accent-cpu); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold;">Save Configuration</button>
                 </div>
@@ -856,29 +864,29 @@
                     <span>Docker Containers</span>
                     <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
                         <button onclick="loadDockerContainers()" title="Refresh containers" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
-                        <button id="docker-prune-btn" onclick="openDockerPruneConfirm()" title="Prune unused containers/images/volumes" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; display: none;">
+                        <button id="docker-prune-btn" class="docker-prune-btn" onclick="openDockerPruneConfirm()" title="Prune unused containers/images/volumes" style="display: none;">
                             <i class="fas fa-broom" style="margin-right: 6px;"></i>Prune
                         </button>
                     </div>
                 </div>
                 <div id="docker-prune-hint" style="display: none; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 8px;">Prune will remove stopped containers, dangling images, unused networks, and build cache.</div>
-                <div id="docker-prune-result" style="display: none; font-size: 0.85rem; margin-bottom: 8px; padding: 8px 10px; border-radius: 6px; background: rgba(0, 180, 0, 0.12); border: 1px solid rgba(0,180,0,0.3); color: #a3ffb3;"></div>
+                <div id="docker-prune-result" class="result-box" style="display: none; font-size: 0.85rem; margin-bottom: 8px;"></div>
                 <div id="docker-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 10px;">
-                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-mem);">
+                    <div class="docker-stat-card" style="padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-mem);">
                         <div style="font-size: 0.8rem; color: var(--text-dim);">Containers</div>
                         <div id="docker-summary-containers" style="font-size: 1.2rem; font-weight: bold;">0 / 0 running</div>
                     </div>
-                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-cpu);">
+                    <div class="docker-stat-card" style="padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-cpu);">
                         <div style="font-size: 0.8rem; color: var(--text-dim);">Images</div>
                         <div id="docker-summary-images" style="font-size: 1.2rem; font-weight: bold;">0 images</div>
                     </div>
-                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-net);">
+                    <div class="docker-stat-card" style="padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-net);">
                         <div style="font-size: 0.8rem; color: var(--text-dim);">Image Size</div>
                         <div id="docker-summary-size" style="font-size: 1.2rem; font-weight: bold;">0 B</div>
                     </div>
                 </div>
                 <div style="margin-bottom: 10px; display: flex; gap: 10px;">
-                    <input type="text" id="docker-container-search" placeholder="Search containers..." onkeyup="renderDockerContainers()" style="padding: 5px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white;">
+                    <input type="text" id="docker-container-search" class="search-input" placeholder="Search containers..." onkeyup="renderDockerContainers()">
                 </div>
                 <div class="table-scroll">
                     <table id="docker-containers-table" style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
@@ -904,7 +912,7 @@
                     <button onclick="loadDockerImages()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
                 </div>
                 <div style="margin-bottom: 10px; display: flex; gap: 10px;">
-                    <input type="text" id="docker-image-search" placeholder="Search images..." onkeyup="renderDockerImages()" style="padding: 5px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white;">
+                    <input type="text" id="docker-image-search" class="search-input" placeholder="Search images..." onkeyup="renderDockerImages()">
                 </div>
                 <div class="table-scroll">
                     <table id="docker-images-table" style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
@@ -933,7 +941,7 @@
                     <button onclick="loadServices()" style="background: none; border: none; color: var(--text-dim); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>
                 </div>
                 <div style="margin-bottom: 10px; display: flex; gap: 10px;">
-                    <input type="text" id="service-search" placeholder="Search services..." onkeyup="renderServices()" style="padding: 5px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white;">
+                    <input type="text" id="service-search" class="search-input" placeholder="Search services..." onkeyup="renderServices()">
                 </div>
                 <div class="table-scroll">
                     <table id="services-table" style="width: 100%; border-collapse: collapse; color: var(--text-main); font-size: 0.9rem;">
@@ -1090,15 +1098,15 @@
             <form onsubmit="handleAddUser(event)">
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Username</label>
-                    <input type="text" id="new-username" required style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                    <input type="text" id="new-username" class="form-input" required style="width: 100%;">
                 </div>
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Password</label>
-                    <input type="password" id="new-password" required style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                    <input type="password" id="new-password" class="form-input" required style="width: 100%;">
                 </div>
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Role</label>
-                    <select id="new-role" style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                    <select id="new-role" class="form-input" style="width: 100%;">
                         <option value="user">User</option>
                         <option value="admin">Admin</option>
                     </select>
@@ -1122,7 +1130,7 @@
                 </div>
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">New Password</label>
-                    <input type="password" id="reset-password-new" required style="width: 100%; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px;">
+                    <input type="password" id="reset-password-new" class="form-input" required style="width: 100%;">
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <button type="submit" style="flex: 1; padding: 10px; background: var(--accent-mem); border: none; color: white; border-radius: 4px; cursor: pointer;">Confirm</button>

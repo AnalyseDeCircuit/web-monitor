@@ -1294,6 +1294,119 @@
             color: var(--text-main) !important;
         }
 
+        /* Power & GUI 卡片样式 */
+        .power-profile-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.2);
+            font-weight: bold;
+            transition: all 0.2s;
+            text-transform: capitalize;
+            cursor: pointer;
+        }
+        .power-profile-btn.active {
+            background: var(--accent-cpu);
+            color: white;
+            border-color: var(--accent-cpu);
+        }
+        .power-profile-btn:not(.active) {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-dim);
+        }
+        .power-profile-btn:not(.active):hover {
+            background: rgba(255,255,255,0.1);
+            color: var(--text-main);
+        }
+        .power-profile-btn:disabled {
+            cursor: default;
+        }
+        :root[data-theme="light"] .power-profile-btn {
+            border: 1px solid rgba(0,0,0,0.15);
+        }
+        :root[data-theme="light"] .power-profile-btn.active {
+            background: var(--accent-cpu);
+            color: white;
+            border-color: var(--accent-cpu);
+        }
+        :root[data-theme="light"] .power-profile-btn:not(.active) {
+            background: rgba(0,0,0,0.04);
+            color: var(--text-dim);
+        }
+        :root[data-theme="light"] .power-profile-btn:not(.active):hover {
+            background: rgba(0,0,0,0.08);
+            color: var(--text-main);
+        }
+        .gui-status-badge {
+            font-size: 0.85rem;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        .gui-status-badge.running {
+            background: rgba(46, 213, 115, 0.15);
+            color: var(--accent-mem);
+        }
+        .gui-status-badge.stopped {
+            background: rgba(255, 107, 107, 0.15);
+            color: #ff6b6b;
+        }
+        :root[data-theme="light"] .gui-status-badge.running {
+            background: rgba(39, 174, 96, 0.12);
+        }
+        :root[data-theme="light"] .gui-status-badge.stopped {
+            background: rgba(231, 76, 60, 0.12);
+        }
+        .gui-target-badge {
+            font-size: 0.8rem;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.06);
+            color: var(--text-dim);
+        }
+        :root[data-theme="light"] .gui-target-badge {
+            background: rgba(0,0,0,0.06);
+        }
+        .gui-toggle-btn {
+            background: var(--accent-net);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .gui-toggle-btn:hover {
+            filter: brightness(1.1);
+        }
+        .power-section-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .power-hint {
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            margin-top: 6px;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 4px;
+            border-left: 3px solid var(--accent-disk);
+        }
+        :root[data-theme="light"] .power-hint {
+            background: rgba(0,0,0,0.03);
+        }
+        #gui-controls {
+            border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        :root[data-theme="light"] #gui-controls {
+            border-top: 1px solid rgba(0,0,0,0.08);
+        }
+
         /* 密码修改表单 */
         :root[data-theme="light"] #cp-old,
         :root[data-theme="light"] #cp-new {
@@ -1470,4 +1583,181 @@
         :root[data-theme="light"] ::placeholder {
             color: var(--text-dim);
             opacity: 0.6;
+        }
+
+        /* CPU详细核心卡片背景适配 */
+        .cpu-core-card {
+            background: rgba(255,255,255,0.03);
+        }
+        :root[data-theme="light"] .cpu-core-card {
+            background: rgba(0,0,0,0.03) !important;
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+        :root[data-theme="light"] #cpu-detailed-cores .card {
+            background: rgba(0,0,0,0.03) !important;
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+
+        /* 网络接口状态徽章 */
+        .net-status-badge {
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .net-status-badge.up {
+            background: rgba(46, 213, 115, 0.2);
+            color: #2ed573;
+        }
+        .net-status-badge.down {
+            background: rgba(255, 71, 87, 0.15);
+            color: #ff6b6b;
+        }
+        .net-status-badge.multi {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-dim);
+        }
+        :root[data-theme="light"] .net-status-badge.up {
+            background: rgba(39, 174, 96, 0.12);
+            color: #27ae60;
+        }
+        :root[data-theme="light"] .net-status-badge.down {
+            background: rgba(231, 76, 60, 0.12);
+            color: #e74c3c;
+        }
+        :root[data-theme="light"] .net-status-badge.multi {
+            background: rgba(0,0,0,0.06);
+        }
+
+        /* 结果提示框通用样式 */
+        .result-box {
+            font-size: 0.9rem;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        .result-box.pending {
+            background: rgba(255, 182, 0, 0.12);
+            color: #ffd479;
+        }
+        .result-box.success {
+            background: rgba(0, 180, 0, 0.12);
+            color: #a3ffb3;
+        }
+        .result-box.error {
+            background: rgba(255, 0, 0, 0.12);
+            color: #ffb3b3;
+        }
+        :root[data-theme="light"] .result-box.pending {
+            background: rgba(255, 182, 0, 0.15);
+            color: #b38600;
+        }
+        :root[data-theme="light"] .result-box.success {
+            background: rgba(39, 174, 96, 0.12);
+            color: #1e8449;
+        }
+        :root[data-theme="light"] .result-box.error {
+            background: rgba(231, 76, 60, 0.12);
+            color: #c0392b;
+        }
+
+        /* Docker状态徽章 */
+        .docker-status-badge {
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .docker-status-badge.running {
+            background: rgba(46, 213, 115, 0.15);
+            color: #2ed573;
+        }
+        .docker-status-badge.exited, .docker-status-badge.stopped {
+            background: rgba(255, 71, 87, 0.15);
+            color: #ff6b6b;
+        }
+        .docker-status-badge.paused {
+            background: rgba(255, 182, 0, 0.15);
+            color: #ffc107;
+        }
+        :root[data-theme="light"] .docker-status-badge.running {
+            background: rgba(39, 174, 96, 0.12);
+            color: #27ae60;
+        }
+        :root[data-theme="light"] .docker-status-badge.exited,
+        :root[data-theme="light"] .docker-status-badge.stopped {
+            background: rgba(231, 76, 60, 0.12);
+            color: #e74c3c;
+        }
+        :root[data-theme="light"] .docker-status-badge.paused {
+            background: rgba(255, 182, 0, 0.15);
+            color: #b38600;
+        }
+
+        /* Docker统计卡片 */
+        .docker-stat-card {
+            background: rgba(255,255,255,0.03);
+        }
+        :root[data-theme="light"] .docker-stat-card {
+            background: rgba(0,0,0,0.03);
+            border: 1px solid rgba(0,0,0,0.06);
+        }
+
+        /* Docker Prune 按钮 */
+        .docker-prune-btn {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        .docker-prune-btn:hover {
+            background: rgba(255,255,255,0.15);
+        }
+        :root[data-theme="light"] .docker-prune-btn {
+            background: rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.15);
+            color: var(--text-main);
+        }
+        :root[data-theme="light"] .docker-prune-btn:hover {
+            background: rgba(0,0,0,0.12);
+        }
+
+        /* 表单输入框通用类 */
+        .form-input {
+            padding: 8px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-main);
+            border-radius: 4px;
+        }
+        :root[data-theme="light"] .form-input {
+            background: rgba(0,0,0,0.04);
+            border: 1px solid rgba(0,0,0,0.15);
+            color: var(--text-main);
+        }
+        :root[data-theme="light"] .form-input:focus {
+            border-color: var(--accent-net);
+            outline: none;
+            background: rgba(52, 152, 219, 0.05);
+        }
+
+        /* 搜索输入框 */
+        .search-input {
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.2);
+            color: white;
+        }
+        :root[data-theme="light"] .search-input {
+            background: rgba(0,0,0,0.04);
+            border: 1px solid rgba(0,0,0,0.15);
+            color: var(--text-main);
+        }
+        :root[data-theme="light"] .search-input::placeholder {
+            color: var(--text-dim);
         }

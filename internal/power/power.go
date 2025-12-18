@@ -3,6 +3,7 @@ package power
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
 
@@ -31,6 +33,22 @@ func sanitizeReason(reason string) string {
 		reason = reason[:200]
 	}
 	return reason
+}
+
+func hostCmdContext(ctx context.Context, args ...string) *exec.Cmd {
+	hostFS := config.Load().HostFS
+	if hostFS != "" {
+		return exec.CommandContext(ctx, "chroot", append([]string{hostFS}, args...)...)
+	}
+	return exec.CommandContext(ctx, args[0], args[1:]...)
+}
+
+func isExecNotFound(err error) bool {
+	// Covers common cases: exec.ErrNotFound and "no such file" from chroot.
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, exec.ErrNotFound) || strings.Contains(strings.ToLower(err.Error()), "no such file")
 }
 
 // normalizeProfile maps user-friendly names to powerprofilesctl values.
@@ -274,47 +292,53 @@ func GetPowerProfiles() (*types.PowerProfileInfo, error) {
 
 	info := &types.PowerProfileInfo{Available: []string{}, Supported: false}
 
-	bin, err := exec.LookPath("powerprofilesctl")
-	if err != nil {
-		info.Error = "powerprofilesctl not found"
-		return info, nil
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
 	defer cancel()
 
 	// current mode via `powerprofilesctl get`
-	getCmd := exec.CommandContext(ctx, bin, "get")
+	getCmd := hostCmdContext(ctx, "powerprofilesctl", "get")
 	getOut, err := getCmd.CombinedOutput()
 	if err == nil {
 		info.Current = normalizeProfile(strings.TrimSpace(string(getOut)))
+	} else if isExecNotFound(err) {
+		info.Error = "powerprofilesctl not found"
+		return info, nil
 	}
 
 	// available via `powerprofilesctl list`
-	listCmd := exec.CommandContext(ctx, bin, "list")
+	listCmd := hostCmdContext(ctx, "powerprofilesctl", "list")
 	out, err := listCmd.CombinedOutput()
 	if err != nil {
+		if isExecNotFound(err) {
+			info.Error = "powerprofilesctl not found"
+			return info, nil
+		}
 		info.Error = strings.TrimSpace(string(out))
 		return info, nil
 	}
 
 	lines := strings.Split(string(out), "\n")
 	for _, line := range lines {
+		orig := line
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		// Lines like "* performance" or "  balanced"
-		parts := strings.Fields(line)
-		if len(parts) == 0 {
+		// Profile lines look like "  performance:" or "* power-saver:"
+		// Skip indented property lines (e.g., "    CpuDriver:  intel_pstate")
+		if strings.HasPrefix(orig, "    ") || strings.HasPrefix(orig, "\t\t") {
 			continue
 		}
-		p := normalizeProfile(parts[len(parts)-1])
+		// Strip leading * and trailing :
+		cleaned := strings.TrimPrefix(line, "*")
+		cleaned = strings.TrimSpace(cleaned)
+		cleaned = strings.TrimSuffix(cleaned, ":")
+		p := normalizeProfile(cleaned)
 		if p == "" {
 			continue
 		}
 		info.Available = append(info.Available, p)
-		if strings.HasPrefix(line, "*") || (info.Current == "" && len(parts) > 0 && parts[0] == "*") {
+		if strings.HasPrefix(line, "*") {
 			info.Current = p
 		}
 	}
@@ -335,11 +359,6 @@ func SetPowerProfile(profile string) error {
 	powerMutex.Lock()
 	defer powerMutex.Unlock()
 
-	bin, err := exec.LookPath("powerprofilesctl")
-	if err != nil {
-		return fmt.Errorf("powerprofilesctl not found")
-	}
-
 	norm := normalizeProfile(profile)
 	if norm == "" {
 		return fmt.Errorf("invalid profile")
@@ -348,9 +367,12 @@ func SetPowerProfile(profile string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, "set", norm)
+	cmd := hostCmdContext(ctx, "powerprofilesctl", "set", norm)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if isExecNotFound(err) {
+			return fmt.Errorf("powerprofilesctl not found")
+		}
 		return fmt.Errorf("set failed: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
@@ -363,18 +385,17 @@ func GetGUIStatus() (*types.GUIStatus, error) {
 
 	status := &types.GUIStatus{Supported: false, Running: false, Service: "display-manager.service"}
 
-	if _, err := exec.LookPath("systemctl"); err != nil {
-		status.Error = "systemctl not available"
-		return status, nil
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "systemctl", "is-active", status.Service)
+	cmd := hostCmdContext(ctx, "systemctl", "is-active", status.Service)
 	out, err := cmd.CombinedOutput()
 	txt := strings.TrimSpace(string(out))
 	if err != nil {
+		if isExecNotFound(err) {
+			status.Error = "systemctl not available"
+			return status, nil
+		}
 		// If unit missing, treat as unsupported.
 		if strings.Contains(txt, "could not be found") || strings.Contains(txt, "not-found") {
 			status.Error = txt
@@ -386,7 +407,7 @@ func GetGUIStatus() (*types.GUIStatus, error) {
 	status.Running = (txt == "active")
 
 	// default target like graphical.target or multi-user.target
-	defCmd := exec.CommandContext(ctx, "systemctl", "get-default")
+	defCmd := hostCmdContext(ctx, "systemctl", "get-default")
 	defOut, err := defCmd.CombinedOutput()
 	if err == nil {
 		status.DefaultTarget = strings.TrimSpace(string(defOut))
@@ -399,10 +420,6 @@ func SetGUIRunning(enable bool) error {
 	powerMutex.Lock()
 	defer powerMutex.Unlock()
 
-	if _, err := exec.LookPath("systemctl"); err != nil {
-		return fmt.Errorf("systemctl not available")
-	}
-
 	action := "stop"
 	if enable {
 		action = "start"
@@ -411,9 +428,12 @@ func SetGUIRunning(enable bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), powerCommandTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "systemctl", action, "display-manager.service")
+	cmd := hostCmdContext(ctx, "systemctl", action, "display-manager.service")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if isExecNotFound(err) {
+			return fmt.Errorf("systemctl not available")
+		}
 		return fmt.Errorf("%s failed: %s", action, strings.TrimSpace(string(out)))
 	}
 	return nil

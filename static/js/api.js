@@ -379,9 +379,8 @@ async function handleDockerPrune() {
     const resultBox = document.getElementById('docker-prune-result');
     if (resultBox) {
         resultBox.style.display = 'block';
-        resultBox.style.background = 'rgba(255, 182, 0, 0.12)';
+        resultBox.className = 'result-box pending';
         resultBox.style.border = '1px solid rgba(255,182,0,0.3)';
-        resultBox.style.color = '#ffd479';
         resultBox.textContent = 'Pruning...';
     }
 
@@ -395,16 +394,15 @@ async function handleDockerPrune() {
             const volumesDeleted = data.result && (data.result.VolumesDeleted || (data.result.Volumes && data.result.Volumes.length));
 
             let summary = 'Prune completed';
-            if (reclaimed !== undefined) summary += ` • Space reclaimed: ${formatBytes(reclaimed)}`;
+            if (reclaimed !== undefined) summary += ` • Space reclaimed: ${formatSize(reclaimed)}`;
             if (containersDeleted) summary += ` • Containers: ${containersDeleted}`;
             if (imagesDeleted) summary += ` • Images: ${imagesDeleted}`;
             if (volumesDeleted) summary += ` • Volumes: ${volumesDeleted}`;
 
             if (resultBox) {
                 resultBox.style.display = 'block';
-                resultBox.style.background = 'rgba(0, 180, 0, 0.12)';
+                resultBox.className = 'result-box success';
                 resultBox.style.border = '1px solid rgba(0,180,0,0.3)';
-                resultBox.style.color = '#a3ffb3';
                 resultBox.textContent = summary;
             }
             // Refresh containers/images after prune
@@ -415,9 +413,8 @@ async function handleDockerPrune() {
             const msg = data.error || 'Prune failed';
             if (resultBox) {
                 resultBox.style.display = 'block';
-                resultBox.style.background = 'rgba(255, 0, 0, 0.12)';
+                resultBox.className = 'result-box error';
                 resultBox.style.border = '1px solid rgba(255,0,0,0.3)';
-                resultBox.style.color = '#ffb3b3';
                 resultBox.textContent = msg;
             } else {
                 alert(msg);
@@ -427,9 +424,8 @@ async function handleDockerPrune() {
         const msg = 'Prune failed: ' + err.message;
         if (resultBox) {
             resultBox.style.display = 'block';
-            resultBox.style.background = 'rgba(255, 0, 0, 0.12)';
+            resultBox.className = 'result-box error';
             resultBox.style.border = '1px solid rgba(255,0,0,0.3)';
-            resultBox.style.color = '#ffb3b3';
             resultBox.textContent = msg;
         } else {
             alert(msg);
@@ -924,7 +920,7 @@ function loadPowerProfile() {
             const profiles = (data && data.available) || [];
             const hasProfiles = profiles.length > 0;
 
-            const errMsg = data && data.error ? data.error : (supported ? '' : '当前设备未检测到 powerprofilesctl 或不支持电源配置');
+            const errMsg = data && data.error ? data.error : (supported ? '' : 'powerprofilesctl not detected or not supported on this device');
             if (errMsg) {
                 hint.style.display = 'block';
                 hint.textContent = errMsg;
@@ -937,52 +933,45 @@ function loadPowerProfile() {
                 const msg = document.createElement('div');
                 msg.style.color = 'var(--text-dim)';
                 msg.style.fontSize = '0.9rem';
-                msg.textContent = '未检测到可用的电源模式';
+                msg.textContent = 'No power profiles detected';
                 container.appendChild(msg);
                 return;
             }
 
+            // Profile display name mapping
+            const profileNames = {
+                'performance': '🚀 Performance',
+                'balanced': '⚖️ Balanced',
+                'power-saver': '🔋 Power Saver'
+            };
+
             profiles.forEach((profile) => {
                 const btn = document.createElement('button');
-                btn.innerText = profile;
-                btn.style.padding = '8px 16px';
-                btn.style.borderRadius = '4px';
-                btn.style.border = '1px solid rgba(255,255,255,0.2)';
-                btn.style.cursor = isAdmin ? 'pointer' : 'default';
-                btn.style.textTransform = 'capitalize';
-                btn.style.fontWeight = 'bold';
-                btn.style.transition = 'all 0.2s';
-
-                if (profile === data.current) {
-                    btn.style.background = 'var(--accent-cpu)';
-                    btn.style.color = 'white';
-                    btn.style.borderColor = 'var(--accent-cpu)';
-                } else {
-                    btn.style.background = 'rgba(255,255,255,0.05)';
-                    btn.style.color = 'var(--text-dim)';
-                }
+                btn.className = 'power-profile-btn' + (profile === data.current ? ' active' : '');
+                btn.innerText = profileNames[profile] || profile;
+                btn.title = profile === data.current ? 'Current mode' : (isAdmin ? 'Click to switch' : 'Admin only');
 
                 if (isAdmin) {
                     btn.onclick = () => setPowerProfile(profile);
-                    btn.onmouseover = () => {
-                        if (profile !== data.current) {
-                            btn.style.background = 'rgba(255,255,255,0.1)';
-                            btn.style.color = 'var(--text-main)';
-                        }
-                    };
-                    btn.onmouseout = () => {
-                        if (profile !== data.current) {
-                            btn.style.background = 'rgba(255,255,255,0.05)';
-                            btn.style.color = 'var(--text-dim)';
-                        }
-                    };
                 } else {
                     btn.disabled = true;
-                    btn.style.opacity = profile === data.current ? '1' : '0.5';
+                    if (profile !== data.current) {
+                        btn.style.opacity = '0.5';
+                    }
                 }
 
                 container.appendChild(btn);
             });
+
+            // Add admin hint for non-admins
+            if (!isAdmin && hasProfiles) {
+                const hint = document.createElement('span');
+                hint.style.fontSize = '0.8rem';
+                hint.style.color = 'var(--text-dim)';
+                hint.style.marginLeft = '8px';
+                hint.innerText = '(Admin only)';
+                container.appendChild(hint);
+            }
         })
         .catch((err) => console.error('Failed to load power profile:', err));
 }
@@ -1012,32 +1001,47 @@ function loadGuiStatus() {
             const statusEl = document.getElementById('gui-status-text');
             const btn = document.getElementById('gui-toggle-btn');
             const targetEl = document.getElementById('gui-default-target');
+            const adminHint = document.getElementById('gui-admin-hint');
             if (!statusEl || !btn) return;
+
+            const role = localStorage.getItem('role');
+            const isAdmin = role === 'admin';
 
             if (!data || data.supported === false) {
                 statusEl.innerText = 'Display manager not detected';
+                statusEl.className = 'gui-status-badge';
                 btn.style.display = 'none';
                 if (targetEl) targetEl.style.display = 'none';
+                if (adminHint) adminHint.style.display = 'none';
                 return;
             }
 
-            statusEl.innerText = data.running ? 'Running' : 'Stopped';
-            statusEl.style.color = data.running ? 'var(--accent-mem)' : '#ff6b6b';
+            statusEl.innerText = data.running ? '✓ Running' : '○ Stopped';
+            statusEl.className = 'gui-status-badge ' + (data.running ? 'running' : 'stopped');
 
             if (targetEl) {
                 if (data.default_target) {
                     targetEl.style.display = 'inline-flex';
-                    targetEl.innerText = 'Default: ' + data.default_target;
+                    // Friendly target names
+                    const targetMap = {
+                        'graphical.target': '🖥️ Graphical',
+                        'multi-user.target': '💻 Multi-User'
+                    };
+                    targetEl.innerText = targetMap[data.default_target] || data.default_target;
+                    targetEl.title = 'System default target: ' + data.default_target;
                 } else {
                     targetEl.style.display = 'none';
                 }
             }
 
-            const role = localStorage.getItem('role');
-            const isAdmin = role === 'admin';
             btn.style.display = isAdmin ? 'inline-flex' : 'none';
-            btn.textContent = data.running ? 'Stop GUI' : 'Start GUI';
+            btn.textContent = data.running ? '⏹ Stop GUI' : '▶ Start GUI';
+            btn.title = data.running ? 'Stop display-manager service' : 'Start display-manager service';
             btn.dataset.nextAction = data.running ? 'stop' : 'start';
+
+            if (adminHint) {
+                adminHint.style.display = isAdmin ? 'none' : 'inline';
+            }
         })
         .catch((err) => console.error('Failed to load GUI status:', err));
 }

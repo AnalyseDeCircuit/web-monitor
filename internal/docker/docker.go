@@ -19,11 +19,14 @@ import (
 )
 
 var (
-	dockerClient       *http.Client
-	dockerOnce         sync.Once
-	dockerReadOnlyMode bool
-	dockerSockPath     string
-	dockerBaseURL      string
+	dockerClient        *http.Client
+	dockerOnce          sync.Once
+	dockerReadOnlyMode  bool
+	dockerSockPath      string
+	dockerBaseURL       string
+	dockerAPIPrefix     string
+	dockerAPIDetectMu   sync.Mutex
+	dockerAPIDetectDone bool
 )
 
 const (
@@ -73,6 +76,75 @@ func resolveDockerBaseURL() (string, bool, error) {
 	return "http://docker", true, nil
 }
 
+func resolveDockerAPIPrefix() string {
+	// Accept DOCKER_API_VERSION like "1.41" or "v1.41"; default empty (no prefix).
+	v := strings.TrimSpace(os.Getenv("DOCKER_API_VERSION"))
+	if v == "" {
+		return ""
+	}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	return "/" + v
+}
+
+func detectDockerAPIPrefix(ctx context.Context) {
+	dockerAPIDetectMu.Lock()
+	if dockerAPIDetectDone {
+		dockerAPIDetectMu.Unlock()
+		return
+	}
+	// Mark done no matter what to avoid repeated probes under load.
+	dockerAPIDetectDone = true
+	dockerAPIDetectMu.Unlock()
+
+	if dockerAPIPrefix != "" {
+		return
+	}
+
+	client := getDockerClient()
+	base := dockerBaseURL
+	if base == "" {
+		base = "http://docker"
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, dockerRequestTimeout)
+		defer cancel()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/version", nil)
+	if err != nil {
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	var v struct {
+		APIVersion string `json:"ApiVersion"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		return
+	}
+	api := strings.TrimSpace(v.APIVersion)
+	if api == "" {
+		return
+	}
+	if !strings.HasPrefix(api, "v") {
+		api = "v" + api
+	}
+	dockerAPIPrefix = "/" + api
+}
+
 // getDockerClient 获取Docker客户端
 func getDockerClient() *http.Client {
 	dockerOnce.Do(func() {
@@ -109,6 +181,8 @@ func getDockerClient() *http.Client {
 		// - Using a sidecar container with limited Docker API access
 		// - Mounting /var/run/docker.sock read-only when possible
 		log.Println("WARNING: Direct docker.sock access detected. Ensure secure deployment configuration.")
+
+		dockerAPIPrefix = resolveDockerAPIPrefix()
 		tr := &http.Transport{
 			ResponseHeaderTimeout: dockerRequestTimeout,
 			MaxIdleConns:          20,
@@ -139,14 +213,47 @@ func dockerRequest(ctx context.Context, method, path string) (*http.Response, er
 	if base == "" {
 		base = "http://docker"
 	}
-	req, err := http.NewRequestWithContext(ctx, method, base+path, nil)
-	if err != nil {
-		if cancel != nil {
-			cancel()
-		}
-		return nil, err
+
+	paths := []string{path}
+	// If API version prefix is configured and path is not already versioned, try versioned first.
+	if dockerAPIPrefix != "" && !strings.HasPrefix(path, "/v") {
+		paths = append([]string{dockerAPIPrefix + path}, paths...)
 	}
-	resp, err := client.Do(req)
+
+	var resp *http.Response
+	var err error
+	for i, p := range paths {
+		req, reqErr := http.NewRequestWithContext(ctx, method, base+p, nil)
+		if reqErr != nil {
+			err = reqErr
+			break
+		}
+		resp, err = client.Do(req)
+		if err != nil {
+			break
+		}
+		// If not 404 or this is last attempt, return.
+		if resp.StatusCode != http.StatusNotFound || i == len(paths)-1 {
+			break
+		}
+		// Close body before retrying with fallback.
+		resp.Body.Close()
+	}
+
+	// If we got a 404 on an unversioned request, try to auto-detect ApiVersion and retry once.
+	if err == nil && resp != nil && resp.StatusCode == http.StatusNotFound && dockerAPIPrefix == "" && !strings.HasPrefix(path, "/v") {
+		_ = resp.Body.Close()
+		detectDockerAPIPrefix(ctx)
+		if dockerAPIPrefix != "" {
+			req, reqErr := http.NewRequestWithContext(ctx, method, base+dockerAPIPrefix+path, nil)
+			if reqErr != nil {
+				err = reqErr
+			} else {
+				resp, err = client.Do(req)
+			}
+		}
+	}
+
 	if err != nil {
 		if cancel != nil {
 			cancel()
@@ -342,26 +449,74 @@ func GetContainerLogs(containerID string, lines int) (string, error) {
 	return string(body), nil
 }
 
-// PruneSystem 清理Docker系统
+// PruneSystem 清理Docker系统 (containers, images, networks, build cache)
 func PruneSystem() (map[string]interface{}, error) {
 	// Block write operations in read-only mode.
 	if dockerReadOnlyMode {
 		return nil, fmt.Errorf("Docker read-only mode is enabled; prune is not allowed")
 	}
-	resp, err := dockerRequest(context.Background(), "POST", "/system/prune")
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %v", err)
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Docker API error: %d", resp.StatusCode)
+	result := make(map[string]interface{})
+	var totalSpaceReclaimed uint64
+
+	// Prune stopped containers
+	if resp, err := dockerRequest(context.Background(), "POST", "/containers/prune"); err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			var containerResult map[string]interface{}
+			if json.NewDecoder(resp.Body).Decode(&containerResult) == nil {
+				if deleted, ok := containerResult["ContainersDeleted"].([]interface{}); ok {
+					result["ContainersDeleted"] = len(deleted)
+				}
+				if space, ok := containerResult["SpaceReclaimed"].(float64); ok {
+					totalSpaceReclaimed += uint64(space)
+				}
+			}
+		}
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode prune result: %v", err)
+	// Prune dangling images
+	if resp, err := dockerRequest(context.Background(), "POST", "/images/prune"); err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			var imageResult map[string]interface{}
+			if json.NewDecoder(resp.Body).Decode(&imageResult) == nil {
+				if deleted, ok := imageResult["ImagesDeleted"].([]interface{}); ok {
+					result["ImagesDeleted"] = len(deleted)
+				}
+				if space, ok := imageResult["SpaceReclaimed"].(float64); ok {
+					totalSpaceReclaimed += uint64(space)
+				}
+			}
+		}
 	}
 
+	// Prune unused networks
+	if resp, err := dockerRequest(context.Background(), "POST", "/networks/prune"); err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			var networkResult map[string]interface{}
+			if json.NewDecoder(resp.Body).Decode(&networkResult) == nil {
+				if deleted, ok := networkResult["NetworksDeleted"].([]interface{}); ok {
+					result["NetworksDeleted"] = len(deleted)
+				}
+			}
+		}
+	}
+
+	// Prune build cache
+	if resp, err := dockerRequest(context.Background(), "POST", "/build/prune"); err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			var buildResult map[string]interface{}
+			if json.NewDecoder(resp.Body).Decode(&buildResult) == nil {
+				if space, ok := buildResult["SpaceReclaimed"].(float64); ok {
+					totalSpaceReclaimed += uint64(space)
+				}
+			}
+		}
+	}
+
+	result["SpaceReclaimed"] = totalSpaceReclaimed
 	return result, nil
 }
