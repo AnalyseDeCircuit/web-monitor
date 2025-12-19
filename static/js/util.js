@@ -13,10 +13,16 @@ function initTheme() {
     applyTheme(savedTheme);
 }
 
+// 主题循环顺序: dark -> light -> warm -> dark
+const themeOrder = ['dark', 'light', 'warm'];
+
 function toggleTheme() {
     const root = document.documentElement;
     const currentTheme = root.getAttribute('data-theme') || 'dark';
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    const currentIndex = themeOrder.indexOf(currentTheme);
+    // 如果当前主题不在列表中，默认从 dark 开始
+    const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % themeOrder.length;
+    const newTheme = themeOrder[nextIndex];
     
     applyTheme(newTheme);
     localStorage.setItem('theme', newTheme);
@@ -26,21 +32,32 @@ function applyTheme(theme) {
     const root = document.documentElement;
     const themeIcon = document.getElementById('theme-icon');
     
+    // 确保 theme 是有效值
+    if (!themeOrder.includes(theme)) {
+        theme = 'dark';
+    }
+    
     root.setAttribute('data-theme', theme);
     
     // 更新图标
     if (themeIcon) {
-        if (theme === 'light') {
-            themeIcon.className = 'fas fa-sun';
-        } else {
-            themeIcon.className = 'fas fa-moon';
+        switch (theme) {
+            case 'light':
+                themeIcon.className = 'fas fa-sun';
+                break;
+            case 'warm':
+                themeIcon.className = 'fas fa-mug-hot';
+                break;
+            default: // dark
+                themeIcon.className = 'fas fa-moon';
         }
     }
     
     // 更新meta theme-color
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', theme === 'light' ? '#f5f5f5' : '#121212');
+        const colors = { dark: '#0d0d0d', light: '#f5f5f5', warm: '#1a1410' };
+        metaThemeColor.setAttribute('content', colors[theme] || '#0d0d0d');
     }
 }
 

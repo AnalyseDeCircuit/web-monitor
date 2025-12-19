@@ -17,6 +17,7 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/plugin"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/session"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/settings"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 
@@ -107,6 +108,13 @@ func main() {
 
 	// 初始化JWT密钥
 	auth.InitJWTKey()
+
+	// 初始化会话管理器
+	log.Println("Initializing session manager...")
+	session.LoadPreferencesFromDisk()
+	session.LoadLoginHistoryFromDisk()
+	session.StartCleanupRoutine()
+	log.Println("Session manager initialized")
 
 	// 加载操作日志
 	logs.LoadOpLogs()

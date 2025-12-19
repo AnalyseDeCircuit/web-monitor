@@ -37,7 +37,12 @@ func SetupRouter(pluginManager *plugin.Manager) *Router {
 	router.mux.HandleFunc("/api/logout", LogoutHandler)
 	router.mux.HandleFunc("/api/password", ChangePasswordHandler)
 	router.mux.HandleFunc("/api/validate-password", ValidatePasswordHandler)
-	router.mux.HandleFunc("/api/session", SessionInfoHandler)
+
+	// 用户 Profile 路由
+	router.mux.HandleFunc("/api/profile", ProfileHandler)
+	router.mux.HandleFunc("/api/profile/sessions", ProfileSessionsHandler)
+	router.mux.HandleFunc("/api/profile/preferences", ProfilePreferencesHandler)
+	router.mux.HandleFunc("/api/profile/login-history", ProfileLoginHistoryHandler)
 
 	// 用户管理路由
 	router.mux.HandleFunc("/api/users", UsersHandler)

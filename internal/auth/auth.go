@@ -393,6 +393,37 @@ func CheckAccountLock(user *types.User) bool {
 	return false
 }
 
+// RecordFailedLogin 记录失败登录信息
+func RecordFailedLogin(username, ip string) {
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	for i := range userDB.Users {
+		if userDB.Users[i].Username == username {
+			now := time.Now()
+			userDB.Users[i].LastFailedLogin = &now
+			userDB.Users[i].LastFailedLoginIP = ip
+			_ = SaveUserDatabase()
+			return
+		}
+	}
+}
+
+// RecordPasswordChange 记录密码修改时间
+func RecordPasswordChange(username string) {
+	userDB_mu.Lock()
+	defer userDB_mu.Unlock()
+
+	for i := range userDB.Users {
+		if userDB.Users[i].Username == username {
+			now := time.Now()
+			userDB.Users[i].LastPasswordChange = &now
+			_ = SaveUserDatabase()
+			return
+		}
+	}
+}
+
 // GetUserByUsername 根据用户名获取用户
 func GetUserByUsername(username string) *types.User {
 	userDB_mu.RLock()
@@ -460,6 +491,8 @@ func ChangePassword(requesterUsername, requesterRole, targetUsername, oldPasswor
 	userDB.Users[idx].Password = hash
 	userDB.Users[idx].FailedLoginCount = 0
 	userDB.Users[idx].LockedUntil = nil
+	now := time.Now()
+	userDB.Users[idx].LastPasswordChange = &now
 	return SaveUserDatabase()
 }
 

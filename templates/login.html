@@ -3,30 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Web Monitor - 登录</title>
+    <title>Web Monitor - Login</title>
     <style>
-        :root {
-            --login-bg-from: #667eea;
-            --login-bg-to: #764ba2;
-            --container-bg: white;
-            --text-primary: #333;
-            --text-secondary: #888;
-            --text-placeholder: #ccc;
-            --border-color: #ddd;
-            --input-focus-bg: #f9fafb;
-            --code-bg: #f5f5f5;
-        }
-
-        :root[data-theme="dark"] {
-            --login-bg-from: #1a1a2e;
-            --login-bg-to: #16213e;
-            --container-bg: #1e1e1e;
+        :root, :root[data-theme="dark"] {
+            --login-bg: #0d0d0d;
+            --container-bg: rgba(26, 26, 26, 0.95);
             --text-primary: #e0e0e0;
             --text-secondary: #888;
-            --text-placeholder: #666;
-            --border-color: rgba(255,255,255,0.1);
-            --input-focus-bg: rgba(255,255,255,0.05);
-            --code-bg: rgba(255,255,255,0.05);
+            --text-placeholder: #555;
+            --border-color: rgba(255,255,255,0.08);
+            --input-bg: rgba(0,0,0,0.3);
+            --input-focus-bg: rgba(0,0,0,0.4);
+            --accent-color: #ff4757;
+            --accent-gradient: linear-gradient(135deg, #ff4757 0%, #ff6b81 100%);
+            --glow-color: rgba(255, 71, 87, 0.3);
+            --particle-color: rgba(255,71,87,0.3);
+        }
+
+        :root[data-theme="light"] {
+            --login-bg: #f5f5f5;
+            --container-bg: rgba(255, 255, 255, 0.98);
+            --text-primary: #2c3e50;
+            --text-secondary: #7f8c8d;
+            --text-placeholder: #999;
+            --border-color: rgba(0,0,0,0.1);
+            --input-bg: rgba(0,0,0,0.03);
+            --input-focus-bg: rgba(0,0,0,0.05);
+            --glow-color: rgba(255, 71, 87, 0.2);
+            --particle-color: rgba(255,71,87,0.2);
+        }
+
+        :root[data-theme="warm"] {
+            --login-bg: #1a1410;
+            --container-bg: rgba(42, 32, 24, 0.95);
+            --text-primary: #e8ddd0;
+            --text-secondary: #a89888;
+            --text-placeholder: #6a5a4a;
+            --border-color: rgba(255,200,150,0.1);
+            --input-bg: rgba(0,0,0,0.2);
+            --input-focus-bg: rgba(0,0,0,0.3);
+            --accent-color: #e07850;
+            --accent-gradient: linear-gradient(135deg, #e07850 0%, #f4a460 100%);
+            --glow-color: rgba(224, 120, 80, 0.3);
+            --particle-color: rgba(255,180,120,0.3);
         }
 
         * {
@@ -41,7 +60,7 @@
         }
 
         body {
-            background: linear-gradient(135deg, var(--login-bg-from) 0%, var(--login-bg-to) 100%);
+            background: var(--login-bg);
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -49,64 +68,184 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             -webkit-font-smoothing: antialiased;
             position: relative;
+            overflow: hidden;
+        }
+
+        /* Animated background */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            background: var(--login-bg);
+        }
+
+        .bg-animation::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, var(--glow-color) 0%, transparent 50%);
+            animation: pulse 15s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(10%, 10%) scale(1.1); }
+        }
+
+        /* Floating particles */
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: var(--particle-color);
+            border-radius: 50%;
+            animation: float 20s infinite;
+        }
+
+        .particle:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 25s; }
+        .particle:nth-child(2) { left: 20%; animation-delay: 2s; animation-duration: 20s; }
+        .particle:nth-child(3) { left: 30%; animation-delay: 4s; animation-duration: 28s; }
+        .particle:nth-child(4) { left: 40%; animation-delay: 1s; animation-duration: 22s; }
+        .particle:nth-child(5) { left: 50%; animation-delay: 3s; animation-duration: 26s; }
+        .particle:nth-child(6) { left: 60%; animation-delay: 5s; animation-duration: 21s; }
+        .particle:nth-child(7) { left: 70%; animation-delay: 0.5s; animation-duration: 24s; }
+        .particle:nth-child(8) { left: 80%; animation-delay: 2.5s; animation-duration: 27s; }
+        .particle:nth-child(9) { left: 90%; animation-delay: 4.5s; animation-duration: 23s; }
+
+        @keyframes float {
+            0% { transform: translateY(100vh) scale(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-100vh) scale(1); opacity: 0; }
         }
 
         .theme-toggle-login {
             position: absolute;
             top: 20px;
             right: 20px;
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.3);
-            color: white;
-            padding: 10px 15px;
-            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: var(--text-primary);
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
             cursor: pointer;
             font-size: 1.2rem;
             transition: all 0.3s ease;
             backdrop-filter: blur(10px);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .theme-toggle-login:hover {
-            background: rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.15);
             transform: scale(1.05);
+        }
+
+        :root[data-theme="light"] .theme-toggle-login {
+            background: rgba(0,0,0,0.05);
+            border-color: rgba(0,0,0,0.1);
+        }
+
+        :root[data-theme="light"] .theme-toggle-login:hover {
+            background: rgba(0,0,0,0.1);
+        }
+
+        :root[data-theme="warm"] .theme-toggle-login {
+            background: rgba(255,200,150,0.1);
+            border-color: rgba(255,200,150,0.2);
+        }
+
+        :root[data-theme="warm"] .theme-toggle-login:hover {
+            background: rgba(255,200,150,0.15);
         }
 
         .login-container {
             background: var(--container-bg);
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(255,255,255,0.05),
+                inset 0 1px 0 rgba(255,255,255,0.1);
+            padding: 48px 40px;
             width: 100%;
-            max-width: 400px;
-            animation: slideIn 0.4s ease-out;
+            max-width: 420px;
+            animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            z-index: 10;
+            backdrop-filter: blur(20px);
         }
 
         @keyframes slideIn {
             from {
                 opacity: 0;
-                transform: translateY(20px);
+                transform: translateY(30px) scale(0.96);
             }
             to {
                 opacity: 1;
-                transform: translateY(0);
+                transform: translateY(0) scale(1);
             }
         }
 
         .login-header {
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 36px;
         }
 
-        .login-icon {
-            font-size: 48px;
-            margin-bottom: 15px;
+        .login-logo {
+            width: 72px;
+            height: 72px;
+            background: var(--accent-gradient);
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            box-shadow: 0 10px 30px var(--glow-color);
+            position: relative;
+        }
+
+        .login-logo::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 20px;
+            background: var(--accent-gradient);
+            z-index: -1;
+            opacity: 0.5;
+            filter: blur(10px);
+        }
+
+        .login-logo svg {
+            width: 36px;
+            height: 36px;
+            fill: white;
         }
 
         .login-header h1 {
             color: var(--text-primary);
-            font-size: 28px;
-            margin-bottom: 10px;
-            font-weight: 600;
+            font-size: 26px;
+            margin-bottom: 8px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
         }
 
         .login-header p {
@@ -120,29 +259,50 @@
 
         label {
             display: block;
-            color: var(--text-primary);
+            color: var(--text-secondary);
             font-weight: 500;
             margin-bottom: 8px;
-            font-size: 14px;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-wrapper i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-placeholder);
+            font-size: 16px;
+            transition: color 0.3s;
         }
 
         input {
             width: 100%;
-            padding: 12px 14px;
+            padding: 14px 14px 14px 44px;
             border: 1px solid var(--border-color);
-            border-radius: 6px;
-            font-size: 14px;
+            border-radius: 12px;
+            font-size: 15px;
             transition: all 0.3s;
             font-family: inherit;
-            background: var(--container-bg);
+            background: var(--input-bg);
             color: var(--text-primary);
         }
 
         input:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 4px var(--glow-color);
             background-color: var(--input-focus-bg);
+        }
+
+        input:focus + i,
+        .input-wrapper:focus-within i {
+            color: var(--accent-color);
         }
 
         input::placeholder {
@@ -151,22 +311,38 @@
 
         button {
             width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 14px;
+            background: var(--accent-gradient);
             color: white;
             border: none;
-            border-radius: 6px;
-            font-size: 16px;
+            border-radius: 12px;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
             position: relative;
             overflow: hidden;
+            margin-top: 8px;
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        button:hover:not(:disabled)::before {
+            left: 100%;
         }
 
         button:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 10px 30px var(--glow-color);
         }
 
         button:active:not(:disabled) {
@@ -179,29 +355,35 @@
         }
 
         .error {
-            background-color: #fee;
-            border: 1px solid #fcc;
-            color: #c33;
+            background-color: rgba(255, 71, 87, 0.1);
+            border: 1px solid rgba(255, 71, 87, 0.3);
+            color: #ff4757;
             padding: 12px 14px;
-            border-radius: 6px;
+            border-radius: 10px;
             margin-bottom: 20px;
             font-size: 14px;
             display: none;
-            animation: shake 0.3s;
+            animation: shake 0.4s;
+        }
+
+        :root[data-theme="light"] .error {
+            background-color: rgba(255, 71, 87, 0.08);
         }
 
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
+            20% { transform: translateX(-8px); }
+            40% { transform: translateX(8px); }
+            60% { transform: translateX(-4px); }
+            80% { transform: translateX(4px); }
         }
 
         .success {
-            background-color: #efe;
-            border: 1px solid #cfc;
-            color: #3c3;
+            background-color: rgba(46, 213, 115, 0.1);
+            border: 1px solid rgba(46, 213, 115, 0.3);
+            color: #2ed573;
             padding: 12px 14px;
-            border-radius: 6px;
+            border-radius: 10px;
             margin-bottom: 20px;
             font-size: 14px;
             display: none;
@@ -209,8 +391,8 @@
 
         .loading-spinner {
             display: inline-block;
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             border: 2px solid rgba(255,255,255,0.3);
             border-radius: 50%;
             border-top-color: white;
@@ -227,100 +409,154 @@
             display: none;
             align-items: center;
             justify-content: center;
-            margin-top: 10px;
-            color: #667eea;
+            margin-top: 16px;
+            color: var(--accent-color);
             font-size: 14px;
         }
 
-        .tips {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
+        .footer-text {
+            margin-top: 28px;
             text-align: center;
             font-size: 12px;
-            color: #999;
-        }
-
-        .tips code {
-            background-color: var(--code-bg);
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-            color: var(--text-primary);
+            color: var(--text-secondary);
+            opacity: 0.7;
         }
 
         @media (max-width: 480px) {
             body {
                 align-items: flex-start;
-                padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+                padding: calc(20px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+                overflow-y: auto;
             }
 
             .login-container {
-                padding: 24px;
-                margin-top: 40px;
+                padding: 36px 24px;
+                margin-top: 60px;
+                border-radius: 16px;
+            }
+
+            .login-logo {
+                width: 64px;
+                height: 64px;
+                border-radius: 16px;
+            }
+
+            .login-header h1 {
+                font-size: 22px;
             }
 
             input {
-                font-size: 16px;
+                font-size: 16px; /* Prevent zoom on iOS */
+                -webkit-appearance: none;
+                -webkit-touch-callout: default;
+                -webkit-user-select: text;
+                user-select: text;
+                touch-action: manipulation;
+            }
+
+            .theme-toggle-login {
+                top: calc(10px + env(safe-area-inset-top));
+                right: 16px;
             }
         }
+
+        /* Icon font fallback */
+        .icon {
+            font-style: normal;
+            font-weight: normal;
+        }
     </style>
+    <link rel="stylesheet" href="/static/vendor/font-awesome/css/all.min.css">
 </head>
 <body>
-    <button class="theme-toggle-login" id="theme-toggle-login" onclick="toggleLoginTheme()" title="切换主题">
-        <span id="theme-icon-login">🌙</span>
+    <div class="bg-animation"></div>
+    <div class="particles">
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+        <div class="particle"></div>
+    </div>
+
+    <button class="theme-toggle-login" id="theme-toggle-login" onclick="toggleLoginTheme()" title="Toggle Theme">
+        <i class="fas fa-moon" id="theme-icon-login"></i>
     </button>
     
     <div class="login-container">
         <div class="login-header">
-            <div class="login-icon">🖥️</div>
+            <div class="login-logo">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M13 3L4 14h7l-2 7 9-11h-7l2-7z"/>
+                </svg>
+            </div>
             <h1>Web Monitor</h1>
-            <p>系统监控仪表板</p>
+            <p>System Monitoring Dashboard</p>
         </div>
 
-        <div class="success" id="success">登录成功，正在跳转...</div>
-        <div class="error" id="error"></div>
+        <div class="success" id="success">
+            <i class="fas fa-check-circle" style="margin-right: 8px;"></i>
+            Login successful, redirecting...
+        </div>
+        <div class="error" id="error">
+            <i class="fas fa-exclamation-circle" style="margin-right: 8px;"></i>
+            <span id="error-text"></span>
+        </div>
 
         <form id="loginForm">
             <div class="form-group">
-                <label for="username">用户名</label>
-                <input 
-                    type="text" 
-                    id="username" 
-                    name="username" 
-                    placeholder="输入用户名"
-                    required 
-                    autocomplete="username"
-                    autofocus
-                >
+                <label for="username">Username</label>
+                <div class="input-wrapper">
+                    <input 
+                        type="text" 
+                        id="username" 
+                        name="username" 
+                        placeholder="Enter your username"
+                        required 
+                        autocomplete="username"
+                        autofocus
+                    >
+                    <i class="fas fa-user"></i>
+                </div>
             </div>
 
             <div class="form-group">
-                <label for="password">密码</label>
-                <input 
-                    type="password" 
-                    id="password" 
-                    name="password" 
-                    placeholder="输入密码"
-                    required 
-                    autocomplete="current-password"
-                >
+                <label for="password">Password</label>
+                <div class="input-wrapper">
+                    <input 
+                        type="password" 
+                        id="password" 
+                        name="password" 
+                        placeholder="Enter your password"
+                        required 
+                        autocomplete="current-password"
+                    >
+                    <i class="fas fa-lock"></i>
+                </div>
             </div>
 
             <button type="submit" id="submitBtn">
-                <span id="buttonText">登录</span>
+                <span id="buttonText">Sign In</span>
             </button>
 
             <div class="loading-text" id="loading">
                 <span class="loading-spinner"></span>
-                <span>登录中...</span>
+                <span>Authenticating...</span>
             </div>
         </form>
+
+        <div class="footer-text">
+            Secure access to your system metrics
+        </div>
     </div>
 
     <script>
         const form = document.getElementById('loginForm');
         const error = document.getElementById('error');
+        const errorText = document.getElementById('error-text');
         const success = document.getElementById('success');
         const loading = document.getElementById('loading');
         const submitBtn = document.getElementById('submitBtn');
@@ -333,9 +569,8 @@
             const username = usernameInput.value.trim();
             const password = passwordInput.value;
 
-            // 验证输入
             if (!username || !password) {
-                showError('用户名和密码不能为空');
+                showError('Username and password are required');
                 return;
             }
 
@@ -355,7 +590,6 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    // 保存非敏感的展示信息（不保存 token）。鉴权统一使用后端下发的 HttpOnly Cookie。
                     try {
                         localStorage.setItem('username', data.username);
                         localStorage.setItem('role', data.role);
@@ -363,13 +597,13 @@
                     success.style.display = 'block';
                     setTimeout(() => {
                         window.location.href = '/';
-                    }, 500);
+                    }, 600);
                 } else {
                     const data = await response.json();
-                    showError(data.error || '用户名或密码错误');
+                    showError(data.error || 'Invalid username or password');
                 }
             } catch (err) {
-                showError('登录失败，请检查网络连接');
+                showError('Connection failed. Please check your network.');
                 console.error(err);
             } finally {
                 loading.style.display = 'none';
@@ -378,11 +612,10 @@
         });
 
         function showError(message) {
-            error.textContent = message;
+            errorText.textContent = message;
             error.style.display = 'block';
         }
 
-        // 回车键提交
         usernameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 passwordInput.focus();
@@ -396,29 +629,28 @@
             }
         });
 
-        // 清除错误提示
         usernameInput.addEventListener('input', () => {
-            if (error.style.display !== 'none') {
-                error.style.display = 'none';
-            }
+            if (error.style.display !== 'none') error.style.display = 'none';
         });
 
         passwordInput.addEventListener('input', () => {
-            if (error.style.display !== 'none') {
-                error.style.display = 'none';
-            }
+            if (error.style.display !== 'none') error.style.display = 'none';
         });
 
-        // 主题切换功能
         function initLoginTheme() {
-            const savedTheme = localStorage.getItem('theme') || 'light';
+            const savedTheme = localStorage.getItem('theme') || 'dark';
             applyLoginTheme(savedTheme);
         }
 
+        // 主题循环顺序: dark -> light -> warm -> dark
+        const themeOrder = ['dark', 'light', 'warm'];
+
         function toggleLoginTheme() {
             const root = document.documentElement;
-            const currentTheme = root.getAttribute('data-theme') || 'light';
-            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            const currentTheme = root.getAttribute('data-theme') || 'dark';
+            const currentIndex = themeOrder.indexOf(currentTheme);
+            const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % themeOrder.length;
+            const newTheme = themeOrder[nextIndex];
             
             applyLoginTheme(newTheme);
             localStorage.setItem('theme', newTheme);
@@ -428,16 +660,27 @@
             const root = document.documentElement;
             const themeIcon = document.getElementById('theme-icon-login');
             
-            if (theme === 'dark') {
-                root.setAttribute('data-theme', 'dark');
-                if (themeIcon) themeIcon.textContent = '🌙';
-            } else {
-                root.removeAttribute('data-theme');
-                if (themeIcon) themeIcon.textContent = '☀️';
+            // 确保 theme 是有效值
+            if (!themeOrder.includes(theme)) {
+                theme = 'dark';
+            }
+            
+            root.setAttribute('data-theme', theme);
+            
+            if (themeIcon) {
+                switch (theme) {
+                    case 'light':
+                        themeIcon.className = 'fas fa-sun';
+                        break;
+                    case 'warm':
+                        themeIcon.className = 'fas fa-mug-hot';
+                        break;
+                    default: // dark
+                        themeIcon.className = 'fas fa-moon';
+                }
             }
         }
 
-        // 页面加载时初始化主题
         initLoginTheme();
     </script>
 </body>

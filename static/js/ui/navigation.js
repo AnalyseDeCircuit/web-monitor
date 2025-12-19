@@ -160,11 +160,8 @@ function switchPage(pageId) {
             iframe.style.border = 'none';
             iframe.style.borderRadius = '8px';
             
-            // Determine theme
-            const isDark = document.body.classList.contains('dark-mode'); // Assuming dark-mode class on body? Or check style?
-            // Actually style.css uses :root variables, but usually there is a class or localStorage
-            // Let's check localStorage or body class
-            const theme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
+            // Determine theme from data-theme attribute (supports dark/light/warm)
+            const theme = document.documentElement.getAttribute('data-theme') || 'dark';
             
             iframe.src = `/api/plugins/${pluginName}/?theme=${theme}`;
             pluginContainer.appendChild(iframe);
@@ -361,7 +358,7 @@ async function handlePluginToggle(name, enabled) {
     try {
         await togglePlugin(name, enabled);
     } catch (e) {
-        alert('Failed to toggle plugin: ' + e.message);
+        appError('Failed to toggle plugin: ' + e.message);
     } finally {
         // Refresh list + submenu without a full page reload.
         await loadPluginsPage();

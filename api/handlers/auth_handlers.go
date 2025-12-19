@@ -6,9 +6,11 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/session"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
@@ -37,17 +39,6 @@ func clientIP(r *http.Request) string {
 }
 
 // LoginHandler 处理登录请求
-// @Summary 用户登录
-// @Description 使用用户名和密码登录，成功后返回JWT token并设置HttpOnly Cookie
-// @Tags Authentication
-// @Accept json
-// @Produce json
-// @Param credentials body types.LoginRequest true "登录凭证"
-// @Success 200 {object} types.LoginResponse "登录成功"
-// @Failure 400 {object} map[string]string "请求格式错误"
-// @Failure 401 {object} map[string]string "用户名或密码错误"
-// @Failure 429 {object} map[string]string "登录尝试次数过多"
-// @Router /api/login [post]
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -80,6 +71,10 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// 验证用户
 	user := auth.ValidateUser(req.Username, req.Password)
 	if user == nil {
+		// 记录失败登录
+		session.RecordLogin(req.Username, ip, r.UserAgent(), false, "")
+		auth.RecordFailedLogin(req.Username, ip)
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid credentials"})
@@ -92,6 +87,13 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}
+
+	// 创建会话
+	expiresAt := time.Now().Add(24 * time.Hour)
+	sess := session.CreateSession(user.Username, jwtToken, ip, r.UserAgent(), expiresAt)
+
+	// 记录成功登录
+	session.RecordLogin(user.Username, ip, r.UserAgent(), true, sess.SessionID)
 
 	// 设置安全的HTTP Cookie
 	http.SetCookie(w, &http.Cookie{
@@ -118,15 +120,6 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // LogoutHandler 处理登出请求
-// @Summary 用户登出
-// @Description 登出当前用户，清除JWT token和Cookie
-// @Tags Authentication
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Security CookieAuth
-// @Success 200 {object} map[string]string "登出成功"
-// @Router /api/logout [post]
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -134,13 +127,21 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Server-side revoke: mark this JWT as invalid for future requests.
 	// We accept either Authorization Bearer or cookie-based auth.
+	var token string
 	if authHeader := strings.TrimSpace(r.Header.Get("Authorization")); authHeader != "" {
 		parts := strings.Split(authHeader, " ")
 		if len(parts) == 2 && parts[0] == "Bearer" {
-			auth.RevokeJWT(strings.TrimSpace(parts[1]))
+			token = strings.TrimSpace(parts[1])
+			auth.RevokeJWT(token)
 		}
 	} else if cookie, err := r.Cookie("auth_token"); err == nil {
-		auth.RevokeJWT(cookie.Value)
+		token = cookie.Value
+		auth.RevokeJWT(token)
+	}
+
+	// 撤销会话
+	if token != "" {
+		session.RevokeSessionByToken(token)
 	}
 
 	// 清理 Cookie（客户端也会清理 localStorage）
@@ -158,39 +159,7 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Logged out"})
 }
 
-// SessionInfoHandler 返回当前会话的用户名和角色
-func SessionInfoHandler(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
-
-	username, role, err := getUserAndRoleFromRequest(r)
-	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"username": username,
-		"role":     role,
-	})
-}
-
 // ChangePasswordHandler 处理修改密码请求
-// @Summary 修改密码
-// @Description 修改用户密码。普通用户只能修改自己的密码(需提供旧密码)，管理员可修改任意用户密码(修改他人时不需要旧密码)
-// @Tags Authentication
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Security CookieAuth
-// @Param request body object{username=string,old_password=string,new_password=string} true "密码修改请求"
-// @Success 200 {object} map[string]string "密码修改成功"
-// @Failure 400 {object} map[string]string "请求参数错误"
-// @Failure 401 {object} map[string]string "未授权或旧密码错误"
-// @Failure 403 {object} map[string]string "无权限(非管理员修改他人密码)"
-// @Router /api/password [post]
 func ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return

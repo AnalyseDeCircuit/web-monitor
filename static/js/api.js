@@ -154,17 +154,19 @@ function renderDockerContainers() {
     filtered.forEach((c) => {
         const name = c.Names ? c.Names[0].replace('/', '') : c.Id.substring(0, 12);
         const ports = c.Ports ? c.Ports.map((p) => `${p.PrivatePort}->${p.PublicPort}/${p.Type}`).join(', ') : '';
-        const stateColor = c.State === 'running' ? 'var(--accent-mem)' : 'var(--text-dim)';
+        const stateClass = c.State === 'running' ? 'running' : 
+                          c.State === 'paused' ? 'paused' : 
+                          c.State === 'restarting' ? 'restarting' : 'exited';
 
         let actionsHtml = '';
         if (role === 'admin') {
-            const logsBtn = `<button onclick="openDockerLogsById('${c.Id}')" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Logs</button>`;
+            const logsBtn = `<button onclick="openDockerLogsById('${c.Id}')" class="btn btn-secondary btn-sm" style="margin-right: 5px;">Logs</button>`;
             actionsHtml =
                 c.State === 'running'
-                    ? `${logsBtn}<button onclick="handleDockerAction('${c.Id}', 'stop')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Stop</button>
-                         <button onclick="handleDockerAction('${c.Id}', 'restart')" style="background: var(--accent-net); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Restart</button>`
-                    : `${logsBtn}<button onclick="handleDockerAction('${c.Id}', 'start')" style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Start</button>
-                         <button onclick="handleDockerAction('${c.Id}', 'remove')" style="background: var(--text-dim); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Remove</button>`;
+                    ? `${logsBtn}<button onclick="handleDockerAction('${c.Id}', 'stop')" class="btn btn-danger btn-sm" style="margin-right: 5px;">Stop</button>
+                         <button onclick="handleDockerAction('${c.Id}', 'restart')" class="btn btn-info btn-sm">Restart</button>`
+                    : `${logsBtn}<button onclick="handleDockerAction('${c.Id}', 'start')" class="btn btn-success btn-sm" style="margin-right: 5px;">Start</button>
+                         <button onclick="handleDockerAction('${c.Id}', 'remove')" class="btn btn-secondary btn-sm">Remove</button>`;
         } else {
             actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
         }
@@ -174,7 +176,7 @@ function renderDockerContainers() {
         tr.innerHTML = `
                     <td style="padding: 10px; font-weight: bold;">${name}</td>
                     <td style="padding: 10px; color: var(--text-dim);">${c.Image}</td>
-                    <td style="padding: 10px;"><span style="color: ${stateColor}">${c.State}</span></td>
+                    <td style="padding: 10px;"><span class="container-status ${stateClass}">${c.State}</span></td>
                     <td style="padding: 10px; font-size: 0.85rem;">${c.Status}</td>
                     <td style="padding: 10px; font-size: 0.85rem;">${ports}</td>
                     <td style="padding: 10px;">
@@ -286,7 +288,7 @@ function renderDockerImages() {
 
         let actionsHtml = '';
         if (role === 'admin') {
-            actionsHtml = `<button onclick="handleDockerImageRemove('${img.Id}')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Delete</button>`;
+            actionsHtml = `<button onclick="handleDockerImageRemove('${img.Id}')" class="btn btn-danger btn-sm">Delete</button>`;
         } else {
             actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
         }
@@ -305,7 +307,7 @@ function renderDockerImages() {
 }
 
 async function handleDockerImageRemove(imageId) {
-    if (!confirm('Are you sure you want to delete this image?')) return;
+    if (!await appConfirm('Are you sure you want to delete this image?')) return;
     try {
         const response = await fetch('/api/docker/image/remove', {
             method: 'POST',
@@ -316,10 +318,10 @@ async function handleDockerImageRemove(imageId) {
             loadDockerImages();
         } else {
             const data = await response.json();
-            alert('Error: ' + (data.error || 'Delete failed'));
+            appError('Error: ' + (data.error || 'Delete failed'));
         }
     } catch (err) {
-        alert('Failed to delete image');
+        appError('Failed to delete image');
     }
 }
 
@@ -335,7 +337,7 @@ function setDockerImageSort(column) {
 }
 
 async function handleDockerAction(id, action) {
-    if (!confirm(`Are you sure you want to ${action} this container?`)) return;
+    if (!await appConfirm(`Are you sure you want to ${action} this container?`)) return;
     try {
         const response = await fetch('/api/docker/action', {
             method: 'POST',
@@ -346,10 +348,10 @@ async function handleDockerAction(id, action) {
             loadDockerContainers();
         } else {
             const data = await response.json();
-            alert('Error: ' + (data.error || 'Action failed'));
+            appError('Error: ' + (data.error || 'Action failed'));
         }
     } catch (err) {
-        alert('Failed to perform action');
+        appError('Failed to perform action');
     }
 }
 
@@ -361,12 +363,12 @@ function closeDockerLogsModal() {
 async function openDockerLogsById(id) {
     const role = localStorage.getItem('role');
     if (role !== 'admin') {
-        alert('Docker logs are restricted to admin users.');
+        appError('Docker logs are restricted to admin users.');
         return;
     }
 
     if (!id || id.trim() === '') {
-        alert('Invalid container ID');
+        appError('Invalid container ID');
         return;
     }
 
@@ -378,12 +380,12 @@ async function openDockerLogsById(id) {
 async function openDockerLogs(id, name) {
     const role = localStorage.getItem('role');
     if (role !== 'admin') {
-        alert('Docker logs are restricted to admin users.');
+        appError('Docker logs are restricted to admin users.');
         return;
     }
 
     if (!id || id.trim() === '') {
-        alert('Invalid container ID');
+        appError('Invalid container ID');
         return;
     }
 
@@ -446,7 +448,7 @@ async function loadMoreDockerLogs() {
 }
 
 async function openDockerPruneConfirm() {
-    if (!confirm('Prune will remove stopped containers, dangling images, unused networks, and build cache. Continue?')) return;
+    if (!await appConfirm('Prune will remove stopped containers, dangling images, unused networks, and build cache. Continue?')) return;
     await handleDockerPrune();
 }
 
@@ -492,7 +494,7 @@ async function handleDockerPrune() {
                 resultBox.style.border = '1px solid rgba(255,0,0,0.3)';
                 resultBox.textContent = msg;
             } else {
-                alert(msg);
+                appError(msg);
             }
         }
     } catch (err) {
@@ -503,7 +505,7 @@ async function handleDockerPrune() {
             resultBox.style.border = '1px solid rgba(255,0,0,0.3)';
             resultBox.textContent = msg;
         } else {
-            alert(msg);
+            appError(msg);
         }
     }
 }
@@ -567,28 +569,26 @@ function renderServices() {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
 
-        let statusColor = '#888';
-        if (svc.active === 'active') statusColor = '#2ed573';
-        else if (svc.active === 'failed') statusColor = '#ff4757';
+        const statusClass = svc.active === 'active' ? 'active' : 
+                           svc.active === 'failed' ? 'failed' : 'inactive';
+        const unitClass = svc.active === 'active' ? 'service-unit-active' : '';
 
         let actionsHtml = '';
         if (role === 'admin') {
-            const btnStyle =
-                'border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px; font-size: 0.8rem;';
             if (svc.active === 'active') {
-                actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'stop')" style="${btnStyle} background: #ff6b6b;">Stop</button>`;
-                actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'restart')" style="${btnStyle} background: var(--accent-net);">Restart</button>`;
+                actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'stop')" class="btn btn-danger btn-sm" style="margin-right: 5px;">Stop</button>`;
+                actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'restart')" class="btn btn-info btn-sm">Restart</button>`;
             } else {
-                actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'start')" style="${btnStyle} background: var(--accent-mem);">Start</button>`;
+                actionsHtml += `<button onclick="handleServiceAction('${svc.unit}', 'start')" class="btn btn-success btn-sm">Start</button>`;
             }
         } else {
             actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
         }
 
         tr.innerHTML = `
-                    <td style="padding: 10px; font-weight: bold;">${svc.unit}</td>
+                    <td style="padding: 10px;" class="${unitClass}">${svc.unit}</td>
                     <td style="padding: 10px;">${svc.load}</td>
-                    <td style="padding: 10px;"><span style="color: ${statusColor}">${svc.active}</span></td>
+                    <td style="padding: 10px;"><span class="service-status ${statusClass}">${svc.active}</span></td>
                     <td style="padding: 10px;">${svc.sub}</td>
                     <td style="padding: 10px; color: var(--text-dim); font-size: 0.85rem;">${svc.description}</td>
                     <td style="padding: 10px;">${actionsHtml}</td>
@@ -608,7 +608,7 @@ function setServiceSort(column) {
 }
 
 async function handleServiceAction(unit, action) {
-    if (!confirm(`Are you sure you want to ${action} service ${unit}?`)) return;
+    if (!await appConfirm(`Are you sure you want to ${action} service ${unit}?`)) return;
 
     try {
         const response = await fetch('/api/systemd/action', {
@@ -625,7 +625,7 @@ async function handleServiceAction(unit, action) {
         loadServices();
     } catch (error) {
         console.error('Error performing action:', error);
-        alert(`Failed to ${action} service: ${error.message || error}`);
+        appError(`Failed to ${action} service: ${error.message || error}`);
     }
 }
 
@@ -639,7 +639,8 @@ async function loadCronJobs() {
     try {
         const response = await fetch('/api/cron');
         if (!response.ok) throw new Error('Failed to fetch cron jobs');
-        currentCronJobs = await response.json();
+        const data = await response.json();
+        currentCronJobs = Array.isArray(data) ? data : [];
 
         renderCronJobs();
 
@@ -675,19 +676,19 @@ function renderCronJobs() {
 
         let actionsHtml = '';
         if (role === 'admin') {
-            actionsHtml = `<button onclick="deleteCronJob(${index})" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Delete</button>`;
+            actionsHtml = `<button onclick="deleteCronJob(${index})" class="btn btn-danger btn-sm">Delete</button>`;
         } else {
             actionsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Read-only</span>';
         }
 
         const scheduleHtml =
             role === 'admin'
-                ? `<input type="text" value="${job.schedule}" onchange="updateCronJob(${index}, 'schedule', this.value)" class="mono-text" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px; width: 100%;">`
-                : `<span class="mono-text">${job.schedule}</span>`;
+                ? `<input type="text" value="${job.schedule}" onchange="updateCronJob(${index}, 'schedule', this.value)" class="mono-text cron-schedule" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px 8px; width: 100%;">`
+                : `<span class="cron-schedule">${job.schedule}</span>`;
 
         const commandHtml =
             role === 'admin'
-                ? `<input type="text" value="${job.command}" onchange="updateCronJob(${index}, 'command', this.value)" class="mono-text" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px; width: 100%;">`
+                ? `<input type="text" value="${job.command}" onchange="updateCronJob(${index}, 'command', this.value)" class="mono-text" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px 8px; width: 100%;">`
                 : `<span class="mono-text">${job.command}</span>`;
 
         tr.innerHTML = `
@@ -700,12 +701,15 @@ function renderCronJobs() {
 }
 
 function addCronJob() {
+    if (!Array.isArray(currentCronJobs)) {
+        currentCronJobs = [];
+    }
     currentCronJobs.push({ schedule: '* * * * *', command: 'echo "New Job"' });
     renderCronJobs();
 }
 
-function deleteCronJob(index) {
-    if (confirm('Delete this job?')) {
+async function deleteCronJob(index) {
+    if (await appConfirm('Delete this job?')) {
         currentCronJobs.splice(index, 1);
         renderCronJobs();
     }
@@ -716,7 +720,7 @@ function updateCronJob(index, field, value) {
 }
 
 async function saveCronJobs() {
-    if (!confirm('Save changes to crontab? This will overwrite the current crontab.')) return;
+    if (!await appConfirm('Save changes to crontab? This will overwrite the current crontab.')) return;
 
     try {
         const response = await fetch('/api/cron', {
@@ -726,14 +730,14 @@ async function saveCronJobs() {
         });
 
         if (response.ok) {
-            alert('Crontab saved successfully!');
+            appSuccess('Crontab saved successfully!');
             loadCronJobs();
         } else {
             const data = await response.json();
-            alert('Error saving crontab: ' + (data.error || 'Unknown error'));
+            appError('Error saving crontab: ' + (data.error || 'Unknown error'));
         }
     } catch (error) {
-        alert('Failed to save crontab: ' + error.message);
+        appError('Failed to save crontab: ' + error.message);
     }
 }
 
@@ -750,14 +754,15 @@ async function loadUsers() {
             data.users.forEach((user) => {
                 const tr = document.createElement('tr');
                 tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                const roleClass = user.role === 'admin' ? 'admin' : 'user';
                 tr.innerHTML = `
                             <td style="padding: 10px;">${user.username}</td>
-                            <td style="padding: 10px;"><span style="background: ${user.role === 'admin' ? 'var(--accent-cpu)' : 'var(--accent-net)'}; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">${user.role}</span></td>
+                            <td style="padding: 10px;"><span class="role-badge ${roleClass}">${user.role}</span></td>
                             <td style="padding: 10px;">${new Date(user.created_at).toLocaleString()}</td>
                             <td style="padding: 10px;">${user.last_login ? new Date(user.last_login).toLocaleString() : '-'}</td>
                             <td style="padding: 10px;">
-                                ${isAdmin && user.username !== 'admin' ? `<button onclick='showResetPasswordModal(${JSON.stringify(user.username)})' style="background: var(--accent-mem); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 8px;">Reset Password</button>` : ''}
-                                ${user.username !== 'admin' ? `<button onclick='handleDeleteUser(${JSON.stringify(user.username)})' style="background: var(--accent-cpu); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Delete</button>` : ''}
+                                ${isAdmin && user.username !== 'admin' ? `<button onclick='showResetPasswordModal(${JSON.stringify(user.username)})' class="btn btn-success btn-sm" style="margin-right: 8px;">Reset Password</button>` : ''}
+                                ${user.username !== 'admin' ? `<button onclick='handleDeleteUser(${JSON.stringify(user.username)})' class="btn btn-danger btn-sm">Delete</button>` : ''}
                             </td>
                         `;
                 tbody.appendChild(tr);
@@ -821,14 +826,14 @@ async function handleResetPasswordSubmit(e) {
 
         if (response.ok) {
             hideResetPasswordModal();
-            alert('Password reset successfully');
+            appSuccess('Password reset successfully');
             return;
         }
 
         const data = await response.json().catch(() => ({}));
-        alert('Error: ' + (data.error || 'Failed to reset password'));
+        appError('Error: ' + (data.error || 'Failed to reset password'));
     } catch (err) {
-        alert('Error resetting password');
+        appError('Error resetting password');
     }
 }
 
@@ -848,14 +853,14 @@ async function handleResetPassword(username) {
         });
 
         if (response.ok) {
-            alert('Password reset successfully');
+            appSuccess('Password reset successfully');
             return;
         }
 
         const data = await response.json().catch(() => ({}));
-        alert('Error: ' + (data.error || 'Failed to reset password'));
+        appError('Error: ' + (data.error || 'Failed to reset password'));
     } catch (err) {
-        alert('Error resetting password');
+        appError('Error resetting password');
     }
 }
 
@@ -880,18 +885,18 @@ async function handleAddUser(e) {
             document.getElementById('new-username').value = '';
             document.getElementById('new-password').value = '';
             loadUsers();
-            alert('User created successfully');
+            appSuccess('User created successfully');
         } else {
             const data = await response.json();
-            alert('Error: ' + data.error);
+            appError('Error: ' + data.error);
         }
     } catch (err) {
-        alert('Failed to create user');
+        appError('Failed to create user');
     }
 }
 
 async function handleDeleteUser(username) {
-    if (!confirm(`Are you sure you want to delete user ${username}?`)) return;
+    if (!await appConfirm(`Are you sure you want to delete user ${username}?`)) return;
 
     try {
         const response = await fetch(`/api/users?username=${username}`, {
@@ -900,10 +905,10 @@ async function handleDeleteUser(username) {
         if (response.ok) {
             loadUsers();
         } else {
-            alert('Failed to delete user');
+            appError('Failed to delete user');
         }
     } catch (err) {
-        alert('Error deleting user');
+        appError('Error deleting user');
     }
 }
 
@@ -918,12 +923,20 @@ async function loadLogs() {
             data.logs.forEach((log) => {
                 const tr = document.createElement('tr');
                 tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                // Determine action class for styling
+                const actionLower = (log.action || '').toLowerCase();
+                let actionClass = '';
+                if (actionLower.includes('login')) actionClass = 'login';
+                else if (actionLower.includes('logout')) actionClass = 'logout';
+                else if (actionLower.includes('delete') || actionLower.includes('remove') || actionLower.includes('kill')) actionClass = 'delete';
+                else if (actionLower.includes('create') || actionLower.includes('add')) actionClass = 'create';
+                else if (actionLower.includes('update') || actionLower.includes('change') || actionLower.includes('modify') || actionLower.includes('reset')) actionClass = 'modify';
                 tr.innerHTML = `
                             <td style="padding: 10px; font-size: 0.9rem;">${new Date(log.time).toLocaleString()}</td>
                             <td style="padding: 10px;">${log.username}</td>
-                            <td style="padding: 10px;">${log.action}</td>
+                            <td style="padding: 10px;"><span class="log-action ${actionClass}">${log.action}</span></td>
                             <td style="padding: 10px; color: var(--text-dim);">${log.details}</td>
-                            <td style="padding: 10px; font-size: 0.9rem;">${log.ip_address}</td>
+                            <td style="padding: 10px; font-size: 0.9rem;" class="mono-text">${log.ip_address}</td>
                         `;
                 tbody.appendChild(tr);
             });
@@ -957,6 +970,388 @@ function loadProfile() {
         } else {
             adminCard.style.display = 'none';
         }
+    }
+
+    // Load profile data from server
+    loadProfileData();
+    loadProfileSessions();
+    loadProfileLoginHistory();
+    loadProfilePreferences();
+}
+
+// Load full profile data including security info and permissions
+async function loadProfileData() {
+    try {
+        const response = await fetch('/api/profile');
+        if (!response.ok) return;
+
+        const data = await response.json();
+
+        // Update security info
+        const lastPwdChange = document.getElementById('profile-last-pwd-change');
+        const lastFailedLogin = document.getElementById('profile-last-failed-login');
+        
+        if (lastPwdChange) {
+            lastPwdChange.innerText = data.last_password_change 
+                ? new Date(data.last_password_change).toLocaleString() 
+                : 'Never';
+        }
+        if (lastFailedLogin) {
+            if (data.last_failed_login) {
+                const time = new Date(data.last_failed_login).toLocaleString();
+                const ip = data.last_failed_login_ip || 'Unknown IP';
+                lastFailedLogin.innerHTML = `${time} <span style="color: var(--text-dim); font-size: 0.8rem;">(${ip})</span>`;
+            } else {
+                lastFailedLogin.innerText = 'None';
+            }
+        }
+
+        // Render permissions
+        renderPermissions(data.permissions);
+    } catch (e) {
+        console.error('Failed to load profile data:', e);
+    }
+}
+
+// Render role and permissions card
+function renderPermissions(permissions) {
+    const container = document.getElementById('profile-permissions-container');
+    if (!container || !permissions) return;
+
+    const role = localStorage.getItem('role') || 'user';
+    const roleColors = {
+        admin: 'var(--accent-cpu)',
+        user: 'var(--accent-mem)'
+    };
+
+    let html = `
+        <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
+                    <div style="width: 50px; height: 50px; background: ${roleColors[role] || 'var(--accent-cpu)'}; border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas ${role === 'admin' ? 'fa-crown' : 'fa-user'}" style="color: white; font-size: 1.2rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 1.2rem; font-weight: bold; text-transform: capitalize;">${role}</div>
+                        <div style="color: var(--text-dim); font-size: 0.85rem;">${permissions.description || ''}</div>
+                    </div>
+                </div>
+            </div>
+            <div style="flex: 2; min-width: 300px;">
+                <div style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 10px;">Permission Matrix</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;">
+    `;
+
+    const permIcons = {
+        view_dashboard: 'fa-tachometer-alt',
+        manage_users: 'fa-users-cog',
+        manage_docker: 'fa-docker',
+        manage_services: 'fa-cogs',
+        manage_cron: 'fa-clock',
+        view_logs: 'fa-file-alt',
+        manage_alerts: 'fa-bell'
+    };
+
+    const permLabels = {
+        view_dashboard: 'View Dashboard',
+        manage_users: 'Manage Users',
+        manage_docker: 'Manage Docker',
+        manage_services: 'Manage Services',
+        manage_cron: 'Manage Cron',
+        view_logs: 'View Logs',
+        manage_alerts: 'Manage Alerts'
+    };
+
+    if (permissions.allowed) {
+        permissions.allowed.forEach(perm => {
+            const icon = permIcons[perm] || 'fa-check';
+            const label = permLabels[perm] || perm.replace(/_/g, ' ');
+            html += `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(46, 213, 115, 0.1); border-radius: 6px; border: 1px solid rgba(46, 213, 115, 0.2);">
+                    <i class="fas ${icon}" style="color: #2ed573; font-size: 0.85rem;"></i>
+                    <span style="font-size: 0.85rem;">${label}</span>
+                </div>
+            `;
+        });
+    }
+
+    if (permissions.denied) {
+        permissions.denied.forEach(perm => {
+            const icon = permIcons[perm] || 'fa-times';
+            const label = permLabels[perm] || perm.replace(/_/g, ' ');
+            html += `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255, 71, 87, 0.1); border-radius: 6px; border: 1px solid rgba(255, 71, 87, 0.2);">
+                    <i class="fas ${icon}" style="color: #ff4757; font-size: 0.85rem;"></i>
+                    <span style="font-size: 0.85rem; text-decoration: line-through; opacity: 0.7;">${label}</span>
+                </div>
+            `;
+        });
+    }
+
+    html += '</div></div></div>';
+    container.innerHTML = html;
+}
+
+// Load active sessions
+async function loadProfileSessions() {
+    const container = document.getElementById('profile-sessions-container');
+    if (!container) return;
+
+    try {
+        const response = await fetch('/api/profile/sessions');
+        if (!response.ok) throw new Error('Failed to load sessions');
+
+        const data = await response.json();
+        const sessions = data.sessions || [];
+
+        if (sessions.length === 0) {
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">No active sessions</div>';
+            return;
+        }
+
+        // Show revoke button if more than 1 session
+        const revokeBtn = document.getElementById('btn-revoke-others');
+        if (revokeBtn) {
+            revokeBtn.style.display = sessions.length > 1 ? 'inline-block' : 'none';
+        }
+
+        let html = '';
+        sessions.forEach(session => {
+            const isCurrentSession = session.is_current;
+            const createdAt = new Date(session.created_at).toLocaleString();
+            const lastActive = session.last_active ? new Date(session.last_active).toLocaleString() : createdAt;
+            const deviceClass = isCurrentSession ? 'current' : 'other';
+
+            html += `
+                <div style="display: flex; align-items: center; gap: 15px; padding: 15px; background: rgba(0,0,0,0.2); border-radius: 8px; ${isCurrentSession ? 'border: 1px solid var(--accent-mem);' : ''}">
+                    <div style="width: 45px; height: 45px; background: rgba(255,255,255,0.08); border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas ${getDeviceIcon(session.device_type)}" style="color: var(--text-dim); font-size: 1.1rem;"></i>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                            <span class="session-device ${deviceClass}" style="font-weight: bold;">${session.browser || 'Unknown Browser'}</span>
+                            ${isCurrentSession ? '<span style="background: var(--accent-mem); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem;">Current</span>' : ''}
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-dim);">
+                            ${session.os || 'Unknown OS'} • <span class="mono-text">${session.ip_address || 'Unknown IP'}</span>
+                        </div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 4px;">
+                            Last active: ${lastActive}
+                        </div>
+                    </div>
+                    ${!isCurrentSession ? `
+                        <button onclick="revokeSession('${session.session_id}')" class="btn btn-outline-danger btn-sm">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
+                    ` : ''}
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('Failed to load sessions:', e);
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">Failed to load sessions</div>';
+    }
+}
+
+function getDeviceIcon(deviceType) {
+    switch (deviceType) {
+        case 'desktop': return 'fa-desktop';
+        case 'mobile': return 'fa-mobile-alt';
+        case 'tablet': return 'fa-tablet-alt';
+        default: return 'fa-globe';
+    }
+}
+
+// Revoke a specific session
+async function revokeSession(sessionId) {
+    if (!await appConfirm('Are you sure you want to logout this session?')) return;
+
+    try {
+        const response = await fetch(`/api/profile/sessions?id=${encodeURIComponent(sessionId)}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            loadProfileSessions();
+        } else {
+            const data = await response.json();
+            appError('Failed to revoke session: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to revoke session:', e);
+        appError('Failed to revoke session');
+    }
+}
+
+// Revoke all other sessions
+async function revokeOtherSessions() {
+    if (!await appConfirm('Are you sure you want to logout all other sessions? This will sign out all devices except this one.')) return;
+
+    try {
+        const response = await fetch('/api/profile/sessions', {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            loadProfileSessions();
+            appSuccess('All other sessions have been logged out');
+        } else {
+            const data = await response.json();
+            appError('Failed to revoke sessions: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to revoke sessions:', e);
+        appError('Failed to revoke sessions');
+    }
+}
+
+// Load login history
+async function loadProfileLoginHistory() {
+    const container = document.getElementById('profile-login-history-container');
+    if (!container) return;
+
+    try {
+        const response = await fetch('/api/profile/login-history');
+        if (!response.ok) throw new Error('Failed to load login history');
+
+        const data = await response.json();
+        const records = data.records || [];
+
+        if (records.length === 0) {
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">No login history</div>';
+            return;
+        }
+
+        let html = `
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                <thead>
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <th style="text-align: left; padding: 10px; color: var(--text-dim); font-weight: normal;">Time</th>
+                        <th style="text-align: left; padding: 10px; color: var(--text-dim); font-weight: normal;">IP Address</th>
+                        <th style="text-align: left; padding: 10px; color: var(--text-dim); font-weight: normal;">Device</th>
+                        <th style="text-align: left; padding: 10px; color: var(--text-dim); font-weight: normal;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        records.forEach(record => {
+            const time = new Date(record.time).toLocaleString();
+            const statusColor = record.success ? '#2ed573' : '#ff4757';
+            const statusIcon = record.success ? 'fa-check-circle' : 'fa-times-circle';
+            const statusText = record.success ? 'Success' : 'Failed';
+
+            html += `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <td style="padding: 12px 10px;">${time}</td>
+                    <td style="padding: 12px 10px;" class="mono-text">${record.ip_address || '-'}</td>
+                    <td style="padding: 12px 10px;">
+                        <div>${record.browser || 'Unknown'}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-dim);">${record.os || ''}</div>
+                    </td>
+                    <td style="padding: 12px 10px;">
+                        <span style="display: inline-flex; align-items: center; gap: 6px; color: ${statusColor};">
+                            <i class="fas ${statusIcon}"></i> ${statusText}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('Failed to load login history:', e);
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-dim);">Failed to load login history</div>';
+    }
+}
+
+// Load user preferences
+async function loadProfilePreferences() {
+    try {
+        const response = await fetch('/api/profile/preferences');
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const prefs = data.preferences;
+        if (!prefs) return;
+
+        // Alert subscriptions
+        if (prefs.alert_preferences) {
+            const alerts = prefs.alert_preferences;
+            setCheckbox('pref-alert-cpu', alerts.cpu_alerts);
+            setCheckbox('pref-alert-memory', alerts.memory_alerts);
+            setCheckbox('pref-alert-disk', alerts.disk_alerts);
+            setCheckbox('pref-alert-network', alerts.network_alerts);
+            setCheckbox('pref-alert-docker', alerts.docker_alerts);
+
+            // Notification methods
+            setCheckbox('pref-notify-panel', alerts.notify_panel);
+            setCheckbox('pref-notify-email', alerts.notify_email);
+            setCheckbox('pref-notify-webhook', alerts.notify_webhook);
+
+            // Quiet hours
+            setCheckbox('pref-dnd-enabled', alerts.quiet_hours_enabled);
+            setValue('pref-dnd-start', alerts.quiet_hours_start || '22:00');
+            setValue('pref-dnd-end', alerts.quiet_hours_end || '08:00');
+        }
+    } catch (e) {
+        console.error('Failed to load preferences:', e);
+    }
+}
+
+function setCheckbox(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.checked = !!value;
+}
+
+function setValue(id, value) {
+    const el = document.getElementById(id);
+    if (el && value) el.value = value;
+}
+
+// Save alert preferences
+async function saveProfileAlertPreferences() {
+    const prefs = {
+        alert_preferences: {
+            cpu_alerts: document.getElementById('pref-alert-cpu')?.checked || false,
+            memory_alerts: document.getElementById('pref-alert-memory')?.checked || false,
+            disk_alerts: document.getElementById('pref-alert-disk')?.checked || false,
+            network_alerts: document.getElementById('pref-alert-network')?.checked || false,
+            docker_alerts: document.getElementById('pref-alert-docker')?.checked || false,
+            notify_panel: document.getElementById('pref-notify-panel')?.checked || false,
+            notify_email: document.getElementById('pref-notify-email')?.checked || false,
+            notify_webhook: document.getElementById('pref-notify-webhook')?.checked || false,
+            quiet_hours_enabled: document.getElementById('pref-dnd-enabled')?.checked || false,
+            quiet_hours_start: document.getElementById('pref-dnd-start')?.value || '22:00',
+            quiet_hours_end: document.getElementById('pref-dnd-end')?.value || '08:00'
+        }
+    };
+
+    try {
+        const response = await fetch('/api/profile/preferences', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(prefs)
+        });
+
+        if (response.ok) {
+            // Visual feedback
+            const card = document.querySelector('#page-profile .card:last-child');
+            if (card) {
+                const oldBorder = card.style.borderColor;
+                card.style.borderColor = 'var(--accent-mem)';
+                setTimeout(() => { card.style.borderColor = oldBorder; }, 500);
+            }
+        } else {
+            const data = await response.json();
+            appError('Failed to save preferences: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to save preferences:', e);
+        appError('Failed to save preferences');
     }
 }
 
@@ -992,7 +1387,7 @@ async function handleMonitoringModeChange() {
         
         if (!response.ok) {
             const data = await response.json();
-            alert('Failed to save: ' + (data.error || 'Unknown error'));
+            appError('Failed to save: ' + (data.error || 'Unknown error'));
             // Revert to previous value
             loadSystemSettings();
             return;
@@ -1007,7 +1402,7 @@ async function handleMonitoringModeChange() {
         }
     } catch (e) {
         console.error('Failed to update settings:', e);
-        alert('Failed to save settings');
+        appError('Failed to save settings');
         loadSystemSettings();
     }
 }
@@ -1050,14 +1445,14 @@ async function handleChangePassword(e) {
         });
 
         if (response.ok) {
-            alert('Password changed successfully');
+            appSuccess('Password changed successfully');
             document.getElementById('change-password-form').reset();
         } else {
             const data = await response.json();
-            alert('Error: ' + (data.error || 'Failed to change password'));
+            appError('Error: ' + (data.error || 'Failed to change password'));
         }
     } catch (err) {
-        alert('Error changing password');
+        appError('Error changing password');
     }
 }
 
@@ -1170,7 +1565,7 @@ function setPowerProfile(profile) {
             if (res.ok) {
                 loadPowerProfile();
             } else {
-                alert('Failed to set power profile');
+                appError('Failed to set power profile');
             }
         })
         .catch((err) => console.error('Error setting profile:', err));
@@ -1243,7 +1638,7 @@ function toggleGuiSession() {
             return res.json();
         })
         .then(() => loadGuiStatus())
-        .catch((err) => alert('Failed: ' + err));
+        .catch((err) => appError('Failed: ' + err));
 }
 
 function loadAlerts() {
@@ -1277,9 +1672,9 @@ function saveAlerts() {
     })
         .then((res) => {
             if (res.ok) {
-                alert('Alert configuration saved');
+                appSuccess('Alert configuration saved');
             } else {
-                alert('Failed to save alert configuration');
+                appError('Failed to save alert configuration');
             }
         })
         .catch((err) => console.error('Error saving alerts:', err));

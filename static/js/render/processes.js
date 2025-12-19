@@ -348,13 +348,13 @@ function closeProcDetail() {
 async function handleKillProcess(pid) {
     const role = localStorage.getItem('role');
     if (role !== 'admin') {
-        alert('Forbidden: Admin access required');
+        appError('Forbidden: Admin access required');
         return;
     }
 
     const proc = allProcesses.find((p) => p.pid === pid);
     const name = proc ? proc.name : 'unknown';
-    if (!confirm(`Kill process ${name} (PID: ${pid})? This cannot be undone.`)) return;
+    if (!await appConfirm(`Kill process ${name} (PID: ${pid})? This cannot be undone.`)) return;
 
     try {
         const response = await fetch('/api/process/kill', {
@@ -365,7 +365,7 @@ async function handleKillProcess(pid) {
 
         if (response.ok) {
             closeProcDetail();
-            alert('Kill signal sent. The process list will refresh shortly.');
+            appSuccess('Kill signal sent. The process list will refresh shortly.');
             setTimeout(() => {
                 try {
                     filterAndRenderProcesses();
@@ -375,9 +375,9 @@ async function handleKillProcess(pid) {
         }
 
         const data = await response.json();
-        alert('Error: ' + (data.error || 'Kill failed'));
+        appError('Error: ' + (data.error || 'Kill failed'));
     } catch (err) {
-        alert('Failed to kill process');
+        appError('Failed to kill process');
     }
 }
 

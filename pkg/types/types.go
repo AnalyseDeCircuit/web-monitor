@@ -13,14 +13,118 @@ import (
 
 // User 用户结构体
 type User struct {
-	ID               string     `json:"id"`
-	Username         string     `json:"username"`
-	Password         string     `json:"password"` // bcrypt hash
-	Role             string     `json:"role"`     // "admin" 或 "user"
-	CreatedAt        time.Time  `json:"created_at"`
-	LastLogin        *time.Time `json:"last_login"`
-	FailedLoginCount int        `json:"failed_login_count"`
-	LockedUntil      *time.Time `json:"locked_until"`
+	ID                 string     `json:"id"`
+	Username           string     `json:"username"`
+	Password           string     `json:"password"` // bcrypt hash
+	Role               string     `json:"role"`     // "admin" 或 "user"
+	CreatedAt          time.Time  `json:"created_at"`
+	LastLogin          *time.Time `json:"last_login"`
+	FailedLoginCount   int        `json:"failed_login_count"`
+	LockedUntil        *time.Time `json:"locked_until"`
+	LastPasswordChange *time.Time `json:"last_password_change,omitempty"`
+	LastFailedLogin    *time.Time `json:"last_failed_login,omitempty"`
+	LastFailedLoginIP  string     `json:"last_failed_login_ip,omitempty"`
+}
+
+// UserPreferences 用户个人偏好设置
+type UserPreferences struct {
+	Username string `json:"username"`
+
+	// 告警偏好
+	AlertPreferences AlertPreferences `json:"alert_preferences"`
+
+	// 界面偏好（存储在服务器端的部分）
+	UIPreferences UIPreferences `json:"ui_preferences"`
+}
+
+// AlertPreferences 个人告警偏好
+type AlertPreferences struct {
+	// 告警推送方式
+	EmailEnabled   bool   `json:"email_enabled"`
+	Email          string `json:"email,omitempty"`
+	WebhookEnabled bool   `json:"webhook_enabled"`
+	WebhookURL     string `json:"webhook_url,omitempty"`
+	InAppOnly      bool   `json:"in_app_only"` // 仅在面板内提示
+
+	// 订阅的告警类型
+	SubscribedAlerts []string `json:"subscribed_alerts"` // e.g. ["cpu", "memory", "disk", "docker"]
+
+	// 安静时间 (Do Not Disturb)
+	QuietHoursEnabled  bool   `json:"quiet_hours_enabled"`
+	QuietHoursStart    string `json:"quiet_hours_start,omitempty"`    // "22:00"
+	QuietHoursEnd      string `json:"quiet_hours_end,omitempty"`      // "08:00"
+	QuietHoursTimezone string `json:"quiet_hours_timezone,omitempty"` // "Asia/Shanghai"
+}
+
+// UIPreferences 界面偏好（服务器存储部分）
+type UIPreferences struct {
+	DefaultPage  string `json:"default_page,omitempty"`  // "general", "processes", "docker"...
+	TimeFormat   string `json:"time_format,omitempty"`   // "24h" or "12h"
+	Timezone     string `json:"timezone,omitempty"`      // "local", "UTC", or IANA timezone
+	ByteFormat   string `json:"byte_format,omitempty"`   // "iec" (MiB) or "si" (MB)
+	TableDensity string `json:"table_density,omitempty"` // "compact", "normal", "relaxed"
+}
+
+// LoginRecord 登录记录
+type LoginRecord struct {
+	Time      time.Time `json:"time"`
+	IP        string    `json:"ip_address"`
+	UserAgent string    `json:"user_agent"`
+	Browser   string    `json:"browser"`            // "Chrome", "Firefox", "Safari"...
+	OS        string    `json:"os"`                 // "Windows", "macOS", "Linux", "iOS", "Android"
+	Location  string    `json:"location,omitempty"` // 大致地点（可选，基于 IP）
+	Success   bool      `json:"success"`
+	SessionID string    `json:"session_id,omitempty"` // 关联会话ID
+}
+
+// ActiveSession 活跃会话
+type ActiveSession struct {
+	SessionID  string    `json:"session_id"`
+	TokenHash  string    `json:"-"` // 不暴露给前端
+	Username   string    `json:"username"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	LastActive time.Time `json:"last_active"`
+	IP         string    `json:"ip_address"`
+	UserAgent  string    `json:"user_agent"`
+	DeviceType string    `json:"device_type"` // "desktop", "mobile", "tablet"
+	Browser    string    `json:"browser"`     // "Chrome", "Firefox", "Safari"...
+	OS         string    `json:"os"`          // "Windows", "macOS", "Linux", "iOS", "Android"
+	IsCurrent  bool      `json:"is_current"`  // 是否为当前会话
+}
+
+// RolePermissions 角色权限描述
+type RolePermissions struct {
+	Role        string   `json:"role"`
+	Description string   `json:"description"`
+	CanDo       []string `json:"can_do"`
+	CannotDo    []string `json:"cannot_do"`
+}
+
+// UserProfileResponse 用户 Profile 完整响应
+type UserProfileResponse struct {
+	// 基本信息
+	Username  string    `json:"username"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// 安全信息
+	LastLogin          *time.Time `json:"last_login,omitempty"`
+	LastPasswordChange *time.Time `json:"last_password_change,omitempty"`
+	LastFailedLogin    *time.Time `json:"last_failed_login,omitempty"`
+	LastFailedLoginIP  string     `json:"last_failed_login_ip,omitempty"`
+
+	// 登录历史（最近N条）
+	LoginHistory []LoginRecord `json:"login_history,omitempty"`
+
+	// 活跃会话
+	ActiveSessions []ActiveSession `json:"active_sessions,omitempty"`
+
+	// 权限说明
+	Permissions RolePermissions `json:"permissions"`
+
+	// 用户偏好
+	Preferences UserPreferences `json:"preferences"`
 }
 
 // UserDatabase 用户数据库
