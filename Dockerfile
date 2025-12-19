@@ -9,6 +9,10 @@ COPY vendor ./vendor
 COPY . .
 RUN go build -mod=vendor -ldflags="-s -w" -trimpath -o server ./cmd/server
 
+# Plugins are now managed as separate Docker containers (docker-managed mode).
+# We do NOT build exec-mode plugins into the main image anymore.
+# The plugins/src directory is kept for reference but not built here.
+
 # Runtime stage
 FROM debian:bookworm-slim
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
@@ -18,6 +22,8 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/server .
+# Copy plugins directory (docs only, no binaries)
+RUN mkdir -p ./plugins
 COPY templates/ ./templates/
 COPY static/ ./static/
 EXPOSE 8000

@@ -9,6 +9,8 @@ import (
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/plugin"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 
 	httpSwagger "github.com/swaggo/http-swagger/v2"
@@ -27,7 +29,7 @@ func NewRouter() *Router {
 }
 
 // SetupRouter 设置所有路由
-func SetupRouter() *Router {
+func SetupRouter(pluginManager *plugin.Manager) *Router {
 	router := NewRouter()
 
 	// 认证路由
@@ -94,6 +96,89 @@ func SetupRouter() *Router {
 
 	// WebSocket路由
 	router.mux.HandleFunc("/ws/stats", websocket.HandleWebSocket)
+
+	// 插件路由
+	if pluginManager != nil {
+		router.mux.HandleFunc("/api/plugins/list", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			// Auth check
+			_, role, ok := requireAuth(w, r)
+			if !ok {
+				return
+			}
+
+			plugins := pluginManager.ListPluginsForRole(role)
+			writeJSON(w, http.StatusOK, plugins)
+		})
+
+		router.mux.HandleFunc("/api/plugins/action", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			// Auth check (Admin only)
+			username, role, ok := requireAuth(w, r)
+			if !ok {
+				return
+			}
+			if role != "admin" {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			var req struct {
+				Name    string `json:"name"`
+				Enabled bool   `json:"enabled"`
+			}
+			if err := decodeJSONBody(w, r, &req); err != nil {
+				return
+			}
+
+			if err := pluginManager.TogglePlugin(req.Name, req.Enabled); err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			logs.LogOperation(username, "plugin_toggle", req.Name+" enabled="+boolToString(req.Enabled), clientIP(r))
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		})
+
+		router.mux.HandleFunc("/api/plugins/", func(w http.ResponseWriter, r *http.Request) {
+			// 路径格式: /api/plugins/<plugin_name>/...
+			parts := strings.Split(r.URL.Path, "/")
+			if len(parts) < 4 || parts[3] == "" {
+				http.NotFound(w, r)
+				return
+			}
+			pluginName := parts[3]
+
+			// Auth check
+			username, role, ok := requireAuth(w, r)
+			if !ok {
+				return
+			}
+
+			// Enforce admin-only plugins at the gateway (defense-in-depth)
+			if p, ok := pluginManager.GetPlugin(pluginName); ok {
+				if p.AdminOnly && role != "admin" {
+					http.Error(w, "Forbidden", http.StatusForbidden)
+					return
+				}
+			}
+
+			// Minimal audit hooks
+			if pluginName == "webshell" {
+				// Log websocket connection attempts (Upgrade happens here, before proxying)
+				if strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "/ws") {
+					logs.LogOperation(username, "webshell_connect", "websocket connect", clientIP(r))
+				}
+			}
+
+			pluginManager.ServeHTTP(w, r, pluginName)
+		})
+	}
 
 	// Swagger API文档
 	router.mux.Handle("/swagger/", httpSwagger.Handler(
@@ -187,10 +272,11 @@ func securityHeaders(next http.Handler) http.Handler {
 				"font-src 'self' https://fonts.gstatic.com; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self' wss: ws:; "+
-				"frame-ancestors 'none'; "+
+				"frame-ancestors 'self'; "+
 				"base-uri 'self'; "+
 				"form-action 'self'")
-		w.Header().Set("X-Frame-Options", "DENY")
+		// Allow the app to embed its own content (plugins are shown in an iframe)
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")

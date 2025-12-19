@@ -15,6 +15,21 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
+func boolToString(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) error {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "Invalid JSON body")
+		return err
+	}
+	return nil
+}
+
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
 	if r.Method != method {
 		writeJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")

@@ -6,7 +6,10 @@ default: help
 # Help menu
 help:
 	@echo "Web Monitor Management Commands:"
-	@echo "  make up            - Start ALL services (Full Mode)"
+	@echo "  make up            - Start CORE services (Full Mode)"
+	@echo "  make plugins-create - Create plugin containers (do not start)"
+	@echo "  make plugins-build  - Build plugin images"
+	@echo "  make build-all      - Build ALL images"
 	@echo "  make up-minimal    - Start CORE metrics only (CPU/Mem/Disk/Net)"
 	@echo "  make up-server     - Start Server Mode (No GPU/Power)"
 	@echo "  make up-no-docker  - Start without Docker management"
@@ -14,7 +17,7 @@ help:
 	@echo "  make restart       - Restart services"
 	@echo "  make logs          - View logs"
 	@echo "  make stats         - View container resource usage"
-	@echo "  make build         - Rebuild images"
+	@echo "  make build         - Rebuild core images"
 	@echo "  make dev           - Run locally (Go)"
 	@echo "  make clean         - Clean up build artifacts"
 
@@ -22,7 +25,14 @@ help:
 
 # 1. Full Mode (Default)
 up:
-	docker compose up -d
+	docker compose up -d web-monitor-go docker-socket-proxy
+
+# Create plugin containers but do not start them.
+plugins-create:
+	docker compose up -d --no-start plugin-webshell plugin-filemanager
+
+plugins-build:
+	docker compose build plugin-webshell plugin-filemanager
 
 # 2. Minimal Mode: Core system metrics only.
 # Disables: Docker, GPU, Cron, SSH, Systemd, Sensors, Power, System(Processes)
@@ -35,20 +45,20 @@ up-minimal:
 	ENABLE_SENSORS=false \
 	ENABLE_POWER=false \
 	ENABLE_SYSTEM=false \
-	docker compose up -d
+	docker compose up -d web-monitor-go
 
 # 3. Server Mode: Standard server monitoring.
 # Disables: GPU, Power (Battery/Screen)
 up-server:
 	ENABLE_GPU=false \
 	ENABLE_POWER=false \
-	docker compose up -d
+	docker compose up -d web-monitor-go docker-socket-proxy
 
 # 4. No-Docker Mode: For environments without Docker management needs.
 # Disables: Docker
 up-no-docker:
 	ENABLE_DOCKER=false \
-	docker compose up -d
+	docker compose up -d web-monitor-go
 
 # --- Operations ---
 
@@ -64,6 +74,9 @@ stats:
 	docker compose stats
 
 build:
+	docker compose build web-monitor-go docker-socket-proxy
+
+build-all:
 	docker compose build
 
 rebuild: down build up

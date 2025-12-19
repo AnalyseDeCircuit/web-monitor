@@ -13,6 +13,7 @@
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23121212' width='192' height='192'/><text x='50%' y='50%' font-size='100' font-weight='bold' fill='%23ff4757' text-anchor='middle' dominant-baseline='central'>M</text></svg>">
     <title>System Monitor</title>
     <link rel="stylesheet" href="{{ asset "/static/vendor/jetbrains-mono/css/jetbrains-mono.css" }}">
+    <link rel="stylesheet" href="{{ asset "/static/vendor/intel-one-mono/css/intel-one-mono.css" }}">
     <link rel="stylesheet" href="{{ asset "/static/vendor/font-awesome/css/all.min.css" }}">
     <link rel="stylesheet" href="{{ asset "/static/css/style.css" }}">
     <script src="{{ asset "/static/vendor/chartjs/chart.min.js" }}"></script>
@@ -93,6 +94,19 @@
             <div class="nav-item" onclick="switchPage('alerts')">
                 <i class="fas fa-bell" title="Alerts"></i>
                 <span>Alerts</span>
+            </div>
+
+            <!-- Plugins Group -->
+            <div class="nav-item" onclick="togglePluginsSubmenu()" id="nav-plugins-group" style="display: none;">
+                <i class="fas fa-plug" title="Plugins"></i>
+                <span>Plugins</span>
+                <i class="fas fa-chevron-down" style="margin-left: auto; font-size: 0.8rem;" id="plugins-submenu-icon"></i>
+            </div>
+            <div id="plugins-submenu" style="display: none; flex-direction: column; padding-left: 20px; background: rgba(0,0,0,0.2);">
+                <div class="nav-item" onclick="switchPage('plugins')" style="font-size: 0.9rem;">
+                    <i class="fas fa-list"></i>
+                    <span>Plugins</span>
+                </div>
             </div>
 
             <div style="margin-top: auto;"></div>
@@ -333,6 +347,18 @@
                     </div>
                     <button onclick="saveAlerts()" style="background: var(--accent-cpu); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold;">Save Configuration</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Page: Plugins Management -->
+        <div id="page-plugins" class="page">
+            <!-- Content injected by JS -->
+        </div>
+
+        <!-- Page: Plugin Container (Iframe) -->
+        <div id="page-plugin-container" class="page">
+            <div id="plugin-container" style="width: 100%; height: calc(100vh - 120px); border-radius: 8px; overflow: hidden;">
+                <!-- Iframe injected by JS -->
             </div>
         </div>
 
@@ -1046,6 +1072,18 @@
                         <div style="color: var(--text-dim); background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 15px; display: inline-block; font-size: 0.85rem;">
                             <i class="fas fa-shield-alt" style="margin-right: 5px;"></i> <span id="profile-role">-</span>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Appearance Settings -->
+                <div class="card-title" style="margin-bottom: 15px;"><i class="fas fa-palette" style="margin-right: 10px;"></i> Appearance</div>
+                <div style="display: flex; gap: 15px; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <div style="flex: 1;">
+                        <label style="display: block; margin-bottom: 8px; color: var(--text-dim); font-size: 0.9rem;">Font Family</label>
+                        <select id="font-select" onchange="handleFontChange()" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 6px; font-family: inherit; cursor: pointer;">
+                            <option value="jetbrains-mono">JetBrains Mono</option>
+                            <option value="intel-one-mono">Intel One Mono</option>
+                        </select>
                     </div>
                 </div>
 

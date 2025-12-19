@@ -9,6 +9,36 @@ let dockerContainerSort = { column: 'name', direction: 'asc' };
 let dockerImageSort = { column: 'created', direction: 'desc' };
 let serviceSort = { column: 'unit', direction: 'asc' };
 
+// Plugins
+async function loadPlugins() {
+    try {
+        const response = await fetch('/api/plugins/list');
+        if (!response.ok) return [];
+        return await response.json();
+    } catch (e) {
+        console.error("Failed to load plugins", e);
+        return [];
+    }
+}
+
+async function togglePlugin(name, enabled) {
+    try {
+        const response = await fetch('/api/plugins/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, enabled })
+        });
+        if (!response.ok) {
+            const msg = await readErrorMessage(response);
+            throw new Error(msg);
+        }
+        return true;
+    } catch (e) {
+        console.error("Failed to toggle plugin", e);
+        throw e;
+    }
+}
+
 // Docker
 function dockerShowTableError(tbodyId, message, colspan) {
     try {
@@ -865,6 +895,38 @@ function loadProfile() {
 
     document.getElementById('profile-username').innerText = username;
     document.getElementById('profile-role').innerText = role;
+    
+    // Load font preference
+    const fontSelect = document.getElementById('font-select');
+    if (fontSelect) {
+        const savedFont = localStorage.getItem('fontFamily') || 'jetbrains-mono';
+        fontSelect.value = savedFont;
+    }
+}
+
+// Font switching
+function handleFontChange() {
+    const fontSelect = document.getElementById('font-select');
+    if (!fontSelect) return;
+    
+    const font = fontSelect.value;
+    localStorage.setItem('fontFamily', font);
+    applyFont(font);
+}
+
+function applyFont(font) {
+    const root = document.documentElement;
+    if (font === 'intel-one-mono') {
+        root.setAttribute('data-font', 'intel-one-mono');
+    } else {
+        root.removeAttribute('data-font');
+    }
+}
+
+// Initialize font on page load
+function initFont() {
+    const savedFont = localStorage.getItem('fontFamily') || 'jetbrains-mono';
+    applyFont(savedFont);
 }
 
 async function handleChangePassword(e) {

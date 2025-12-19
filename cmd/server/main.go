@@ -16,6 +16,7 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/plugin"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 
 	_ "github.com/AnalyseDeCircuit/web-monitor/docs" // swagger docs
@@ -117,8 +118,15 @@ func main() {
 		log.Printf("Warning: Failed to initialize assets manager: %v\n", err)
 	}
 
+	// 初始化插件管理器
+	pluginManager := plugin.NewManager()
+	// 尝试加载 plugins 目录下的插件
+	if err := pluginManager.LoadPlugins("plugins"); err != nil {
+		log.Printf("Warning: Failed to load plugins: %v\n", err)
+	}
+
 	// 设置HTTP路由
-	router := handlers.SetupRouter()
+	router := handlers.SetupRouter(pluginManager)
 
 	// 启动服务器
 	port := os.Getenv("PORT")
@@ -151,6 +159,9 @@ func main() {
 
 	// 优雅关闭 WebSocket hub
 	websocket.Shutdown()
+
+	// 清理插件进程
+	pluginManager.Cleanup()
 
 	// 优雅关闭 HTTP 服务器（等待最多 10 秒）
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

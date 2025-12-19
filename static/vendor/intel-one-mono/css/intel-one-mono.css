@@ -1,0 +1,47 @@
+@font-face {
+    font-family: 'Intel One Mono';
+    font-style: normal;
+    font-weight: 300;
+    font-display: swap;
+    src: url('../webfonts/IntelOneMono-Light.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Intel One Mono';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../webfonts/IntelOneMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Intel One Mono';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../webfonts/IntelOneMono-Medium.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Intel One Mono';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../webfonts/IntelOneMono-Bold.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Intel One Mono';
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../webfonts/IntelOneMono-Italic.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Intel One Mono';
+    font-style: italic;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../webfonts/IntelOneMono-BoldItalic.woff2') format('woff2');
+}
