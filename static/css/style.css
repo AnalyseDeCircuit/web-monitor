@@ -70,6 +70,11 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        /* Monospace text utility class - inherits from CSS variable */
+        .mono-text {
+            font-family: var(--font-mono);
+        }
+
         .app-container {
             display: flex;
             height: 100vh;
@@ -138,23 +143,24 @@
 
         /* Mobile Menu Hamburger Button */
         .mobile-menu-btn {
-            display: none !important;
+            display: none;
             position: fixed;
             top: 15px;
             left: 15px;
-            z-index: 1000;
-            background: rgba(255,255,255,0.1);
+            z-index: 1001;
+            background: var(--card-bg);
             border: 1px solid rgba(255,255,255,0.2);
             color: var(--text-main);
             cursor: pointer;
             font-size: 1.3rem;
             padding: 8px 12px;
-            border-radius: 6px;
+            border-radius: 8px;
             transition: all 0.3s ease;
             width: 44px;
             height: 44px;
             align-items: center;
             justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
 
         .mobile-menu-btn:hover {
@@ -165,6 +171,30 @@
         .mobile-menu-btn.active {
             background: var(--accent-cpu);
             color: white;
+        }
+
+        :root[data-theme="light"] .mobile-menu-btn {
+            background: var(--card-bg);
+            border: 1px solid rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        /* Mobile overlay */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar-overlay.active {
+            opacity: 1;
         }
 
         .net-tab {
@@ -285,30 +315,59 @@
             body {
                 padding: 10px;
             }
+            
+            /* Mobile: hamburger button visible */
+            .mobile-menu-btn {
+                display: flex !important;
+            }
+            
+            /* Mobile overlay */
+            .sidebar-overlay {
+                display: block;
+            }
+            
+            /* Sidebar: hidden by default, slides in from left */
             .sidebar {
-                width: 60px;
-                padding: 15px 8px;
+                position: fixed;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                width: 280px;
+                padding: 70px 20px 20px 20px;
+                transform: translateX(-100%);
+                z-index: 1000;
+                box-shadow: 4px 0 20px rgba(0,0,0,0.3);
             }
-            .sidebar.collapsed {
-                width: 60px;
+            
+            .sidebar.mobile-open {
+                transform: translateX(0);
             }
-            .sidebar-title span,
-            .sidebar.collapsed .sidebar-title span,
-            .nav-item span,
-            .sidebar.collapsed .nav-item span {
+            
+            /* When sidebar is open on mobile, show full text */
+            .sidebar.mobile-open .sidebar-title span,
+            .sidebar.mobile-open .nav-item span {
+                display: inline;
+            }
+            
+            .sidebar.mobile-open .nav-item {
+                padding: 12px 15px;
+                justify-content: flex-start;
+            }
+            
+            /* Hide desktop collapse toggle on mobile */
+            .sidebar-toggle {
                 display: none;
             }
-            .nav-item,
-            .sidebar .nav-item {
-                padding: 12px;
-                justify-content: center;
+            
+            /* Main content: full width with top padding for hamburger */
+            .main-content {
+                padding-top: 60px;
+                padding-left: 10px;
+                padding-right: 10px;
             }
-            .sidebar-title {
-                margin-bottom: 20px;
-                margin-right: 0;
-            }
-            .sidebar-toggle {
-                right: 8px;
+            
+            .main-content > .page {
+                padding-top: 10px;
             }
         }
 
@@ -989,6 +1048,17 @@
                 font-size: 0.85rem;
             }
         }
+
+        /* Profile page responsive: stack cards vertically on mobile */
+        @media (max-width: 768px) {
+            #page-profile .grid-container {
+                grid-template-columns: 1fr !important;
+            }
+            #page-profile .card[style*="grid-row: span 2"] {
+                grid-row: auto !important;
+            }
+        }
+
         /* Switch */
         .switch {
             position: relative;

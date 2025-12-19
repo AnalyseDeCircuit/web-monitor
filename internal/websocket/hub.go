@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/internal/collectors"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/settings"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
 
@@ -33,6 +34,7 @@ type statsHub struct {
 	clientInterval map[uint64]time.Duration
 	shutdown       bool
 	ready          chan struct{}
+	alwaysOn       bool // 后台常驻模式
 }
 
 func newStatsHub() *statsHub {
@@ -41,6 +43,9 @@ func newStatsHub() *statsHub {
 	netDetailColl := collectors.NewNetworkDetailCollector()
 	sshCollector := collectors.NewSSHCollector()
 
+	// 检查是否为后台常驻模式
+	alwaysOn := !settings.IsOnDemand()
+
 	h := &statsHub{
 		aggregator:       aggregator,
 		processCollector: processCollector,
@@ -48,6 +53,7 @@ func newStatsHub() *statsHub {
 		sshCollector:     sshCollector,
 		clientInterval:   make(map[uint64]time.Duration),
 		ready:            make(chan struct{}),
+		alwaysOn:         alwaysOn,
 	}
 
 	// Topic-based collectors (only run when subscribed)
@@ -88,8 +94,16 @@ func newStatsHub() *statsHub {
 		return out
 	})
 
-	// Start the streaming aggregator (all collectors run independently)
-	aggregator.Start()
+	// 如果是后台常驻模式，立即启动采集器
+	if alwaysOn {
+		log.Println("statsHub: always-on mode enabled, starting aggregator...")
+		aggregator.Start()
+	}
+
+	// 监听设置变更
+	settings.OnChange(func(s settings.SystemSettings) {
+		h.handleSettingsChange(s)
+	})
 
 	// Mark as ready after a short delay for initial data
 	go func() {
@@ -98,6 +112,32 @@ func newStatsHub() *statsHub {
 	}()
 
 	return h
+}
+
+// handleSettingsChange 处理设置变更
+func (h *statsHub) handleSettingsChange(s settings.SystemSettings) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	newAlwaysOn := s.MonitoringMode == "always-on"
+	if newAlwaysOn == h.alwaysOn {
+		return
+	}
+	h.alwaysOn = newAlwaysOn
+
+	if newAlwaysOn {
+		// 切换到后台常驻模式：启动采集器
+		log.Println("statsHub: switching to always-on mode, starting aggregator...")
+		h.aggregator.Start()
+	} else {
+		// 切换到按需模式：如果没有客户端，停止采集器
+		if len(h.clientInterval) == 0 {
+			log.Println("statsHub: switching to on-demand mode (no clients), stopping aggregator...")
+			h.aggregator.Stop()
+		} else {
+			log.Println("statsHub: switching to on-demand mode (clients connected), aggregator remains running")
+		}
+	}
 }
 
 // Shutdown gracefully stops all collectors
@@ -130,18 +170,33 @@ func (h *statsHub) Shutdown() {
 func (h *statsHub) RegisterClient(id uint64, interval time.Duration) {
 	interval = clampInterval(interval)
 	h.mu.Lock()
+	wasEmpty := len(h.clientInterval) == 0
 	h.clientInterval[id] = interval
 	min := minIntervalLocked(h.clientInterval)
+	alwaysOn := h.alwaysOn
 	h.mu.Unlock()
+
+	// 按需模式下，第一个客户端连接时启动采集器
+	if wasEmpty && !alwaysOn {
+		log.Println("statsHub: first client connected, starting aggregator...")
+		h.aggregator.Start()
+	}
 	h.aggregator.SetInterval(min)
 }
 
 func (h *statsHub) UnregisterClient(id uint64) {
 	h.mu.Lock()
 	delete(h.clientInterval, id)
+	isEmpty := len(h.clientInterval) == 0
 	min := minIntervalLocked(h.clientInterval)
+	alwaysOn := h.alwaysOn
 	h.mu.Unlock()
-	if min > 0 {
+
+	// 按需模式下，最后一个客户端断开时停止采集器
+	if isEmpty && !alwaysOn {
+		log.Println("statsHub: last client disconnected, stopping aggregator...")
+		h.aggregator.Stop()
+	} else if !isEmpty && min > 0 {
 		h.aggregator.SetInterval(min)
 	}
 }

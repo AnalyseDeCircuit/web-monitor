@@ -446,12 +446,12 @@ function _renderStatsInternal(data) {
                             const tr = document.createElement('tr');
                             tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
                             tr.innerHTML = `
-                                <td style="padding: 8px; color: var(--accent-cpu); font-family: monospace;"></td>
+                                <td style="padding: 8px; color: var(--accent-cpu);" class="mono-text"></td>
                                 <td style="padding: 8px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></td>
                                 <td style="padding: 8px; color: var(--text-dim);"></td>
-                                <td style="padding: 8px; text-align: right; font-family: monospace;"></td>
-                                <td style="padding: 8px; text-align: right; font-family: monospace; color: var(--accent-net);"></td>
-                                <td style="padding: 8px; text-align: right; font-family: monospace; color: var(--accent-mem);"></td>
+                                <td style="padding: 8px; text-align: right;" class="mono-text"></td>
+                                <td style="padding: 8px; text-align: right; color: var(--accent-net);" class="mono-text"></td>
+                                <td style="padding: 8px; text-align: right; color: var(--accent-mem);" class="mono-text"></td>
                             `;
                             return tr;
                         },

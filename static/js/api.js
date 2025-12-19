@@ -158,7 +158,7 @@ function renderDockerContainers() {
 
         let actionsHtml = '';
         if (role === 'admin') {
-            const logsBtn = `<button onclick="openDockerLogs('${c.Id}', ${JSON.stringify(name)})" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Logs</button>`;
+            const logsBtn = `<button onclick="openDockerLogsById('${c.Id}')" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Logs</button>`;
             actionsHtml =
                 c.State === 'running'
                     ? `${logsBtn}<button onclick="handleDockerAction('${c.Id}', 'stop')" style="background: #ff6b6b; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px;">Stop</button>
@@ -294,7 +294,7 @@ function renderDockerImages() {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
         tr.innerHTML = `
-                    <td style="padding: 10px; font-family: monospace;">${id}</td>
+                    <td style="padding: 10px;" class="mono-text">${id}</td>
                     <td style="padding: 10px;">${tags}</td>
                     <td style="padding: 10px;">${size}</td>
                     <td style="padding: 10px;">${created}</td>
@@ -358,6 +358,23 @@ function closeDockerLogsModal() {
     if (modal) modal.style.display = 'none';
 }
 
+async function openDockerLogsById(id) {
+    const role = localStorage.getItem('role');
+    if (role !== 'admin') {
+        alert('Docker logs are restricted to admin users.');
+        return;
+    }
+
+    if (!id || id.trim() === '') {
+        alert('Invalid container ID');
+        return;
+    }
+
+    // 从 ID 中提取显示名称
+    const displayName = id.substring(0, 12);
+    await openDockerLogs(id, displayName);
+}
+
 async function openDockerLogs(id, name) {
     const role = localStorage.getItem('role');
     if (role !== 'admin') {
@@ -365,7 +382,12 @@ async function openDockerLogs(id, name) {
         return;
     }
 
-    dockerLogsState = { id, name: name || id, tail: 200 };
+    if (!id || id.trim() === '') {
+        alert('Invalid container ID');
+        return;
+    }
+
+    dockerLogsState = { id: id.trim(), name: (name || id).substring(0, 50), tail: 200 };
     const modal = document.getElementById('docker-logs-modal');
     const title = document.getElementById('docker-logs-title');
     if (title) title.innerText = `Logs: ${dockerLogsState.name}`;
@@ -378,19 +400,42 @@ async function fetchDockerLogs() {
     const content = document.getElementById('docker-logs-content');
     if (content) content.textContent = 'Loading...';
 
-    if (!dockerLogsState.id) return;
+    if (!dockerLogsState.id || dockerLogsState.id.trim() === '') {
+        if (content) content.textContent = 'Error: No container ID specified';
+        return;
+    }
 
     try {
-        const resp = await fetch(`/api/docker/logs?id=${encodeURIComponent(dockerLogsState.id)}&tail=${dockerLogsState.tail}`);
+        const url = `/api/docker/logs?id=${encodeURIComponent(dockerLogsState.id)}&tail=${dockerLogsState.tail}`;
+        console.log('[Docker] Fetching logs from:', url);
+        
+        const resp = await fetch(url);
+        console.log('[Docker] Response status:', resp.status);
+        
         if (!resp.ok) {
             const msg = await readErrorMessage(resp);
+            console.error('[Docker] Error fetching logs:', msg);
             if (content) content.textContent = `Failed to load logs: ${msg}`;
             return;
         }
+        
         const data = await resp.json();
-        if (content) content.textContent = data.logs || '';
+        console.log('[Docker] Logs loaded, length:', data.logs ? data.logs.length : 0);
+        
+        if (content) {
+            if (!data.logs || data.logs.trim() === '') {
+                content.textContent = '(No logs available)';
+            } else {
+                content.textContent = data.logs;
+                // Auto-scroll to bottom
+                setTimeout(() => {
+                    content.parentElement.scrollTop = content.parentElement.scrollHeight;
+                }, 100);
+            }
+        }
     } catch (e) {
-        if (content) content.textContent = 'Failed to load logs.';
+        console.error('[Docker] Exception fetching logs:', e);
+        if (content) content.textContent = `Failed to load logs: ${e.message}`;
     }
 }
 
@@ -637,13 +682,13 @@ function renderCronJobs() {
 
         const scheduleHtml =
             role === 'admin'
-                ? `<input type="text" value="${job.schedule}" onchange="updateCronJob(${index}, 'schedule', this.value)" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px; width: 100%; font-family: monospace;">`
-                : `<span style="font-family: monospace;">${job.schedule}</span>`;
+                ? `<input type="text" value="${job.schedule}" onchange="updateCronJob(${index}, 'schedule', this.value)" class="mono-text" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px; width: 100%;">`
+                : `<span class="mono-text">${job.schedule}</span>`;
 
         const commandHtml =
             role === 'admin'
-                ? `<input type="text" value="${job.command}" onchange="updateCronJob(${index}, 'command', this.value)" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px; width: 100%; font-family: monospace;">`
-                : `<span style="font-family: monospace;">${job.command}</span>`;
+                ? `<input type="text" value="${job.command}" onchange="updateCronJob(${index}, 'command', this.value)" class="mono-text" style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 4px; width: 100%;">`
+                : `<span class="mono-text">${job.command}</span>`;
 
         tr.innerHTML = `
                     <td style="padding: 10px;">${scheduleHtml}</td>
@@ -901,6 +946,69 @@ function loadProfile() {
     if (fontSelect) {
         const savedFont = localStorage.getItem('fontFamily') || 'jetbrains-mono';
         fontSelect.value = savedFont;
+    }
+
+    // Show admin card and load settings if user is admin
+    const adminCard = document.getElementById('system-admin-card');
+    if (adminCard) {
+        if (role === 'admin') {
+            adminCard.style.display = 'block';
+            loadSystemSettings();
+        } else {
+            adminCard.style.display = 'none';
+        }
+    }
+}
+
+// Load system settings from server
+async function loadSystemSettings() {
+    try {
+        const response = await fetch('/api/settings');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const select = document.getElementById('monitoring-mode-select');
+        if (select && data.monitoringMode) {
+            select.value = data.monitoringMode;
+        }
+    } catch (e) {
+        console.error('Failed to load system settings:', e);
+    }
+}
+
+// Handle monitoring mode change
+async function handleMonitoringModeChange() {
+    const select = document.getElementById('monitoring-mode-select');
+    if (!select) return;
+    
+    const mode = select.value;
+    
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ monitoringMode: mode })
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            alert('Failed to save: ' + (data.error || 'Unknown error'));
+            // Revert to previous value
+            loadSystemSettings();
+            return;
+        }
+        
+        // Show brief confirmation
+        const card = document.getElementById('system-admin-card');
+        if (card) {
+            const oldBg = card.style.borderColor;
+            card.style.borderColor = 'var(--accent-mem)';
+            setTimeout(() => { card.style.borderColor = oldBg; }, 500);
+        }
+    } catch (e) {
+        console.error('Failed to update settings:', e);
+        alert('Failed to save settings');
+        loadSystemSettings();
     }
 }
 

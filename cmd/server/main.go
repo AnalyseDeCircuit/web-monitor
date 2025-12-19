@@ -17,6 +17,7 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/plugin"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/settings"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
 
 	_ "github.com/AnalyseDeCircuit/web-monitor/docs" // swagger docs
@@ -112,6 +113,9 @@ func main() {
 
 	// 加载告警配置
 	monitoring.LoadAlerts()
+
+	// 加载系统设置
+	settings.Load()
 
 	// 初始化静态资源哈希
 	if err := assets.Init(); err != nil {

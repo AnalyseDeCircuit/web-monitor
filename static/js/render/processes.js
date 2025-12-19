@@ -285,13 +285,13 @@ function showProcDetail(pid) {
         <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0;">
         <div>
             <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 5px;">Command Line</div>
-            <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85rem; word-break: break-all; color: #90ee90;">
+            <div class="mono-text" style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-size: 0.85rem; word-break: break-all; color: #90ee90;">
                 ${(proc.cmdline || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
             </div>
         </div>
         <div style="margin-top: 15px;">
             <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 5px;">Working Directory</div>
-            <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85rem; word-break: break-all;">
+            <div class="mono-text" style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-size: 0.85rem; word-break: break-all;">
                 ${(proc.cwd || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
             </div>
         </div>

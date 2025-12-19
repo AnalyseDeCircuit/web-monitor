@@ -94,6 +94,9 @@ func SetupRouter(pluginManager *plugin.Manager) *Router {
 		router.mux.HandleFunc("/api/ssh/stats", SSHStatsHandler)
 	}
 
+	// 系统设置路由
+	router.mux.HandleFunc("/api/settings", SystemSettingsHandler)
+
 	// WebSocket路由
 	router.mux.HandleFunc("/ws/stats", websocket.HandleWebSocket)
 

@@ -30,6 +30,7 @@ var (
 	reImagesJSON     = regexp.MustCompile(`^/images/json$`)
 	reInfo           = regexp.MustCompile(`^/info$`)
 	reVersion        = regexp.MustCompile(`^/version$`)
+	reContainerLogs  = regexp.MustCompile(`^/containers/([^/]+)/logs$`)
 
 	reContainerAction = regexp.MustCompile(`^/containers/([^/]+)/(start|stop|restart)$`)
 	reContainerRemove = regexp.MustCompile(`^/containers/([^/]+)$`)
@@ -63,6 +64,8 @@ func allowed(method, path string) bool {
 		case reInfo.MatchString(path):
 			return true
 		case reVersion.MatchString(path):
+			return true
+		case reContainerLogs.MatchString(path):
 			return true
 		default:
 			return false

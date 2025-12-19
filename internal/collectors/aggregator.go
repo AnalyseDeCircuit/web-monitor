@@ -52,11 +52,12 @@ type StreamingAggregator struct {
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	interval atomic.Int64 // in milliseconds
+	mu       sync.Mutex
+	running  bool
 }
 
 // NewStreamingAggregator creates a new streaming aggregator
 func NewStreamingAggregator() *StreamingAggregator {
-	ctx, cancel := context.WithCancel(context.Background())
 	a := &StreamingAggregator{
 		cpu:     NewCPUCollector(),
 		memory:  NewMemoryCollector(),
@@ -67,8 +68,6 @@ func NewStreamingAggregator() *StreamingAggregator {
 		gpu:     NewGPUCollector(),
 		ssh:     NewSSHCollector(),
 		system:  NewSystemCollector(),
-		ctx:     ctx,
-		cancel:  cancel,
 	}
 	a.interval.Store(5000) // default 5s
 	return a
@@ -84,6 +83,15 @@ func (a *StreamingAggregator) SetInterval(d time.Duration) {
 
 // Start begins all independent collector goroutines
 func (a *StreamingAggregator) Start() {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return
+	}
+	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.running = true
+	a.mu.Unlock()
+
 	cfg := config.Load()
 
 	type collectorDef struct {
@@ -152,9 +160,17 @@ func (a *StreamingAggregator) runCollector(name string, collect func(context.Con
 
 // Stop gracefully stops all collectors
 func (a *StreamingAggregator) Stop() {
+	a.mu.Lock()
+	if !a.running {
+		a.mu.Unlock()
+		return
+	}
 	if a.cancel != nil {
 		a.cancel()
 	}
+	a.running = false
+	a.mu.Unlock()
+
 	a.wg.Wait()
 }
 
