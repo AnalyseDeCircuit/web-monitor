@@ -39,6 +39,41 @@ async function togglePlugin(name, enabled) {
     }
 }
 
+async function installPlugin(name) {
+    const response = await fetch('/api/plugins/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+    if (!response.ok) {
+        const msg = await readErrorMessage(response);
+        throw new Error(msg);
+    }
+    return await response.json();
+}
+
+async function uninstallPlugin(name, removeData = false) {
+    const response = await fetch('/api/plugins/uninstall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, removeData })
+    });
+    if (!response.ok) {
+        const msg = await readErrorMessage(response);
+        throw new Error(msg);
+    }
+    return await response.json();
+}
+
+async function getPluginManifest(name) {
+    const response = await fetch(`/api/plugins/manifest?name=${encodeURIComponent(name)}`);
+    if (!response.ok) {
+        const msg = await readErrorMessage(response);
+        throw new Error(msg);
+    }
+    return await response.json();
+}
+
 // Docker
 function dockerShowTableError(tbodyId, message, colspan) {
     try {

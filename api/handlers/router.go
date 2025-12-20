@@ -153,6 +153,101 @@ func SetupRouter(pluginManager *plugin.Manager) *Router {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		})
 
+		// Install plugin (admin only) - executes install hooks for privileged plugins
+		router.mux.HandleFunc("/api/plugins/install", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			username, role, ok := requireAuth(w, r)
+			if !ok {
+				return
+			}
+			if role != "admin" {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			var req struct {
+				Name string `json:"name"`
+			}
+			if err := decodeJSONBody(w, r, &req); err != nil {
+				return
+			}
+
+			result, err := pluginManager.InstallPlugin(req.Name)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			logs.LogOperation(username, "plugin_install", req.Name, clientIP(r))
+			writeJSON(w, http.StatusOK, result)
+		})
+
+		// Uninstall plugin (admin only) - executes uninstall hooks, optionally removes data
+		router.mux.HandleFunc("/api/plugins/uninstall", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			username, role, ok := requireAuth(w, r)
+			if !ok {
+				return
+			}
+			if role != "admin" {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			var req struct {
+				Name       string `json:"name"`
+				RemoveData bool   `json:"removeData,omitempty"`
+			}
+			if err := decodeJSONBody(w, r, &req); err != nil {
+				return
+			}
+
+			result, err := pluginManager.UninstallPlugin(req.Name, req.RemoveData)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			logs.LogOperation(username, "plugin_uninstall", req.Name, clientIP(r))
+			writeJSON(w, http.StatusOK, result)
+		})
+
+		// Get plugin manifest (admin only) - for viewing install hooks before installation
+		router.mux.HandleFunc("/api/plugins/manifest", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			_, role, ok := requireAuth(w, r)
+			if !ok {
+				return
+			}
+			if role != "admin" {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			name := r.URL.Query().Get("name")
+			if name == "" {
+				writeJSONError(w, http.StatusBadRequest, "name parameter required")
+				return
+			}
+
+			manifest, exists := pluginManager.GetManifest(name)
+			if !exists {
+				writeJSONError(w, http.StatusNotFound, "manifest not found")
+				return
+			}
+
+			writeJSON(w, http.StatusOK, manifest)
+		})
+
 		router.mux.HandleFunc("/api/plugins/", func(w http.ResponseWriter, r *http.Request) {
 			// 路径格式: /api/plugins/<plugin_name>/...
 			parts := strings.Split(r.URL.Path, "/")

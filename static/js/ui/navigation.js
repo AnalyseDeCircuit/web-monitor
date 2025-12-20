@@ -263,26 +263,74 @@ function renderPluginManager(plugins) {
     if (!container) return;
 
     const role = localStorage.getItem('role');
-
     plugins = plugins || [];
     const isAdmin = role === 'admin';
+    
+    // Helper functions
+    const getTypeStyle = (type) => {
+        if (type === 'privileged') return 'background: rgba(255,71,87,0.15); color: #ff6b7a; border: 1px solid rgba(255,71,87,0.3);';
+        return 'background: rgba(46,213,115,0.15); color: #2ed573; border: 1px solid rgba(46,213,115,0.3);';
+    };
+    
+    const getRiskStyle = (risk) => {
+        if (risk === 'high') return 'background: rgba(255,71,87,0.2); color: #ff4757;';
+        if (risk === 'medium') return 'background: rgba(255,165,2,0.2); color: #ffa502;';
+        return 'background: rgba(46,213,115,0.2); color: #2ed573;';
+    };
+    
+    const getPluginIcon = (name) => {
+        if (name.includes('shell')) return 'fa-terminal';
+        if (name.includes('file')) return 'fa-folder-open';
+        return 'fa-puzzle-piece';
+    };
+    
+    const getStateInfo = (state, enabled, running) => {
+        const states = {
+            'available': { icon: 'fa-download', color: 'var(--text-dim)', text: 'Available' },
+            'pending': { icon: 'fa-clock', color: '#ffa502', text: 'Pending Approval' },
+            'installed': { icon: 'fa-check', color: 'var(--accent-cpu)', text: 'Installed' },
+            'enabled': { icon: 'fa-check-circle', color: 'var(--accent-mem)', text: 'Enabled' },
+            'running': { icon: 'fa-play-circle', color: 'var(--accent-mem)', text: 'Running' },
+            'disabled': { icon: 'fa-pause-circle', color: 'var(--text-dim)', text: 'Disabled' },
+            'stopped': { icon: 'fa-stop-circle', color: 'var(--text-dim)', text: 'Stopped' },
+            'error': { icon: 'fa-exclamation-circle', color: '#ff4757', text: 'Error' }
+        };
+        // Prefer showing running status if actually running
+        if (running) return states['running'];
+        if (enabled) return states['enabled'];
+        return states[state] || states['installed'];
+    };
     
     let html = `
     <div class="grid-container">
         <div class="card" style="grid-column: 1 / -1;">
-            <div class="card-title" style="margin-bottom: 20px;">
-                <i class="fas fa-plug" style="margin-right: 8px; color: var(--accent-cpu);"></i>
-                ${isAdmin ? 'Plugin Management' : 'Installed Plugins'}
+            <div class="card-title" style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <i class="fas fa-plug" style="margin-right: 8px; color: var(--accent-cpu);"></i>
+                    ${isAdmin ? 'Plugin Management' : 'Installed Plugins'}
+                </div>
+                ${isAdmin ? '<button onclick="loadPluginsPage()" style="padding: 6px 12px; background: rgba(255,255,255,0.1); border: none; border-radius: 4px; color: var(--text-main); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>' : ''}
             </div>
-            ${isAdmin ? '' : '<div style="color: var(--text-dim); margin-bottom: 12px;">Read-only list (admin can enable/disable).</div>'}
+            ${isAdmin ? `
+            <div style="display: flex; gap: 20px; margin-bottom: 20px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; font-size: 0.85rem;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="padding: 2px 8px; border-radius: 4px; ${getTypeStyle('normal')}">normal</span>
+                    <span style="color: var(--text-dim);">No host access</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="padding: 2px 8px; border-radius: 4px; ${getTypeStyle('privileged')}">privileged</span>
+                    <span style="color: var(--text-dim);">Requires host setup</span>
+                </div>
+            </div>
+            ` : '<div style="color: var(--text-dim); margin-bottom: 12px;">Read-only list (admin can manage).</div>'}
             <div style="overflow-x: auto;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <thead>
                         <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                            <th style="padding: 12px; text-align: left; color: var(--text-dim); font-weight: 500;">Name</th>
-                            <th style="padding: 12px; text-align: left; color: var(--text-dim); font-weight: 500;">Status</th>
-                            <th style="padding: 12px; text-align: left; color: var(--text-dim); font-weight: 500;">Runtime</th>
-                            ${isAdmin ? '<th style="padding: 12px; text-align: left; color: var(--text-dim); font-weight: 500;">Action</th>' : ''}
+                            <th style="padding: 12px; text-align: left; color: var(--text-dim); font-weight: 500;">Plugin</th>
+                            <th style="padding: 12px; text-align: left; color: var(--text-dim); font-weight: 500;">Type</th>
+                            <th style="padding: 12px; text-align: left; color: var(--text-dim); font-weight: 500;">State</th>
+                            ${isAdmin ? '<th style="padding: 12px; text-align: right; color: var(--text-dim); font-weight: 500;">Actions</th>' : ''}
                         </tr>
                     </thead>
                     <tbody>
@@ -291,54 +339,81 @@ function renderPluginManager(plugins) {
     if (plugins.length === 0) {
         html += `
             <tr>
-                <td colspan="${isAdmin ? 4 : 3}" style="padding: 30px; text-align: center; color: var(--text-dim);">
-                    <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 10px; display: block;"></i>
-                    No plugins installed
+                <td colspan="${isAdmin ? 4 : 3}" style="padding: 40px; text-align: center; color: var(--text-dim);">
+                    <i class="fas fa-inbox" style="font-size: 2.5rem; margin-bottom: 12px; display: block; opacity: 0.5;"></i>
+                    <div>No plugins available</div>
                 </td>
             </tr>
         `;
     } else {
         plugins.forEach(p => {
-            const statusColor = p.enabled ? 'var(--accent-mem)' : 'var(--text-dim)';
-            const statusIcon = p.enabled ? 'fa-check-circle' : 'fa-times-circle';
-            const statusText = p.enabled ? 'Enabled' : 'Disabled';
-            const runtimeColor = p.running ? 'var(--accent-mem)' : 'var(--text-dim)';
-            const runtimeIcon = p.running ? 'fa-circle' : 'fa-circle';
-            const runtimeText = p.running ? 'Running' : 'Stopped';
-
-            const btnClass = p.enabled ? 'background: rgba(255,71,87,0.2); color: #ff4757;' : 'background: rgba(46,213,115,0.2); color: #2ed573;';
-            const btnText = p.enabled ? '<i class="fas fa-power-off"></i> Disable' : '<i class="fas fa-play"></i> Enable';
+            const stateInfo = getStateInfo(p.state, p.enabled, p.running);
+            const pluginIcon = getPluginIcon(p.name);
+            const typeStyle = getTypeStyle(p.type);
+            const riskStyle = getRiskStyle(p.risk);
             
-            let pluginIcon = 'fa-puzzle-piece';
-            if (p.name.includes('shell')) pluginIcon = 'fa-terminal';
-            if (p.name.includes('file')) pluginIcon = 'fa-folder-open';
+            // Action buttons
+            let actionBtns = '';
+            if (isAdmin) {
+                const toggleBtnStyle = p.enabled 
+                    ? 'background: rgba(255,71,87,0.15); color: #ff4757; border: 1px solid rgba(255,71,87,0.3);'
+                    : 'background: rgba(46,213,115,0.15); color: #2ed573; border: 1px solid rgba(46,213,115,0.3);';
+                const toggleIcon = p.enabled ? 'fa-pause' : 'fa-play';
+                const toggleTitle = p.enabled ? 'Disable' : 'Enable';
+                
+                actionBtns = `
+                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button onclick="handlePluginToggle('${p.name}', ${!p.enabled})" 
+                                title="${toggleTitle}"
+                                style="padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; ${toggleBtnStyle}">
+                            <i class="fas ${toggleIcon}"></i>
+                        </button>
+                        ${p.type === 'privileged' ? `
+                        <button onclick="showPluginDetails('${p.name}')" 
+                                title="View Details"
+                                style="padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; background: rgba(255,255,255,0.1); color: var(--text-main);">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
+                        <button onclick="handlePluginInstall('${p.name}')" 
+                                title="${p.state === 'installed' || p.state === 'running' ? 'Hooks Already Executed' : 'Run Install Hooks'}"
+                                ${p.state === 'installed' || p.state === 'running' ? 'disabled' : ''}
+                                style="padding: 6px 12px; border: none; border-radius: 6px; cursor: ${p.state === 'installed' || p.state === 'running' ? 'not-allowed' : 'pointer'}; background: ${p.state === 'installed' || p.state === 'running' ? 'rgba(128,128,128,0.2)' : 'rgba(52,152,219,0.2)'}; color: ${p.state === 'installed' || p.state === 'running' ? '#888' : '#3498db'}; border: 1px solid ${p.state === 'installed' || p.state === 'running' ? 'rgba(128,128,128,0.3)' : 'rgba(52,152,219,0.3)'};">
+                            <i class="fas ${p.state === 'installed' || p.state === 'running' ? 'fa-check' : 'fa-cog'}"></i>
+                        </button>
+                        ` : ''}
+                    </div>
+                `;
+            }
             
             html += `
                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                     <td style="padding: 15px;">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <i class="fas ${pluginIcon}" style="color: var(--accent-cpu);"></i>
-                            <span style="font-weight: 500;">${p.name}</span>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center;">
+                                <i class="fas ${pluginIcon}" style="color: var(--accent-cpu); font-size: 1.1rem;"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 500; margin-bottom: 2px;">${p.name}</div>
+                                <div style="font-size: 0.8rem; color: var(--text-dim);">
+                                    ${p.description || `v${p.version || '?'}`}
+                                    ${p.adminOnly ? '<i class="fas fa-shield-alt" title="Admin Only" style="margin-left: 6px; color: #ffa502;"></i>' : ''}
+                                </div>
+                            </div>
                         </div>
                     </td>
                     <td style="padding: 15px;">
-                        <span style="display: inline-flex; align-items: center; gap: 6px; color: ${statusColor};">
-                            <i class="fas ${statusIcon}"></i> ${statusText}
-                        </span>
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="padding: 3px 10px; border-radius: 4px; font-size: 0.75rem; display: inline-block; width: fit-content; ${typeStyle}">${p.type || 'normal'}</span>
+                            ${p.risk ? `<span style="padding: 3px 10px; border-radius: 4px; font-size: 0.75rem; display: inline-block; width: fit-content; ${riskStyle}">${p.risk} risk</span>` : ''}
+                        </div>
                     </td>
                     <td style="padding: 15px;">
-                        <span style="display: inline-flex; align-items: center; gap: 6px; color: ${runtimeColor};">
-                            <i class="fas ${runtimeIcon}"></i> ${runtimeText}
+                        <span style="display: inline-flex; align-items: center; gap: 6px; color: ${stateInfo.color};">
+                            <i class="fas ${stateInfo.icon}"></i> ${stateInfo.text}
                         </span>
+                        ${p.error ? `<div style="font-size: 0.75rem; color: #ff4757; margin-top: 4px;"><i class="fas fa-exclamation-triangle"></i> ${p.error}</div>` : ''}
                     </td>
-                    ${isAdmin ? `
-                    <td style="padding: 15px;">
-                        <button onclick="handlePluginToggle('${p.name}', ${!p.enabled})" 
-                                style="padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; ${btnClass}">
-                            ${btnText}
-                        </button>
-                    </td>
-                    ` : ''}
+                    ${isAdmin ? `<td style="padding: 15px;">${actionBtns}</td>` : ''}
                 </tr>
             `;
         });
@@ -360,8 +435,154 @@ async function handlePluginToggle(name, enabled) {
     } catch (e) {
         appError('Failed to toggle plugin: ' + e.message);
     } finally {
-        // Refresh list + submenu without a full page reload.
         await loadPluginsPage();
         await initPlugins();
     }
+}
+
+async function handlePluginInstall(name) {
+    try {
+        // Check if already installed
+        const plugins = await getPlugins();
+        const plugin = plugins.find(p => p.name === name);
+        if (plugin && (plugin.state === 'installed' || plugin.state === 'running')) {
+            appInfo(`Plugin ${name} is already installed. Install hooks have been executed.`);
+            return;
+        }
+        
+        // First, get the manifest to show what will happen
+        const manifest = await getPluginManifest(name);
+        
+        // Build confirmation message
+        let message = `<div style="text-align: left; max-width: 500px;">`;
+        message += `<p><strong>Plugin:</strong> ${manifest.name} v${manifest.version}</p>`;
+        message += `<p><strong>Type:</strong> <span style="color: ${manifest.type === 'privileged' ? '#ff6b7a' : '#2ed573'};">${manifest.type}</span></p>`;
+        
+        if (manifest.permissions && manifest.permissions.length > 0) {
+            message += `<p><strong>Permissions:</strong></p><ul style="margin: 8px 0; padding-left: 20px;">`;
+            manifest.permissions.forEach(perm => {
+                message += `<li style="color: var(--text-dim); margin: 4px 0;">${perm}</li>`;
+            });
+            message += `</ul>`;
+        }
+        
+        if (manifest.install && manifest.install.hooks && manifest.install.hooks.length > 0) {
+            message += `<p><strong>Install hooks to execute:</strong></p>`;
+            message += `<div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; margin: 8px 0; font-size: 0.85rem;">`;
+            manifest.install.hooks.forEach((hook, i) => {
+                const hookDesc = hook.description || `${hook.type}`;
+                let details = '';
+                if (hook.user) details += `user: ${hook.user}`;
+                if (hook.path) details += `${details ? ', ' : ''}path: ${hook.path}`;
+                if (hook.keyPath) details += `${details ? ', ' : ''}key: ${hook.keyPath}`;
+                
+                message += `<div style="margin: 6px 0; padding: 6px; background: rgba(255,255,255,0.03); border-radius: 4px;">`;
+                message += `<div style="color: var(--accent-cpu);"><i class="fas fa-chevron-right" style="margin-right: 6px;"></i>${hookDesc}</div>`;
+                if (details) message += `<div style="color: var(--text-dim); font-size: 0.8rem; margin-top: 4px; padding-left: 18px;">${details}</div>`;
+                message += `</div>`;
+            });
+            message += `</div>`;
+        }
+        
+        if (manifest.install && manifest.install.requiresApproval) {
+            message += `<div style="margin-top: 12px; padding: 10px; background: rgba(255,71,87,0.1); border-radius: 6px; border-left: 3px solid #ff4757;">`;
+            message += `<i class="fas fa-exclamation-triangle" style="color: #ff4757; margin-right: 6px;"></i>`;
+            message += `<span style="color: #ff6b7a;">This plugin requires host modifications.</span>`;
+            message += `</div>`;
+        }
+        
+        message += `</div>`;
+        
+        const confirmed = await appConfirm('Run Install Hooks?', message);
+        if (!confirmed) return;
+        
+        // Execute install
+        const result = await installPlugin(name);
+        
+        if (result.success) {
+            appSuccess(result.message || `Plugin ${name} installed successfully`);
+        } else {
+            appError(result.message || 'Installation failed');
+            if (result.errors && result.errors.length > 0) {
+                console.error('Install errors:', result.errors);
+            }
+        }
+    } catch (e) {
+        appError('Failed to install plugin: ' + e.message);
+    } finally {
+        await loadPluginsPage();
+        await initPlugins();
+    }
+}
+
+async function showPluginDetails(name) {
+    try {
+        const manifest = await getPluginManifest(name);
+        
+        let content = `<div style="text-align: left; max-width: 550px; max-height: 70vh; overflow-y: auto;">`;
+        
+        // Basic info
+        content += `
+            <div style="margin-bottom: 16px;">
+                <h4 style="margin: 0 0 8px 0; color: var(--accent-cpu);">Basic Information</h4>
+                <table style="width: 100%; font-size: 0.9rem;">
+                    <tr><td style="color: var(--text-dim); padding: 4px 0;">Name:</td><td>${manifest.name}</td></tr>
+                    <tr><td style="color: var(--text-dim); padding: 4px 0;">Version:</td><td>${manifest.version}</td></tr>
+                    <tr><td style="color: var(--text-dim); padding: 4px 0;">Type:</td><td><span style="color: ${manifest.type === 'privileged' ? '#ff6b7a' : '#2ed573'};">${manifest.type}</span></td></tr>
+                    <tr><td style="color: var(--text-dim); padding: 4px 0;">Risk Level:</td><td>${manifest.risk || 'low'}</td></tr>
+                    ${manifest.description ? `<tr><td style="color: var(--text-dim); padding: 4px 0;">Description:</td><td>${manifest.description}</td></tr>` : ''}
+                </table>
+            </div>
+        `;
+        
+        // Container config
+        if (manifest.container) {
+            content += `
+                <div style="margin-bottom: 16px;">
+                    <h4 style="margin: 0 0 8px 0; color: var(--accent-cpu);">Container</h4>
+                    <table style="width: 100%; font-size: 0.9rem;">
+                        <tr><td style="color: var(--text-dim); padding: 4px 0;">Image:</td><td style="word-break: break-all;">${manifest.container.image}</td></tr>
+                        <tr><td style="color: var(--text-dim); padding: 4px 0;">Port:</td><td>${manifest.container.port}</td></tr>
+                        ${manifest.container.hostPort ? `<tr><td style="color: var(--text-dim); padding: 4px 0;">Host Port:</td><td>${manifest.container.hostPort}</td></tr>` : ''}
+                    </table>
+                </div>
+            `;
+        }
+        
+        // Permissions
+        if (manifest.permissions && manifest.permissions.length > 0) {
+            content += `
+                <div style="margin-bottom: 16px;">
+                    <h4 style="margin: 0 0 8px 0; color: var(--accent-cpu);">Permissions</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        ${manifest.permissions.map(p => `<span style="padding: 4px 10px; background: rgba(255,71,87,0.15); color: #ff6b7a; border-radius: 4px; font-size: 0.8rem;">${p}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Install hooks
+        if (manifest.install && manifest.install.hooks && manifest.install.hooks.length > 0) {
+            content += `
+                <div style="margin-bottom: 16px;">
+                    <h4 style="margin: 0 0 8px 0; color: var(--accent-cpu);">Install Hooks</h4>
+                    <div style="font-size: 0.85rem;">
+                        ${manifest.install.hooks.map(h => `
+                            <div style="padding: 8px; margin: 4px 0; background: rgba(255,255,255,0.03); border-radius: 4px; border-left: 2px solid var(--accent-cpu);">
+                                <strong>${h.type}</strong>
+                                ${h.description ? `<div style="color: var(--text-dim); margin-top: 2px;">${h.description}</div>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        content += `</div>`;
+        
+        // Use alert-style dialog (just OK button)
+        await appAlert(`Plugin: ${manifest.name}`, content);
+        
+    } catch (e) {
+        appError('Failed to load plugin details: ' + e.message);    }
 }

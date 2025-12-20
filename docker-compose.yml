@@ -12,6 +12,7 @@ services:
       - SYS_CHROOT        # 执行 chroot (用于 Cron 管理)
     security_opt:
       - apparmor=unconfined
+      - seccomp=unconfined
     network_mode: host
     pid: host
     environment:
@@ -48,61 +49,17 @@ services:
       - ENABLE_DOCKER=${ENABLE_DOCKER:-true}
       - ENABLE_CRON=${ENABLE_CRON:-true}
       - ENABLE_SYSTEMD=${ENABLE_SYSTEMD:-true}
+      # Legacy plugins config (for backward compatibility only)
+      # New plugins are loaded from plugins/*/plugin.json
+      - WEBMONITOR_PLUGINS_CONFIG=/hostfs/etc/webmonitor/plugins.json
     volumes:
-      - /:/hostfs
-      - /sys:/sys
-      - /proc:/proc
+      - /:/hostfs:ro
       - /var/run/utmp:/var/run/utmp:ro
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
-      # Plugins configuration (single file) + SSH materials for SSH/SFTP-based plugins.
-      # IMPORTANT: These files must exist on the host BEFORE starting the container.
-      # If file doesn't exist, Docker creates a directory instead, breaking the config.
-      # Uncomment these lines after running: scripts/setup_host_plugins.sh
-      # - /etc/webmonitor/plugins.json:/etc/webmonitor/plugins.json:ro
-      # - /etc/webmonitor/webshell_id_ed25519:/etc/webmonitor/webshell_id_ed25519:ro
-      # - /etc/webmonitor/filemanager_id_ed25519:/etc/webmonitor/filemanager_id_ed25519:ro
-      # - /etc/webmonitor/known_hosts:/etc/webmonitor/known_hosts:ro
       - web-monitor-data:/data
     restart: unless-stopped
-
-  # --- Plugins (Docker-managed) ---
-  # These containers are intended to be started/stopped by the main server via docker-proxy.
-  # Create them with: docker compose up -d --no-start plugin-webshell plugin-filemanager
-  plugin-webshell:
-    build:
-      context: .
-      dockerfile: plugins/docker/webshell/Dockerfile
-    image: web-monitor-plugin-webshell:latest
-    container_name: web-monitor-plugin-webshell
-    restart: "no"
-    ports:
-      - "127.0.0.1:38101:8080"
-    environment:
-      - WEBMONITOR_PLUGINS_CONFIG=/etc/webmonitor/plugins.json
-      - PLUGIN_PORT=8080
-    volumes:
-      - /etc/webmonitor/plugins.json:/etc/webmonitor/plugins.json:ro
-      - /etc/webmonitor/webshell_id_ed25519:/etc/webmonitor/webshell_id_ed25519:ro
-      - /etc/webmonitor/known_hosts:/etc/webmonitor/known_hosts:ro
-
-  plugin-filemanager:
-    build:
-      context: .
-      dockerfile: plugins/docker/filemanager/Dockerfile
-    image: web-monitor-plugin-filemanager:latest
-    container_name: web-monitor-plugin-filemanager
-    restart: "no"
-    ports:
-      - "127.0.0.1:38102:8082"
-    environment:
-      - WEBMONITOR_PLUGINS_CONFIG=/etc/webmonitor/plugins.json
-      - PLUGIN_PORT=8082
-    volumes:
-      - /etc/webmonitor/plugins.json:/etc/webmonitor/plugins.json:ro
-      - /etc/webmonitor/filemanager_id_ed25519:/etc/webmonitor/filemanager_id_ed25519:ro
-      - /etc/webmonitor/known_hosts:/etc/webmonitor/known_hosts:ro
 
   # Optional sidecar: restrict Docker API surface while keeping Docker Management working.
   # Exposes TCP 2375 on localhost only. Enable by setting DOCKER_HOST=tcp://127.0.0.1:2375 for web-monitor-go.

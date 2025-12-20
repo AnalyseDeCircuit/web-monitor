@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+cpu.prof
+mem.prof
+
+# Temp files
+tmp/
+*.tmp
+*.log
+
+# Plugins build artifacts (vendor is needed for offline builds)
+plugins/*/*.exe
+plugins/*/*.test
+
+# Documentation (not needed at runtime)
+*.md
+!templates/*.md
+
+# Test files
+*_test.go
+
+# Local data
+data/
+*.json
+!plugins/*/plugin.json
+!templates/manifest.json
+
+# macOS
+.DS_Store
+
+# Node modules (if any)
+node_modules/

@@ -18,12 +18,13 @@ FROM debian:bookworm-slim
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates tzdata pciutils net-tools iproute2 curl \
+    openssh-client \
     && update-pciids \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/server .
-# Copy plugins directory (docs only, no binaries)
-RUN mkdir -p ./plugins
+# Copy plugins directory with manifests (plugin.json files)
+COPY plugins/ ./plugins/
 COPY templates/ ./templates/
 COPY static/ ./static/
 EXPOSE 8000
