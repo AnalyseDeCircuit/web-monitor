@@ -1708,11 +1708,18 @@ function loadAlerts() {
     fetch('/api/alerts')
         .then((res) => res.json())
         .then((data) => {
-            document.getElementById('alert-enabled').checked = data.enabled;
-            document.getElementById('alert-webhook').value = data.webhook_url || '';
-            document.getElementById('alert-cpu').value = data.cpu_threshold || 90;
-            document.getElementById('alert-mem').value = data.mem_threshold || 90;
-            document.getElementById('alert-disk').value = data.disk_threshold || 90;
+            // Check if legacy alert elements exist (old alerts system)
+            const enabledEl = document.getElementById('alert-enabled');
+            const webhookEl = document.getElementById('alert-webhook');
+            const cpuEl = document.getElementById('alert-cpu');
+            const memEl = document.getElementById('alert-mem');
+            const diskEl = document.getElementById('alert-disk');
+            
+            if (enabledEl) enabledEl.checked = data.enabled;
+            if (webhookEl) webhookEl.value = data.webhook_url || '';
+            if (cpuEl) cpuEl.value = data.cpu_threshold || 90;
+            if (memEl) memEl.value = data.mem_threshold || 90;
+            if (diskEl) diskEl.value = data.disk_threshold || 90;
         })
         .catch((err) => console.error('Failed to load alerts:', err));
 }
@@ -1991,26 +1998,144 @@ async function toggleAlertRule(ruleId, enabled) {
     }
 }
 
-// Edit rule (placeholder - could open modal)
+// Edit rule modal
 function editAlertRule(ruleId) {
     const rule = alertRules.find(r => r.id === ruleId);
     if (!rule) return;
     
-    // For now, just show an alert with rule details
-    // In a full implementation, this would open an edit modal
-    appAlert(
-        `<div style="text-align: left;">
-            <p><strong>Rule Name:</strong> ${escapeHtml(rule.name)}</p>
-            <p><strong>Metric:</strong> ${rule.metric}</p>
-            <p><strong>Condition:</strong> ${rule.operator} ${rule.threshold}</p>
-            <p><strong>Duration:</strong> ${rule.duration}</p>
-            <p><strong>Severity:</strong> ${rule.severity}</p>
-            <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 10px;">
-                Note: Edit feature coming soon
-            </p>
-        </div>`,
-        { title: `Edit Rule: ${rule.name}` }
-    );
+    const metricOptions = [
+        { value: 'cpu', label: 'CPU' },
+        { value: 'memory', label: 'Memory' },
+        { value: 'disk', label: 'Disk' },
+        { value: 'swap', label: 'Swap' },
+        { value: 'load1', label: 'Load (1m)' },
+        { value: 'load5', label: 'Load (5m)' },
+        { value: 'load15', label: 'Load (15m)' }
+    ];
+    
+    const operatorOptions = [
+        { value: '>', label: '> (Greater than)' },
+        { value: '<', label: '< (Less than)' },
+        { value: '>=', label: '>= (Greater or equal)' },
+        { value: '<=', label: '<= (Less or equal)' },
+        { value: '==', label: '== (Equal)' },
+        { value: '!=', label: '!= (Not equal)' }
+    ];
+    
+    const severityOptions = [
+        { value: 'warning', label: 'Warning' },
+        { value: 'critical', label: 'Critical' }
+    ];
+    
+    const durationOptions = ['30s', '1m', '2m', '5m', '10m', '15m', '30m'];
+    
+    const formHtml = `
+        <form id="edit-rule-form" style="text-align: left;">
+            <div class="form-group">
+                <label class="form-label">Rule Name</label>
+                <input type="text" id="edit-rule-name" class="form-input" value="${escapeHtml(rule.name)}" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description (optional)</label>
+                <input type="text" id="edit-rule-desc" class="form-input" value="${escapeHtml(rule.description || '')}">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Metric</label>
+                    <select id="edit-rule-metric" class="form-select">
+                        ${metricOptions.map(o => `<option value="${o.value}" ${rule.metric === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Operator</label>
+                    <select id="edit-rule-operator" class="form-select">
+                        ${operatorOptions.map(o => `<option value="${o.value}" ${rule.operator === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Threshold ${rule.metric.startsWith('load') ? '' : '(%)'}</label>
+                    <input type="number" id="edit-rule-threshold" class="form-input" value="${rule.threshold}" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Duration</label>
+                    <select id="edit-rule-duration" class="form-select">
+                        ${durationOptions.map(d => `<option value="${d}" ${rule.duration === d ? 'selected' : ''}>${d}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Severity</label>
+                <select id="edit-rule-severity" class="form-select">
+                    ${severityOptions.map(o => `<option value="${o.value}" ${rule.severity === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
+                </select>
+            </div>
+        </form>
+        <style>
+            #edit-rule-form .form-group { margin-bottom: 12px; }
+            #edit-rule-form .form-label { display: block; margin-bottom: 4px; font-size: 0.85rem; color: var(--text-dim); }
+            #edit-rule-form .form-input, #edit-rule-form .form-select { 
+                width: 100%; padding: 8px 10px; border-radius: 6px;
+                border: 1px solid var(--border-color); background: var(--bg-secondary);
+                color: var(--text-primary); font-size: 0.9rem;
+            }
+            #edit-rule-form .form-row { display: flex; gap: 12px; }
+            #edit-rule-form .form-row .form-group { flex: 1; }
+        </style>
+    `;
+    
+    appAlert(formHtml, {
+        title: `Edit Rule: ${rule.name}`,
+        buttons: [
+            {
+                text: 'Cancel',
+                class: 'btn-secondary',
+                action: () => {}
+            },
+            {
+                text: 'Save',
+                class: 'btn-primary',
+                action: async () => {
+                    const updatedRule = {
+                        id: rule.id,
+                        name: document.getElementById('edit-rule-name').value.trim(),
+                        description: document.getElementById('edit-rule-desc').value.trim(),
+                        metric: document.getElementById('edit-rule-metric').value,
+                        operator: document.getElementById('edit-rule-operator').value,
+                        threshold: parseFloat(document.getElementById('edit-rule-threshold').value),
+                        duration: document.getElementById('edit-rule-duration').value,
+                        severity: document.getElementById('edit-rule-severity').value,
+                        enabled: rule.enabled,
+                        builtin: rule.builtin
+                    };
+                    
+                    if (!updatedRule.name) {
+                        appError('Rule name is required');
+                        return false; // Don't close modal
+                    }
+                    
+                    try {
+                        const res = await fetch(`/api/alerts/rules/${ruleId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(updatedRule)
+                        });
+                        if (!res.ok) {
+                            const msg = await readErrorMessage(res);
+                            throw new Error(msg);
+                        }
+                        appSuccess('Rule updated');
+                        loadAlertRules();
+                        return true; // Close modal
+                    } catch (e) {
+                        appError('Update failed: ' + e.message);
+                        return false;
+                    }
+                }
+            }
+        ]
+    });
 }
 
 // Delete rule

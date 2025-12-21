@@ -18,26 +18,27 @@ import (
 
 // CPUCollector 采集 CPU 相关指标
 type CPUCollector struct {
-	tempHistory []float64
-	historyMu   sync.Mutex
+	tempHistory    []float64
+	percentHistory []float64
+	historyMu      sync.Mutex
 }
 
 // CPUData 包含 CPU 采集结果
 type CPUData struct {
-	Percent     float64
-	PerCore     []float64
-	Info        types.CPUDetail
-	LoadAvg     []float64
-	Stats       map[string]uint64
-	Times       map[string]float64
-	Freq        types.CPUFreq
-	TempHistory []float64
+	Percent        float64
+	PerCore        []float64
+	Info           types.CPUDetail
+	LoadAvg        []float64
+	Freq           types.CPUFreq
+	TempHistory    []float64
+	PercentHistory []float64
 }
 
 // NewCPUCollector 创建 CPU 采集器
 func NewCPUCollector() *CPUCollector {
 	return &CPUCollector{
-		tempHistory: make([]float64, 0, 300),
+		tempHistory:    make([]float64, 0, 300),
+		percentHistory: make([]float64, 0, 60),
 	}
 }
 
@@ -46,10 +47,7 @@ func (c *CPUCollector) Name() string {
 }
 
 func (c *CPUCollector) Collect(ctx context.Context) interface{} {
-	data := CPUData{
-		Stats: make(map[string]uint64),
-		Times: make(map[string]float64),
-	}
+	data := CPUData{}
 
 	// CPU Percent (overall)
 	cpuPercent, _ := cpu.Percent(0, false)
@@ -76,26 +74,6 @@ func (c *CPUCollector) Collect(ctx context.Context) interface{} {
 		}
 	}
 
-	// CPU Stats
-	data.Stats = c.getCPUStats()
-
-	// CPU Times
-	if times, err := cpu.Times(false); err == nil && len(times) > 0 {
-		t := times[0]
-		total := t.User + t.System + t.Idle + t.Nice + t.Iowait + t.Irq + t.Softirq + t.Steal + t.Guest + t.GuestNice
-		if total <= 0 {
-			total = 1
-		}
-		data.Times = map[string]float64{
-			"user":    utils.Round((t.User / total) * 100),
-			"system":  utils.Round((t.System / total) * 100),
-			"idle":    utils.Round((t.Idle / total) * 100),
-			"iowait":  utils.Round((t.Iowait / total) * 100),
-			"irq":     utils.Round((t.Irq / total) * 100),
-			"softirq": utils.Round((t.Softirq / total) * 100),
-		}
-	}
-
 	// CPU Frequency
 	data.Freq = c.getCPUFreq()
 
@@ -115,6 +93,22 @@ func (c *CPUCollector) UpdateTempHistory(currentTemp float64) []float64 {
 
 	result := make([]float64, len(c.tempHistory))
 	copy(result, c.tempHistory)
+	return result
+}
+
+// UpdatePercentHistory 更新 CPU 使用率历史记录
+func (c *CPUCollector) UpdatePercentHistory(percent float64) []float64 {
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
+
+	if len(c.percentHistory) >= 60 {
+		copy(c.percentHistory, c.percentHistory[1:])
+		c.percentHistory = c.percentHistory[:len(c.percentHistory)-1]
+	}
+	c.percentHistory = append(c.percentHistory, percent)
+
+	result := make([]float64, len(c.percentHistory))
+	copy(result, c.percentHistory)
 	return result
 }
 
@@ -152,40 +146,6 @@ func (c *CPUCollector) getCPUInfo() types.CPUDetail {
 	}
 
 	return info
-}
-
-func (c *CPUCollector) getCPUStats() map[string]uint64 {
-	stats := make(map[string]uint64)
-	paths := []string{config.HostPath("/proc/stat"), "/proc/stat"}
-
-	for _, path := range paths {
-		if file, err := os.Open(path); err == nil {
-			defer file.Close()
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := scanner.Text()
-				parts := strings.Fields(line)
-				if len(parts) < 2 {
-					continue
-				}
-
-				key := parts[0]
-				val, _ := strconv.ParseUint(parts[1], 10, 64)
-
-				switch key {
-				case "ctxt":
-					stats["ctx_switches"] = val
-				case "intr":
-					stats["interrupts"] = val
-				case "softirq":
-					stats["soft_interrupts"] = val
-				}
-			}
-			break
-		}
-	}
-	stats["syscalls"] = 0
-	return stats
 }
 
 func (c *CPUCollector) getCPUFreq() types.CPUFreq {

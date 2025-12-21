@@ -238,14 +238,13 @@ type GPUProcess struct {
 
 // CPUInfo CPU信息
 type CPUInfo struct {
-	Percent     float64     `json:"percent"`
-	PerCore     []float64   `json:"per_core"`
-	Times       interface{} `json:"times"`
-	LoadAvg     []float64   `json:"load_avg"`
-	Stats       interface{} `json:"stats"`
-	Freq        CPUFreq     `json:"freq"`
-	Info        CPUDetail   `json:"info"`
-	TempHistory []float64   `json:"temp_history"`
+	Percent        float64   `json:"percent"`
+	PerCore        []float64 `json:"per_core"`
+	LoadAvg        []float64 `json:"load_avg"`
+	Freq           CPUFreq   `json:"freq"`
+	Info           CPUDetail `json:"info"`
+	TempHistory    []float64 `json:"temp_history"`
+	PercentHistory []float64 `json:"percent_history"`
 }
 
 // CPUFreq CPU频率信息

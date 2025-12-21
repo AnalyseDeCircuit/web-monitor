@@ -1,3 +1,27 @@
+// CPU Cores expand/collapse toggle
+let cpuCoresExpanded = false;
+
+function toggleCpuCores() {
+    cpuCoresExpanded = !cpuCoresExpanded;
+    const compactView = document.getElementById('cpu-cores-compact');
+    const detailedView = document.getElementById('cpu-detailed-cores');
+    const toggleText = document.getElementById('cpu-cores-toggle');
+    
+    if (cpuCoresExpanded) {
+        if (compactView) compactView.style.display = 'none';
+        if (detailedView) {
+            detailedView.style.display = 'grid';
+            detailedView.style.gridTemplateColumns = 'repeat(auto-fill, minmax(100px, 1fr))';
+            detailedView.style.gap = '10px';
+        }
+        if (toggleText) toggleText.innerText = '▲ Collapse';
+    } else {
+        if (compactView) compactView.style.display = 'flex';
+        if (detailedView) detailedView.style.display = 'none';
+        if (toggleText) toggleText.innerText = '▼ Expand';
+    }
+}
+
 function getSensorItemKey(item) {
             if (!item) return 'unknown';
             if (item.type === 'fan') return `fan:${item.label || 'unknown'}`;
@@ -237,110 +261,189 @@ function _renderStatsInternal(data) {
             }
 
             // CPU Details Page
-            if (isCpuPage && data.cpu.load_avg) {
-                document.getElementById('cpu-load-1').innerText = data.cpu.load_avg[0].toFixed(2);
-                document.getElementById('cpu-load-5').innerText = data.cpu.load_avg[1].toFixed(2);
-                document.getElementById('cpu-load-15').innerText = data.cpu.load_avg[2].toFixed(2);
-
-                // Stats
-                if (data.cpu.stats) {
-                    document.getElementById('cpu-ctx-switches').innerText = data.cpu.stats.ctx_switches.toLocaleString();
-                    document.getElementById('cpu-interrupts').innerText = data.cpu.stats.interrupts.toLocaleString();
-                    document.getElementById('cpu-syscalls').innerText = data.cpu.stats.syscalls.toLocaleString();
+            if (isCpuPage && data.cpu) {
+                const coreCount = data.cpu.per_core ? data.cpu.per_core.length : 1;
+                
+                // CPU Overview
+                const overviewPercent = document.getElementById('cpu-overview-percent');
+                const overviewFreq = document.getElementById('cpu-overview-freq');
+                const overviewTemp = document.getElementById('cpu-overview-temp');
+                
+                if (overviewPercent) overviewPercent.innerText = data.cpu.percent + '%';
+                if (overviewFreq && data.cpu.freq && data.cpu.freq.avg !== undefined) {
+                    const freqGHz = (data.cpu.freq.avg / 1000).toFixed(2);
+                    overviewFreq.innerText = freqGHz + ' GHz';
+                }
+                // Temperature from history
+                if (overviewTemp && data.cpu.temp_history && data.cpu.temp_history.length > 0) {
+                    const latestTemp = data.cpu.temp_history[data.cpu.temp_history.length - 1] || 0;
+                    overviewTemp.innerText = latestTemp.toFixed(0) + '°C';
+                    // Color based on temperature
+                    if (latestTemp >= 80) {
+                        overviewTemp.style.color = '#ff4757';
+                    } else if (latestTemp >= 60) {
+                        overviewTemp.style.color = '#ffa502';
+                    } else {
+                        overviewTemp.style.color = '#2ed573';
+                    }
                 }
 
-                // CPU Times
-                if (data.cpu.times) {
-                    const timeLabels = {
-                        'user': { color: '#ff4757', label: 'User' },
-                        'system': { color: '#2ed573', label: 'System' },
-                        'idle': { color: '#2f3542', label: 'Idle' },
-                        'iowait': { color: '#ffa502', label: 'IO Wait' },
-                        'irq': { color: '#1e90ff', label: 'IRQ' },
-                        'softirq': { color: '#70a1ff', label: 'Soft IRQ' }
-                    };
+                // Load Average with progress bars
+                if (data.cpu.load_avg) {
+                    const loads = [
+                        { id: '1', value: data.cpu.load_avg[0] },
+                        { id: '5', value: data.cpu.load_avg[1] },
+                        { id: '15', value: data.cpu.load_avg[2] }
+                    ];
                     
-                    const timesData = Object.entries(data.cpu.times)
-                        .filter(([key, val]) => timeLabels[key] && val > 0)
-                        .map(([key, val]) => ({ key, val, ...timeLabels[key] }))
-                        .sort((a, b) => b.val - a.val);
-
-                    updateList('cpu-times-container', timesData,
-                        (item) => {
-                            const div = document.createElement('div');
-                            div.innerHTML = `
-                                <div class="stat-label">
-                                    <span>${item.label}</span>
-                                    <span class="time-val"></span>
-                                </div>
-                                <div class="progress-bg">
-                                    <div class="progress-fill time-fill" style="width: 0%"></div>
-                                </div>
-                            `;
-                            return div;
-                        },
-                        (el, item) => {
-                            el.querySelector('.time-val').innerText = item.val.toFixed(1) + '%';
-                            el.querySelector('.time-fill').style.width = item.val + '%';
-                            el.querySelector('.time-fill').style.backgroundColor = item.color;
+                    loads.forEach(load => {
+                        const textEl = document.getElementById(`cpu-load-${load.id}`);
+                        const barEl = document.getElementById(`cpu-load-${load.id}-bar`);
+                        if (!textEl || !barEl) return;
+                        
+                        textEl.innerText = load.value.toFixed(2);
+                        
+                        // Progress relative to core count (100% = cores fully loaded)
+                        const percent = Math.min((load.value / coreCount) * 100, 100);
+                        barEl.style.width = percent + '%';
+                        
+                        // Color: green < 70%, yellow 70-100%, red > 100%
+                        if (load.value > coreCount) {
+                            barEl.style.background = '#ff4757';
+                            textEl.style.color = '#ff4757';
+                        } else if (load.value > coreCount * 0.7) {
+                            barEl.style.background = '#ffa502';
+                            textEl.style.color = '#ffa502';
+                        } else {
+                            barEl.style.background = 'var(--accent-cpu)';
+                            textEl.style.color = 'var(--accent-cpu)';
                         }
-                    );
+                    });
+                    
+                    const coreCountEl = document.getElementById('cpu-core-count');
+                    if (coreCountEl) coreCountEl.innerText = coreCount;
                 }
 
                 // CPU Information
                 if (data.cpu.info) {
                     const info = data.cpu.info;
-                    document.getElementById('cpu-model').innerText = info.model || '-';
-                    document.getElementById('cpu-arch').innerText = info.architecture || '-';
-                    document.getElementById('cpu-info-cores').innerText = info.cores || '-';
-                    document.getElementById('cpu-threads').innerText = info.threads || '-';
-                    const freqRange = info.min_freq && info.max_freq 
-                        ? `${info.min_freq.toFixed(0)} - ${info.max_freq.toFixed(0)} MHz`
-                        : '-';
-                    document.getElementById('cpu-freq-range').innerText = freqRange;
-                }
-
-                // CPU Temperature Trends
-                if (data.cpu.temp_history && data.cpu.temp_history.length > 0) {
-                    const history = data.cpu.temp_history;
-                    drawChart('cpu-temp-trend', history, { color: '#ff6b6b', min: 0, max: 100 });
+                    const modelEl = document.getElementById('cpu-model');
+                    const archEl = document.getElementById('cpu-arch');
+                    const coresEl = document.getElementById('cpu-info-cores');
+                    const threadsEl = document.getElementById('cpu-threads');
+                    const freqRangeEl = document.getElementById('cpu-freq-range');
                     
-                    const latestTemp = history[history.length - 1] || 0;
-                    document.getElementById('cpu-temp-avg').innerText = `${latestTemp.toFixed(1)}°C`;
+                    if (modelEl) modelEl.innerText = info.model || '-';
+                    if (archEl) archEl.innerText = info.architecture || '-';
+                    if (coresEl) coresEl.innerText = info.cores || '-';
+                    if (threadsEl) threadsEl.innerText = info.threads || '-';
+                    if (freqRangeEl) {
+                        const freqRange = info.min_freq && info.max_freq 
+                            ? `${info.min_freq.toFixed(0)} - ${info.max_freq.toFixed(0)} MHz`
+                            : '-';
+                        freqRangeEl.innerText = freqRange;
+                    }
                 }
 
-                // Detailed Cores
+                // CPU Usage History (using existing percent history or creating from current)
+                const trendContainer = document.getElementById('cpu-usage-trend');
+                if (trendContainer && data.cpu.percent_history && data.cpu.percent_history.length > 0) {
+                    drawChart('cpu-usage-trend', data.cpu.percent_history, { color: 'var(--accent-cpu)', min: 0, max: 100 });
+                }
+
+                // Compact core view (small boxes with progress bar)
+                const compactContainer = document.getElementById('cpu-cores-compact');
+                if (compactContainer && data.cpu.per_core) {
+                    updateList('cpu-cores-compact', data.cpu.per_core,
+                        (core, index) => {
+                            const div = document.createElement('div');
+                            div.className = 'cpu-core-mini';
+                            div.style.cssText = `
+                                width: 80px;
+                                padding: 8px;
+                                border-radius: 6px;
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                background: rgba(0,0,0,0.2);
+                                transition: background 0.3s;
+                            `;
+                            div.innerHTML = `
+                                <div style="display: flex; justify-content: space-between; width: 100%; margin-bottom: 5px;">
+                                    <span class="core-num" style="font-size: 0.7rem; color: var(--text-dim);">C${index}</span>
+                                    <span class="core-pct" style="font-size: 0.8rem; font-weight: bold;"></span>
+                                </div>
+                                <div class="progress-bg" style="width: 100%; height: 5px; margin-bottom: 4px; border-radius: 2px;">
+                                    <div class="core-fill" style="height: 100%; width: 0%; transition: width 0.3s; border-radius: 2px;"></div>
+                                </div>
+                                <div class="core-freq" style="font-size: 0.65rem; color: var(--text-dim);"></div>
+                            `;
+                            return div;
+                        },
+                        (el, core, index) => {
+                            const pctEl = el.querySelector('.core-pct');
+                            const fillEl = el.querySelector('.core-fill');
+                            const freqEl = el.querySelector('.core-freq');
+                            
+                            pctEl.innerText = core + '%';
+                            fillEl.style.width = core + '%';
+                            
+                            // Frequency
+                            const freq = data.cpu.freq && data.cpu.freq.per_core && data.cpu.freq.per_core[index] 
+                                ? (data.cpu.freq.per_core[index] / 1000).toFixed(1) : '-';
+                            freqEl.innerText = freq + ' GHz';
+                            
+                            // Color based on usage
+                            if (core >= 80) {
+                                pctEl.style.color = '#ff4757';
+                                fillEl.style.background = '#ff4757';
+                                el.style.background = 'rgba(255, 71, 87, 0.15)';
+                            } else if (core >= 50) {
+                                pctEl.style.color = '#ffa502';
+                                fillEl.style.background = '#ffa502';
+                                el.style.background = 'rgba(255, 165, 2, 0.1)';
+                            } else {
+                                pctEl.style.color = 'var(--accent-cpu)';
+                                fillEl.style.background = 'var(--accent-cpu)';
+                                el.style.background = 'rgba(0,0,0,0.2)';
+                            }
+                        }
+                    );
+                }
+
+                // Detailed Cores (expanded view)
                 const detailedCoresContainer = document.getElementById('cpu-detailed-cores');
-                if (detailedCoresContainer) {
+                if (detailedCoresContainer && detailedCoresContainer.style.display !== 'none') {
                     detailedCoresContainer.style.display = 'grid';
                     detailedCoresContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(100px, 1fr))';
                     detailedCoresContainer.style.gap = '10px';
-                }
 
-                updateList('cpu-detailed-cores', data.cpu.per_core,
-                    (core, index) => {
-                        const div = document.createElement('div');
-                        div.className = 'card cpu-core-card';
-                        div.style.padding = '10px';
-                        div.style.marginBottom = '0';
-                        div.style.textAlign = 'center';
-                        div.innerHTML = `
-                            <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 5px;">Core ${index}</div>
-                            <div class="core-val" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu); margin-bottom: 5px;"></div>
-                            <div class="progress-bg" style="height: 4px;">
-                                <div class="progress-fill core-fill" style="width: 0%; background: var(--accent-cpu);"></div>
-                            </div>
-                            <div class="core-freq" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 5px;"></div>
-                        `;
-                        return div;
-                    },
-                    (el, core, index) => {
-                        el.querySelector('.core-val').innerText = core + '%';
-                        el.querySelector('.core-fill').style.width = core + '%';
-                        const freq = data.cpu.freq.per_core[index] ? data.cpu.freq.per_core[index].toFixed(0) : '-';
-                        el.querySelector('.core-freq').innerText = `${freq} MHz`;
-                    }
-                );
+                    updateList('cpu-detailed-cores', data.cpu.per_core,
+                        (core, index) => {
+                            const div = document.createElement('div');
+                            div.className = 'card cpu-core-card';
+                            div.style.padding = '10px';
+                            div.style.marginBottom = '0';
+                            div.style.textAlign = 'center';
+                            div.innerHTML = `
+                                <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 5px;">Core ${index}</div>
+                                <div class="core-val" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu); margin-bottom: 5px;"></div>
+                                <div class="progress-bg" style="height: 4px;">
+                                    <div class="progress-fill core-fill" style="width: 0%; background: var(--accent-cpu);"></div>
+                                </div>
+                                <div class="core-freq" style="font-size: 0.7rem; color: var(--text-dim); margin-top: 5px;"></div>
+                            `;
+                            return div;
+                        },
+                        (el, core, index) => {
+                            el.querySelector('.core-val').innerText = core + '%';
+                            el.querySelector('.core-fill').style.width = core + '%';
+                            const freq = data.cpu.freq && data.cpu.freq.per_core && data.cpu.freq.per_core[index] 
+                                ? data.cpu.freq.per_core[index].toFixed(0) : '-';
+                            el.querySelector('.core-freq').innerText = `${freq} MHz`;
+                        }
+                    );
+                }
             }
 
             // Memory
@@ -371,10 +474,21 @@ function _renderStatsInternal(data) {
 
             // Memory Page
             if (isMemPage) {
-                // Memory Stats
-                document.getElementById('mem-page-text').innerText = `${data.memory.used} / ${data.memory.total}`;
-                document.getElementById('mem-page-percent').innerText = data.memory.percent + '%';
-                document.getElementById('mem-page-bar').style.width = data.memory.percent + '%';
+                // Memory Overview
+                const memOverviewUsed = document.getElementById('mem-overview-used');
+                const memOverviewPercent = document.getElementById('mem-overview-percent');
+                const memOverviewAvailable = document.getElementById('mem-overview-available');
+                const swapOverviewUsed = document.getElementById('swap-overview-used');
+                const swapOverviewPercent = document.getElementById('swap-overview-percent');
+                
+                if (memOverviewUsed) memOverviewUsed.innerText = `${data.memory.used} / ${data.memory.total}`;
+                if (memOverviewPercent) memOverviewPercent.innerText = data.memory.percent + '%';
+                if (memOverviewAvailable) memOverviewAvailable.innerText = data.memory.available || '0';
+                
+                if (data.swap) {
+                    if (swapOverviewUsed) swapOverviewUsed.innerText = `${data.swap.used} / ${data.swap.total}`;
+                    if (swapOverviewPercent) swapOverviewPercent.innerText = data.swap.percent + '%';
+                }
 
                 // Memory Usage Trends
                 if (data.memory.history && data.memory.history.length > 0) {
@@ -387,37 +501,35 @@ function _renderStatsInternal(data) {
                     else if (latest > 60) color = '#ffa502'; // Yellow
                     
                     drawChart('mem-trend', history, { color: color, min: 0, max: 100 });
-                    document.getElementById('mem-trend-current').innerText = `${latest.toFixed(1)}%`;
+                    const trendCurrent = document.getElementById('mem-trend-current');
+                    if (trendCurrent) trendCurrent.innerText = `${latest.toFixed(1)}%`;
                 }
 
-                // Memory Details
+                // Memory Details (7 items in 4-column grid)
                 const memDetails = [
-                    { label: 'Available', val: data.memory.available },
-                    { label: 'Buffers', val: data.memory.buffers },
-                    { label: 'Cached', val: data.memory.cached },
-                    { label: 'Shared', val: data.memory.shared },
-                    { label: 'Slab', val: data.memory.slab },
-                    { label: 'Active', val: data.memory.active },
-                    { label: 'Inactive', val: data.memory.inactive }
+                    { label: 'Available', val: data.memory.available, color: '#2ed573' },
+                    { label: 'Buffers', val: data.memory.buffers, color: 'var(--accent-mem)' },
+                    { label: 'Cached', val: data.memory.cached, color: '#ffa502' },
+                    { label: 'Shared', val: data.memory.shared, color: '#ff6b81' },
+                    { label: 'Slab', val: data.memory.slab, color: '#70a1ff' },
+                    { label: 'Active', val: data.memory.active, color: '#7bed9f' },
+                    { label: 'Inactive', val: data.memory.inactive, color: '#a4b0be' }
                 ];
                 
                 updateList('mem-page-details', memDetails,
                     (item) => {
                         const div = document.createElement('div');
-                        div.innerHTML = `<span style="color: var(--text-dim);">${item.label}:</span> <span class="mem-val" style="float: right;">${item.val}</span>`;
+                        div.style.cssText = 'text-align: center; padding: 10px; background: rgba(0,0,0,0.15); border-radius: 6px;';
+                        div.innerHTML = `
+                            <div style="font-size: 0.7rem; color: var(--text-dim); margin-bottom: 5px;">${item.label}</div>
+                            <div class="mem-val" style="font-size: 1.1rem; font-weight: bold; color: ${item.color};">${item.val}</div>
+                        `;
                         return div;
                     },
                     (el, item) => {
                         el.querySelector('.mem-val').innerText = item.val;
                     }
                 );
-
-                // Swap Stats
-                if (data.swap) {
-                    document.getElementById('swap-page-text').innerText = `${data.swap.used} / ${data.swap.total}`;
-                    document.getElementById('swap-page-percent').innerText = data.swap.percent + '%';
-                    document.getElementById('swap-page-bar').style.width = data.swap.percent + '%';
-                }
 
                 // Memory Pie Chart
                 if (data.memory) {
@@ -426,7 +538,8 @@ function _renderStatsInternal(data) {
 
                 // Process Table
                 if (data.processes) {
-                    document.getElementById('proc-count').innerText = `${data.processes.length} processes`;
+                    const procCount = document.getElementById('proc-count');
+                    if (procCount) procCount.innerText = `${data.processes.length} processes`;
                     
                     let sortedProcs = [...data.processes];
                     sortedProcs.sort((a, b) => {

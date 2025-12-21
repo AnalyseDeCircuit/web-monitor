@@ -33,7 +33,9 @@
             message = '',
             okText = 'OK',
             cancelText = 'Cancel',
-            okClass = 'btn-primary'
+            okClass = 'btn-primary',
+            buttons = null,  // Custom buttons support
+            html = false     // Whether message is HTML
         } = options;
 
         isAlert = type !== 'confirm';
@@ -44,13 +46,44 @@
 
         // Set content
         titleEl.textContent = title;
-        bodyEl.textContent = message;
-        okBtn.textContent = okText;
-        okBtn.className = 'btn ' + okClass;
-        cancelBtn.textContent = cancelText;
-
-        // Show/hide cancel button
-        cancelBtn.style.display = isAlert ? 'none' : '';
+        if (html || message.includes('<')) {
+            bodyEl.innerHTML = message;
+        } else {
+            bodyEl.textContent = message;
+        }
+        
+        // Custom buttons support
+        if (buttons && buttons.length > 0) {
+            cancelBtn.style.display = 'none';
+            okBtn.style.display = 'none';
+            
+            // Remove existing custom buttons
+            dialog.querySelectorAll('.custom-dialog-btn').forEach(b => b.remove());
+            
+            const btnContainer = okBtn.parentElement;
+            buttons.forEach((btn, idx) => {
+                const button = document.createElement('button');
+                button.className = `btn ${btn.class || 'btn-secondary'} custom-dialog-btn`;
+                button.textContent = btn.text;
+                button.addEventListener('click', async () => {
+                    if (btn.action) {
+                        const result = await btn.action();
+                        if (result !== false) {
+                            closeDialog(result);
+                        }
+                    } else {
+                        closeDialog(idx === buttons.length - 1);
+                    }
+                });
+                btnContainer.appendChild(button);
+            });
+        } else {
+            okBtn.style.display = '';
+            okBtn.textContent = okText;
+            okBtn.className = 'btn ' + okClass;
+            cancelBtn.textContent = cancelText;
+            cancelBtn.style.display = isAlert ? 'none' : '';
+        }
 
         // Show dialog
         overlay.classList.add('show');
@@ -63,6 +96,11 @@
 
     function closeDialog(result) {
         overlay.classList.remove('show');
+        // Clean up custom buttons
+        dialog.querySelectorAll('.custom-dialog-btn').forEach(b => b.remove());
+        // Restore default buttons visibility
+        okBtn.style.display = '';
+        cancelBtn.style.display = '';
         if (dialogResolve) {
             dialogResolve(result);
             dialogResolve = null;

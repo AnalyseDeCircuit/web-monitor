@@ -204,8 +204,6 @@ func (a *StreamingAggregator) GetLatestStats() types.Response {
 			resp.CPU.PerCore = cpuData.PerCore
 			resp.CPU.Info = cpuData.Info
 			resp.CPU.LoadAvg = cpuData.LoadAvg
-			resp.CPU.Stats = cpuData.Stats
-			resp.CPU.Times = cpuData.Times
 			resp.CPU.Freq = cpuData.Freq
 		}
 	}
@@ -271,6 +269,9 @@ func (a *StreamingAggregator) GetLatestStats() types.Response {
 	// Update temperature history
 	currentTemp := extractAvgTemp(resp.Sensors)
 	resp.CPU.TempHistory = a.cpu.UpdateTempHistory(currentTemp)
+
+	// Update CPU percent history
+	resp.CPU.PercentHistory = a.cpu.UpdatePercentHistory(resp.CPU.Percent)
 
 	// Calculate max disk usage for alerts
 	maxDisk := 0.0

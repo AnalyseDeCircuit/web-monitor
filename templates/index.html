@@ -556,55 +556,97 @@
 
     <!-- Other Pages (Placeholders) -->
     <div id="page-cpu" class="page">
-        <div class="grid-container">
-            <!-- Load Average & Stats -->
+        <div class="grid-container" style="display: flex; flex-direction: column; gap: 15px;">
+            <!-- CPU Overview Card -->
             <div class="card">
-                <div class="card-title">Load Average & Stats</div>
-                <div style="display: flex; justify-content: space-around; text-align: center; margin-bottom: 20px;">
+                <div class="card-title"><i class="fa-solid fa-microchip" style="margin-right: 8px;"></i>CPU Overview</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center; padding: 10px 0;">
                     <div>
-                        <div style="font-size: 0.8rem; color: var(--text-dim);">1 Min</div>
-                        <div id="cpu-load-1" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu);">0.00</div>
-                    </div>
-                    <div>
-                        <div style="font-size: 0.8rem; color: var(--text-dim);">5 Min</div>
-                        <div id="cpu-load-5" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu);">0.00</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 6px;">Overall Usage</div>
+                        <div id="cpu-overview-percent" style="font-size: 2rem; font-weight: bold; color: var(--accent-cpu);">0%</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.8rem; color: var(--text-dim);">15 Min</div>
-                        <div id="cpu-load-15" style="font-size: 1.2rem; font-weight: bold; color: var(--accent-cpu);">0.00</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 6px;">Frequency</div>
+                        <div id="cpu-overview-freq" style="font-size: 2rem; font-weight: bold; color: var(--accent-cpu);">- GHz</div>
                     </div>
-                </div>
-                <div class="stat-group">
-                    <div class="stat-label">
-                        <span>Context Switches</span>
-                        <span id="cpu-ctx-switches" style="color: var(--text-main);">0</span>
-                    </div>
-                    <div class="stat-label">
-                        <span>Interrupts</span>
-                        <span id="cpu-interrupts" style="color: var(--text-main);">0</span>
-                    </div>
-                    <div class="stat-label">
-                        <span>Syscalls</span>
-                        <span id="cpu-syscalls" style="color: var(--text-main);">0</span>
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 6px;">Temperature</div>
+                        <div id="cpu-overview-temp" style="font-size: 2rem; font-weight: bold; color: #2ed573;">-°C</div>
                     </div>
                 </div>
             </div>
 
-            <!-- CPU Times Breakdown -->
+            <!-- Load Average -->
             <div class="card">
-                <div class="card-title">CPU Time Distribution</div>
-                <div id="cpu-times-container" style="display: flex; flex-direction: column; gap: 10px;">
-                    <!-- Injected via JS -->
+                <div class="card-title"><i class="fa-solid fa-gauge-high" style="margin-right: 8px;"></i>Load Average</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 10px 0;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span style="font-size: 0.8rem; color: var(--text-dim);">1 min</span>
+                            <span id="cpu-load-1" style="font-size: 0.95rem; font-weight: bold; color: var(--accent-cpu);">0.00</span>
+                        </div>
+                        <div class="progress-bg" style="height: 8px; border-radius: 4px;">
+                            <div id="cpu-load-1-bar" class="progress-fill" style="width: 0%; background: var(--accent-cpu); transition: width 0.3s, background 0.3s; border-radius: 4px;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span style="font-size: 0.8rem; color: var(--text-dim);">5 min</span>
+                            <span id="cpu-load-5" style="font-size: 0.95rem; font-weight: bold; color: var(--accent-cpu);">0.00</span>
+                        </div>
+                        <div class="progress-bg" style="height: 8px; border-radius: 4px;">
+                            <div id="cpu-load-5-bar" class="progress-fill" style="width: 0%; background: var(--accent-cpu); transition: width 0.3s, background 0.3s; border-radius: 4px;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span style="font-size: 0.8rem; color: var(--text-dim);">15 min</span>
+                            <span id="cpu-load-15" style="font-size: 0.95rem; font-weight: bold; color: var(--accent-cpu);">0.00</span>
+                        </div>
+                        <div class="progress-bg" style="height: 8px; border-radius: 4px;">
+                            <div id="cpu-load-15-bar" class="progress-fill" style="width: 0%; background: var(--accent-cpu); transition: width 0.3s, background 0.3s; border-radius: 4px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: center; font-size: 0.75rem; color: var(--text-dim); margin-top: 5px;">
+                    <span id="cpu-core-count">0</span> cores · load > cores = <span style="color: #ff4757;">overloaded</span>
                 </div>
             </div>
 
-            <!-- CPU Information -->
+            <!-- Per Core Usage (collapsible) -->
             <div class="card">
-                <div class="card-title">CPU Information</div>
-                <div id="cpu-info" style="display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem;">
+                <div class="card-title" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleCpuCores()">
+                    <span><i class="fa-solid fa-cubes" style="margin-right: 8px;"></i>Per-Core Usage</span>
+                    <span id="cpu-cores-toggle" style="font-size: 0.8rem; color: var(--text-dim);">▼ Expand</span>
+                </div>
+                <!-- Compact view (always visible) -->
+                <div id="cpu-cores-compact" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; justify-content: center;">
+                    <!-- Small core boxes injected here -->
+                </div>
+                <!-- Expanded view (hidden by default) -->
+                <div id="cpu-detailed-cores" style="display: none; margin-top: 15px;">
+                    <!-- Detailed core cards injected here -->
+                </div>
+            </div>
+
+            <!-- CPU Usage History -->
+            <div class="card">
+                <div class="card-title"><i class="fa-solid fa-chart-line" style="margin-right: 8px;"></i>CPU Usage History (60s)</div>
+                <div id="cpu-usage-trend" style="height: 150px; position: relative; display: flex; align-items: flex-end; gap: 2px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px;">
+                    <!-- Bar chart injected here -->
+                </div>
+            </div>
+
+            <!-- CPU Information (collapsed by default, at bottom) -->
+            <details class="card" style="cursor: pointer;">
+                <summary class="card-title" style="list-style: none; display: flex; justify-content: space-between; align-items: center;">
+                    <span><i class="fa-solid fa-info-circle" style="margin-right: 8px;"></i>CPU Information</span>
+                    <i class="fa-solid fa-chevron-down" style="font-size: 0.8rem; color: var(--text-dim);"></i>
+                </summary>
+                <div id="cpu-info" style="display: flex; flex-direction: column; gap: 10px; font-size: 0.9rem; margin-top: 15px; padding-top: 10px; border-top: 1px solid var(--border-color);">
                     <div style="display: flex; justify-content: space-between;">
                         <span style="color: var(--text-dim);">Model:</span>
-                        <span id="cpu-model" style="font-weight: 500;">-</span>
+                        <span id="cpu-model" style="font-weight: 500; text-align: right; max-width: 70%; overflow: hidden; text-overflow: ellipsis;">-</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span style="color: var(--text-dim);">Architecture:</span>
@@ -619,122 +661,96 @@
                         <span id="cpu-threads" style="font-weight: 500;">-</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--text-dim);">Frequency:</span>
+                        <span style="color: var(--text-dim);">Frequency Range:</span>
                         <span id="cpu-freq-range" style="font-weight: 500;">-</span>
                     </div>
                 </div>
-            </div>
-
-            <!-- CPU Temperature Trends -->
-            <div class="card">
-                <div class="card-title">Temperature Trends (Last 60s)</div>
-                <div id="cpu-temp-trend" style="height: 120px; position: relative; display: flex; align-items: flex-end; gap: 2px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
-                    <!-- Bar chart injected here -->
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.85rem;">
-                    <span style="color: var(--text-dim);">Average Temp:</span>
-                    <span id="cpu-temp-avg" style="font-weight: bold; color: #ff6b6b;">0°C</span>
-                </div>
-            </div>
-
-            <!-- Detailed Core Grid -->
-            <div class="card" style="grid-column: 1 / -1;">
-                <div class="card-title">Per Core Usage</div>
-                <div id="cpu-detailed-cores" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px;">
-                    <!-- Injected via JS -->
-                </div>
-            </div>
+            </details>
         </div>
     </div>
     <div id="page-memory" class="page">
-        <div class="grid-container">
-            <!-- Memory Usage -->
+        <div class="grid-container" style="display: flex; flex-direction: column; gap: 15px;">
+            <!-- Memory Overview -->
             <div class="card">
-                <div class="card-title">Memory Usage</div>
-                <div class="stat-group">
-                    <div class="stat-label">
-                        <span>RAM Usage</span>
-                        <span id="mem-page-text">0 / 0</span>
+                <div class="card-title"><i class="fa-solid fa-memory" style="margin-right: 8px;"></i>Memory Overview</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 10px 0; text-align: center;">
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 6px;">RAM Usage</div>
+                        <div id="mem-overview-used" style="font-size: 1.6rem; font-weight: bold; color: var(--accent-mem);">0 / 0</div>
+                        <div id="mem-overview-percent" style="font-size: 0.9rem; color: var(--text-dim);">0%</div>
                     </div>
-                    <div class="progress-bg">
-                        <div id="mem-page-bar" class="progress-fill mem-fill" style="width: 0%"></div>
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 6px;">Swap</div>
+                        <div id="swap-overview-used" style="font-size: 1.6rem; font-weight: bold; color: var(--accent-disk);">0 / 0</div>
+                        <div id="swap-overview-percent" style="font-size: 0.9rem; color: var(--text-dim);">0%</div>
                     </div>
-                    <div style="text-align: right; font-size: 0.8rem; color: var(--text-dim); margin-top: 5px;">
-                        <span id="mem-page-percent">0%</span>
-                    </div>
-                </div>
-                <div id="mem-page-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85rem; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
-                    <!-- Details injected here -->
-                </div>
-            </div>
-
-            <!-- Memory Usage Trends -->
-            <div class="card">
-                <div class="card-title">Memory Usage Trends (Last 60s)</div>
-                <div id="mem-trend" style="height: 120px; position: relative; display: flex; align-items: flex-end; gap: 2px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px;">
-                    <!-- Bar chart injected here -->
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.85rem;">
-                    <span style="color: var(--text-dim);">Current Usage:</span>
-                    <span id="mem-trend-current" style="font-weight: bold; color: var(--accent-mem);">0%</span>
-                </div>
-            </div>
-
-            <!-- Swap Usage -->
-            <div class="card">
-                <div class="card-title">Swap Usage</div>
-                <div class="stat-group">
-                    <div class="stat-label">
-                        <span>Swap</span>
-                        <span id="swap-page-text">0 / 0</span>
-                    </div>
-                    <div class="progress-bg">
-                        <div id="swap-page-bar" class="progress-fill disk-fill" style="width: 0%"></div>
-                    </div>
-                    <div style="text-align: right; font-size: 0.8rem; color: var(--text-dim); margin-top: 5px;">
-                        <span id="swap-page-percent">0%</span>
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 6px;">Available</div>
+                        <div id="mem-overview-available" style="font-size: 1.6rem; font-weight: bold; color: #2ed573;">0 GiB</div>
+                        <div style="font-size: 0.9rem; color: var(--text-dim);">Free for use</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Memory Pie Chart -->
-            <div class="card">
-                <div class="card-title">Memory Distribution</div>
-                <div style="display: flex; flex-direction: column; gap: 15px; align-items: center; padding: 10px;">
-                    <canvas id="mem-pie-chart" width="180" height="180" style="margin: 0 auto;"></canvas>
-                    <div id="mem-pie-legend" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; font-size: 0.85rem;">
-                        <!-- Legend injected here -->
+            <!-- Memory Distribution (Pie) + Memory Trends (Chart) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <!-- Memory Pie Chart -->
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-chart-pie" style="margin-right: 8px;"></i>Memory Distribution</div>
+                    <div style="display: flex; flex-direction: column; gap: 15px; align-items: center; padding: 10px;">
+                        <canvas id="mem-pie-chart" width="160" height="160" style="margin: 0 auto;"></canvas>
+                        <div id="mem-pie-legend" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; width: 100%; font-size: 0.8rem;">
+                            <!-- Legend injected here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Memory Usage Trends -->
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-chart-line" style="margin-right: 8px;"></i>Memory Trends (60s)</div>
+                    <div id="mem-trend" style="height: 150px; position: relative; display: flex; align-items: flex-end; gap: 2px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px;">
+                        <!-- Chart injected here -->
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.85rem;">
+                        <span style="color: var(--text-dim);">Current:</span>
+                        <span id="mem-trend-current" style="font-weight: bold; color: var(--accent-mem);">0%</span>
                     </div>
                 </div>
             </div>
+
+            <!-- Memory Details (collapsible) -->
+            <details class="card" open>
+                <summary class="card-title" style="list-style: none; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+                    <span><i class="fa-solid fa-list" style="margin-right: 8px;"></i>Memory Details</span>
+                    <i class="fa-solid fa-chevron-down" style="font-size: 0.8rem; color: var(--text-dim);"></i>
+                </summary>
+                <div id="mem-page-details" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; font-size: 0.85rem; margin-top: 15px; padding-top: 10px; border-top: 1px solid var(--border-color);">
+                    <!-- Details injected here (Available, Buffers, Cached, Shared, Slab, Active, Inactive) -->
+                </div>
+            </details>
 
             <!-- Process Manager -->
-            <div class="card" style="grid-column: 1 / -1;">
-                <div class="card-title">
-                    <span>Process Manager</span>
+            <div class="card">
+                <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span><i class="fa-solid fa-microchip" style="margin-right: 8px;"></i>Process Manager</span>
                     <span id="proc-count" style="font-size: 0.8rem; color: var(--text-dim); font-weight: normal;">0 processes</span>
                 </div>
-                <div style="overflow-x: auto; max-height: 500px; overflow-y: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed;">
+                <div style="overflow-x: auto; max-height: 400px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: fixed;">
                         <thead style="position: sticky; top: 0; background: var(--card-bg); z-index: 1;">
                             <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left;">
-                                <th style="padding: 10px; width: 80px; color: var(--text-dim); cursor: pointer;" class="mono-text" onclick="setSort('pid')">PID <i class="fas fa-sort"></i></th>
-                
-                                    <th style="padding: 10px; color: var(--text-dim); cursor: pointer;" onclick="setSort('name')">Name <i class="fas fa-sort"></i></th>
-                                    
-                                    <th style="padding: 10px; width: 100px; color: var(--text-dim);">User</th>
-                                    
-                                    <th style="padding: 10px; width: 80px; text-align: right; color: var(--text-dim);" class="mono-text">Threads</th>
-                                    
-                                    <th style="padding: 10px; width: 80px; text-align: right; color: var(--text-dim);" class="mono-text">CPU%</th>
-                                    
-                                    <th style="padding: 10px; width: 80px; text-align: right; color: var(--text-dim); cursor: pointer;" class="mono-text" onclick="setSort('memory_percent')">Mem% <i class="fas fa-sort"></i></th>
+                                <th style="padding: 8px; width: 70px; color: var(--text-dim); cursor: pointer;" class="mono-text" onclick="setSort('pid')">PID <i class="fas fa-sort"></i></th>
+                                <th style="padding: 8px; color: var(--text-dim); cursor: pointer;" onclick="setSort('name')">Name <i class="fas fa-sort"></i></th>
+                                <th style="padding: 8px; width: 90px; color: var(--text-dim);">User</th>
+                                <th style="padding: 8px; width: 70px; text-align: right; color: var(--text-dim);" class="mono-text">Threads</th>
+                                <th style="padding: 8px; width: 70px; text-align: right; color: var(--text-dim);" class="mono-text">CPU%</th>
+                                <th style="padding: 8px; width: 70px; text-align: right; color: var(--text-dim); cursor: pointer;" class="mono-text" onclick="setSort('memory_percent')">Mem% <i class="fas fa-sort"></i></th>
                             </tr>
                         </thead>
-                    <tbody id="process-table-body">
-                </tbody>
-                </table>
-            </div>
+                        <tbody id="process-table-body">
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>

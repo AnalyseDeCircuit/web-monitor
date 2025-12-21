@@ -21,8 +21,6 @@ services:
       - PORT=38080
       - LANG
       - DATA_DIR=/data
-      - JWT_SECRET=${JWT_SECRET}
-      - WS_ALLOWED_ORIGINS=${WS_ALLOWED_ORIGINS}
       # Docker API: talk to Docker ONLY through the local proxy (no docker.sock mount in this container).
       - DOCKER_HOST=${DOCKER_HOST:-tcp://127.0.0.1:2375}
       # Host Filesystem Configuration

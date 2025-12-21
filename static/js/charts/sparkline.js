@@ -1,3 +1,14 @@
+// Helper to resolve CSS variable to actual color
+function resolveCssColor(color) {
+    if (color.startsWith('var(')) {
+        const varName = color.match(/var\(([^)]+)\)/)?.[1];
+        if (varName) {
+            return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || '#4dabf7';
+        }
+    }
+    return color;
+}
+
 function drawChart(containerId, data, options = {}) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -44,10 +55,13 @@ function drawChart(containerId, data, options = {}) {
         y: height - padding - ((val - minVal) / range) * (height - 2 * padding)
     }));
 
+    // Resolve CSS variable to actual color value
+    const resolvedColor = resolveCssColor(color);
+    
     // 1. Draw Area Gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, color + '80'); // 0.5 opacity
-    gradient.addColorStop(1, color + '0D'); // 0.05 opacity
+    gradient.addColorStop(0, resolvedColor + '80'); // 0.5 opacity
+    gradient.addColorStop(1, resolvedColor + '0D'); // 0.05 opacity
 
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
@@ -62,7 +76,7 @@ function drawChart(containerId, data, options = {}) {
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     points.forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = resolvedColor;
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
     ctx.stroke();
