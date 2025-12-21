@@ -70,20 +70,20 @@ help:
 # ============================================================================
 
 up:
-	docker compose up -d web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml up -d web-monitor-go docker-socket-proxy
 
 down:
-	docker compose down
+	docker compose -f docker/docker-compose.yml down
 
 restart:
-	docker compose stop web-monitor-go docker-socket-proxy || true
-	docker compose up -d web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml stop web-monitor-go docker-socket-proxy || true
+	docker compose -f docker/docker-compose.yml up -d web-monitor-go docker-socket-proxy
 
 logs:
-	docker compose logs -f web-monitor-go
+	docker compose -f docker/docker-compose.yml logs -f web-monitor-go
 
 stats:
-	docker compose stats
+	docker compose -f docker/docker-compose.yml stats
 
 # ============================================================================
 #  PRESET MODES
@@ -92,14 +92,14 @@ stats:
 up-minimal:
 	ENABLE_DOCKER=false ENABLE_GPU=false ENABLE_CRON=false ENABLE_SSH=false \
 	ENABLE_SYSTEMD=false ENABLE_SENSORS=false ENABLE_POWER=false ENABLE_SYSTEM=false \
-	docker compose up -d web-monitor-go
+	docker compose -f docker/docker-compose.yml up -d web-monitor-go
 
 up-server:
 	ENABLE_GPU=false ENABLE_POWER=false \
-	docker compose up -d web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml up -d web-monitor-go docker-socket-proxy
 
 up-no-docker:
-	ENABLE_DOCKER=false docker compose up -d web-monitor-go
+	ENABLE_DOCKER=false docker compose -f docker/docker-compose.yml up -d web-monitor-go
 
 # ============================================================================
 #  SINGLE PLUGIN OPERATIONS (use P=pluginname)
@@ -115,7 +115,7 @@ ifeq ($(filter $(P),webshell filemanager),)
 endif
 
 # Plugins use separate compose file for minimal intrusion
-PLUGIN_COMPOSE := docker compose -f docker-compose.plugins.yml
+PLUGIN_COMPOSE := docker compose -f docker/docker-compose.plugins.yml
 
 plugin-build: _check-plugin
 	$(PLUGIN_COMPOSE) build plugin-$(P)
@@ -173,10 +173,10 @@ plugins-rebuild:
 # ============================================================================
 
 build:
-	docker compose build web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml build web-monitor-go docker-socket-proxy
 
 build-all:
-	docker compose build
+	docker compose -f docker/docker-compose.yml build
 
 rebuild: down build up
 

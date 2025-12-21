@@ -56,5 +56,9 @@ todo.md
 cpu.prof
 REFACTOR_PLAN.md
 server
-/plugins/
+# Ignore all plugin files but keep README and DEVELOPMENT docs
+plugins/
+plugins/**/*
+!plugins/README.md
+!plugins/DEVELOPMENT.md
 refactor.md

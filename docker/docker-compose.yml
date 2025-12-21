@@ -1,8 +1,8 @@
 services:
   web-monitor-go:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     image: web-monitor-go:latest
     container_name: web-monitor-go
     # privileged: true
@@ -65,8 +65,8 @@ services:
   # Exposes TCP 2375 on localhost only. Enable by setting DOCKER_HOST=tcp://127.0.0.1:2375 for web-monitor-go.
   docker-socket-proxy:
     build:
-      context: .
-      dockerfile: Dockerfile.docker-proxy
+      context: ..
+      dockerfile: docker/Dockerfile.docker-proxy
     container_name: docker-socket-proxy
     restart: unless-stopped
     mem_limit: 16m
