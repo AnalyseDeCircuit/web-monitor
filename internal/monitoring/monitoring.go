@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AnalyseDeCircuit/web-monitor/internal/alerts"
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 )
 
@@ -20,7 +21,15 @@ var (
 	alertConfig   types.AlertConfig
 	alertMutex    sync.RWMutex
 	lastAlertTime time.Time
+
+	// 新版告警管理器
+	alertManager *alerts.Manager
 )
+
+// SetAlertManager 设置告警管理器
+func SetAlertManager(m *alerts.Manager) {
+	alertManager = m
+}
 
 func getDataDir() string {
 	if v := os.Getenv("DATA_DIR"); v != "" {
@@ -126,4 +135,23 @@ func UpdateAlertConfig(config types.AlertConfig) error {
 	alertConfig = config
 	alertMutex.Unlock()
 	return SaveAlerts()
+}
+
+// CheckAlertsWithManager 使用新版告警管理器检查告警
+func CheckAlertsWithManager(cpuPercent, memPercent, diskPercent, swapPercent, load1, load5, load15 float64) {
+	if alertManager == nil {
+		return
+	}
+
+	metrics := map[string]float64{
+		"cpu":    cpuPercent,
+		"memory": memPercent,
+		"disk":   diskPercent,
+		"swap":   swapPercent,
+		"load1":  load1,
+		"load5":  load5,
+		"load15": load15,
+	}
+
+	alertManager.Check(metrics)
 }

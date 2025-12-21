@@ -24,6 +24,7 @@ type User struct {
 	LastPasswordChange *time.Time `json:"last_password_change,omitempty"`
 	LastFailedLogin    *time.Time `json:"last_failed_login,omitempty"`
 	LastFailedLoginIP  string     `json:"last_failed_login_ip,omitempty"`
+	MustChangePassword bool       `json:"must_change_password,omitempty"` // Force password change on next login
 }
 
 // UserPreferences 用户个人偏好设置
@@ -157,10 +158,11 @@ type LoginRequest struct {
 
 // LoginResponse 登录响应结构体
 type LoginResponse struct {
-	Token    string `json:"token"`
-	Message  string `json:"message"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	Token              string `json:"token"`
+	Message            string `json:"message"`
+	Username           string `json:"username"`
+	Role               string `json:"role"`
+	MustChangePassword bool   `json:"must_change_password,omitempty"`
 }
 
 // --- 告警配置 ---

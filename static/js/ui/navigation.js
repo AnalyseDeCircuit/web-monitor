@@ -196,6 +196,7 @@ function switchPage(pageId) {
     }
     if (pageId === 'services') loadServices();
     if (pageId === 'cron') loadCronJobs();
+    if (pageId === 'alerts' && typeof loadAlertsPage === 'function') loadAlertsPage();
     if (pageId === 'users') loadUsers();
     if (pageId === 'logs') loadLogs();
     if (pageId === 'profile') loadProfile();
@@ -375,10 +376,10 @@ function renderPluginManager(plugins) {
                             <i class="fas fa-info-circle"></i>
                         </button>
                         <button onclick="handlePluginInstall('${p.name}')" 
-                                title="${p.state === 'installed' || p.state === 'running' ? 'Hooks Already Executed' : 'Run Install Hooks'}"
-                                ${p.state === 'installed' || p.state === 'running' ? 'disabled' : ''}
-                                style="padding: 6px 12px; border: none; border-radius: 6px; cursor: ${p.state === 'installed' || p.state === 'running' ? 'not-allowed' : 'pointer'}; background: ${p.state === 'installed' || p.state === 'running' ? 'rgba(128,128,128,0.2)' : 'rgba(52,152,219,0.2)'}; color: ${p.state === 'installed' || p.state === 'running' ? '#888' : '#3498db'}; border: 1px solid ${p.state === 'installed' || p.state === 'running' ? 'rgba(128,128,128,0.3)' : 'rgba(52,152,219,0.3)'};">
-                            <i class="fas ${p.state === 'installed' || p.state === 'running' ? 'fa-check' : 'fa-cog'}"></i>
+                                title="${['installed', 'enabled', 'running', 'stopped'].includes(p.state) ? 'Hooks Already Executed' : 'Run Install Hooks'}"
+                                ${['installed', 'enabled', 'running', 'stopped'].includes(p.state) ? 'disabled' : ''}
+                                style="padding: 6px 12px; border: none; border-radius: 6px; cursor: ${['installed', 'enabled', 'running', 'stopped'].includes(p.state) ? 'not-allowed' : 'pointer'}; background: ${['installed', 'enabled', 'running', 'stopped'].includes(p.state) ? 'rgba(128,128,128,0.2)' : 'rgba(52,152,219,0.2)'}; color: ${['installed', 'enabled', 'running', 'stopped'].includes(p.state) ? '#888' : '#3498db'}; border: 1px solid ${['installed', 'enabled', 'running', 'stopped'].includes(p.state) ? 'rgba(128,128,128,0.3)' : 'rgba(52,152,219,0.3)'};">
+                            <i class="fas ${['installed', 'enabled', 'running', 'stopped'].includes(p.state) ? 'fa-check' : 'fa-cog'}"></i>
                         </button>
                         ` : ''}
                     </div>
@@ -443,9 +444,10 @@ async function handlePluginToggle(name, enabled) {
 async function handlePluginInstall(name) {
     try {
         // Check if already installed
-        const plugins = await getPlugins();
+        const plugins = await loadPlugins();
         const plugin = plugins.find(p => p.name === name);
-        if (plugin && (plugin.state === 'installed' || plugin.state === 'running')) {
+        const installedStates = ['installed', 'enabled', 'running', 'stopped'];
+        if (plugin && installedStates.includes(plugin.state)) {
             appInfo(`Plugin ${name} is already installed. Install hooks have been executed.`);
             return;
         }

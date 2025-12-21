@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AnalyseDeCircuit/web-monitor/api/handlers"
+	"github.com/AnalyseDeCircuit/web-monitor/internal/alerts"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
 	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
@@ -119,8 +120,20 @@ func main() {
 	// 加载操作日志
 	logs.LoadOpLogs()
 
-	// 加载告警配置
+	// 加载告警配置 (旧版兼容)
 	monitoring.LoadAlerts()
+
+	// 初始化告警管理器 (新版)
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir == "" {
+		dataDir = "./data"
+	}
+	alertManager := alerts.NewManager(dataDir)
+	if err := alertManager.Initialize(); err != nil {
+		log.Printf("Warning: Failed to initialize alert manager: %v\n", err)
+	}
+	handlers.SetAlertManager(alertManager)
+	monitoring.SetAlertManager(alertManager)
 
 	// 加载系统设置
 	settings.Load()

@@ -465,6 +465,173 @@
             font-style: normal;
             font-weight: normal;
         }
+
+        /* Force change password modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: var(--container-bg);
+            border-radius: 20px;
+            padding: 36px 32px;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+            animation: modalSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .modal-header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .modal-header .modal-icon {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            box-shadow: 0 8px 24px rgba(255, 193, 7, 0.3);
+        }
+
+        .modal-header .modal-icon i {
+            font-size: 24px;
+            color: white;
+        }
+
+        .modal-header h2 {
+            color: var(--text-primary);
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .modal-header p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .modal-form .form-group {
+            margin-bottom: 16px;
+        }
+
+        .modal-form label {
+            display: block;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-bottom: 6px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .modal-form input {
+            width: 100%;
+            padding: 12px 14px 12px 40px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            font-size: 14px;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            transition: all 0.3s;
+        }
+
+        .modal-form input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px var(--glow-color);
+            background: var(--input-focus-bg);
+        }
+
+        .modal-error {
+            background-color: rgba(255, 71, 87, 0.1);
+            border: 1px solid rgba(255, 71, 87, 0.3);
+            color: #ff4757;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            display: none;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .modal-buttons button {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 0;
+        }
+
+        .modal-buttons .btn-primary {
+            background: var(--accent-gradient);
+            color: white;
+            border: none;
+        }
+
+        .modal-buttons .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px var(--glow-color);
+        }
+
+        .password-requirements {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .password-requirements li {
+            margin: 4px 0;
+            padding-left: 4px;
+        }
+
+        :root[data-theme="light"] .password-requirements {
+            background: rgba(0, 0, 0, 0.05);
+        }
     </style>
     <link rel="stylesheet" href="/static/vendor/font-awesome/css/all.min.css">
 </head>
@@ -553,6 +720,68 @@
         </div>
     </div>
 
+    <!-- Force Change Password Modal -->
+    <div class="modal-overlay" id="changePasswordModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-icon">
+                    <i class="fas fa-key"></i>
+                </div>
+                <h2>Password Change Required</h2>
+                <p>For security reasons, you must change your default password before continuing.</p>
+            </div>
+
+            <div class="modal-error" id="modalError">
+                <i class="fas fa-exclamation-circle" style="margin-right: 8px;"></i>
+                <span id="modalErrorText"></span>
+            </div>
+
+            <form class="modal-form" id="changePasswordForm">
+                <div class="form-group">
+                    <label for="newPassword">New Password</label>
+                    <div class="input-wrapper">
+                        <input 
+                            type="password" 
+                            id="newPassword" 
+                            placeholder="Enter new password"
+                            required 
+                            autocomplete="new-password"
+                            minlength="8"
+                        >
+                        <i class="fas fa-lock"></i>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <div class="input-wrapper">
+                        <input 
+                            type="password" 
+                            id="confirmPassword" 
+                            placeholder="Confirm new password"
+                            required 
+                            autocomplete="new-password"
+                            minlength="8"
+                        >
+                        <i class="fas fa-lock"></i>
+                    </div>
+                </div>
+
+                <ul class="password-requirements">
+                    <li>At least 8 characters</li>
+                    <li>At least 3 of: uppercase, lowercase, number, special char</li>
+                    <li>Cannot be the same as the old password</li>
+                </ul>
+
+                <div class="modal-buttons">
+                    <button type="submit" class="btn-primary" id="changePasswordBtn">
+                        <span id="changePasswordBtnText">Change Password</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const form = document.getElementById('loginForm');
         const error = document.getElementById('error');
@@ -562,6 +791,19 @@
         const submitBtn = document.getElementById('submitBtn');
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
+
+        // Change password modal elements
+        const changePasswordModal = document.getElementById('changePasswordModal');
+        const changePasswordForm = document.getElementById('changePasswordForm');
+        const modalError = document.getElementById('modalError');
+        const modalErrorText = document.getElementById('modalErrorText');
+        const newPasswordInput = document.getElementById('newPassword');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        const changePasswordBtn = document.getElementById('changePasswordBtn');
+        const changePasswordBtnText = document.getElementById('changePasswordBtnText');
+
+        // Store credentials temporarily for password change
+        let pendingCredentials = null;
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -594,10 +836,17 @@
                         localStorage.setItem('username', data.username);
                         localStorage.setItem('role', data.role);
                     } catch (_) {}
-                    success.style.display = 'block';
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 600);
+
+                    // Check if password change is required
+                    if (data.must_change_password) {
+                        pendingCredentials = { username, oldPassword: password };
+                        showChangePasswordModal();
+                    } else {
+                        success.style.display = 'block';
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 600);
+                    }
                 } else {
                     const data = await response.json();
                     showError(data.error || 'Invalid username or password');
@@ -609,6 +858,98 @@
                 loading.style.display = 'none';
                 submitBtn.disabled = false;
             }
+        });
+
+        function showChangePasswordModal() {
+            changePasswordModal.style.display = 'flex';
+            newPasswordInput.focus();
+            modalError.style.display = 'none';
+        }
+
+        function showModalError(message) {
+            modalErrorText.textContent = message;
+            modalError.style.display = 'block';
+        }
+
+        changePasswordForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const newPassword = newPasswordInput.value;
+            const confirmPassword = confirmPasswordInput.value;
+
+            if (!newPassword || !confirmPassword) {
+                showModalError('Please fill in all fields');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                showModalError('Passwords do not match');
+                return;
+            }
+
+            if (newPassword.length < 8) {
+                showModalError('Password must be at least 8 characters');
+                return;
+            }
+
+            // Check password complexity (at least 3 of: upper, lower, digit, special)
+            let count = 0;
+            if (/[A-Z]/.test(newPassword)) count++;
+            if (/[a-z]/.test(newPassword)) count++;
+            if (/[0-9]/.test(newPassword)) count++;
+            if (/[!-\/:-@\[-`{-~]/.test(newPassword)) count++;
+            if (count < 3) {
+                showModalError('Password must contain at least 3 of: uppercase, lowercase, number, special character');
+                return;
+            }
+
+            if (newPassword === pendingCredentials.oldPassword) {
+                showModalError('New password cannot be the same as the old password');
+                return;
+            }
+
+            modalError.style.display = 'none';
+            changePasswordBtn.disabled = true;
+            changePasswordBtnText.innerHTML = '<span class="loading-spinner"></span> Changing...';
+
+            try {
+                const response = await fetch('/api/password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        old_password: pendingCredentials.oldPassword,
+                        new_password: newPassword
+                    }),
+                });
+
+                if (response.ok) {
+                    changePasswordModal.style.display = 'none';
+                    success.style.display = 'block';
+                    success.innerHTML = '<i class="fas fa-check-circle" style="margin-right: 8px;"></i>Password changed successfully, redirecting...';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 800);
+                } else {
+                    const data = await response.json();
+                    showModalError(data.error || 'Failed to change password');
+                }
+            } catch (err) {
+                showModalError('Connection failed. Please try again.');
+                console.error(err);
+            } finally {
+                changePasswordBtn.disabled = false;
+                changePasswordBtnText.textContent = 'Change Password';
+            }
+        });
+
+        // Clear modal error on input
+        newPasswordInput.addEventListener('input', () => {
+            if (modalError.style.display !== 'none') modalError.style.display = 'none';
+        });
+        confirmPasswordInput.addEventListener('input', () => {
+            if (modalError.style.display !== 'none') modalError.style.display = 'none';
         });
 
         function showError(message) {

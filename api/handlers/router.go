@@ -58,6 +58,19 @@ func SetupRouter(pluginManager *plugin.Manager) *Router {
 	router.mux.HandleFunc("/api/health", HealthCheckHandler)
 	router.mux.HandleFunc("/api/metrics", PrometheusMetricsHandler)
 
+	// 告警系统路由 (新版)
+	router.mux.HandleFunc("/api/alerts/config", AlertsConfigHandler)
+	router.mux.HandleFunc("/api/alerts/rules", AlertsRulesHandler)
+	router.mux.HandleFunc("/api/alerts/rules/", AlertsRuleHandler) // 带 ID 的路由
+	router.mux.HandleFunc("/api/alerts/presets", AlertsPresetsHandler)
+	router.mux.HandleFunc("/api/alerts/presets/", AlertsPresetEnableHandler) // /api/alerts/presets/{id}/enable
+	router.mux.HandleFunc("/api/alerts/disable-all", AlertsDisableAllHandler)
+	router.mux.HandleFunc("/api/alerts/history", AlertsHistoryHandler)
+	router.mux.HandleFunc("/api/alerts/active", AlertsActiveHandler)
+	router.mux.HandleFunc("/api/alerts/summary", AlertsSummaryHandler)
+	router.mux.HandleFunc("/api/alerts/test", AlertsTestHandler)
+	router.mux.HandleFunc("/api/alerts/metrics", AlertsMetricsHandler)
+
 	if cfg.EnablePower {
 		router.mux.HandleFunc("/api/power/profile", PowerProfileHandler) // Legacy-compatible power profile
 		router.mux.HandleFunc("/api/power/info", PowerInfoHandler)

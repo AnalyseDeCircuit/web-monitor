@@ -337,33 +337,207 @@
 
         <!-- Page: Alerts -->
         <div id="page-alerts" class="page">
-            <div class="card">
-                <div class="card-title">Alert Configuration</div>
-                <div style="max-width: 600px;">
-                    <div style="margin-bottom: 15px;">
-                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Enable Alerts</label>
-                        <label class="switch">
-                            <input type="checkbox" id="alert-enabled">
-                            <span class="slider round"></span>
-                        </label>
+            <!-- Alerts Summary Header -->
+            <div class="alerts-header">
+                <div class="alerts-summary">
+                    <div class="summary-item">
+                        <span class="summary-value" id="alerts-total-rules">0</span>
+                        <span class="summary-label">Total Rules</span>
                     </div>
-                    <div style="margin-bottom: 15px;">
-                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Webhook URL</label>
-                        <input type="text" id="alert-webhook" class="form-input" style="width: 100%;" placeholder="https://hooks.slack.com/...">
+                    <div class="summary-item">
+                        <span class="summary-value" id="alerts-enabled-rules">0</span>
+                        <span class="summary-label">Enabled</span>
                     </div>
-                    <div style="margin-bottom: 15px;">
-                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">CPU Threshold (%)</label>
-                        <input type="number" id="alert-cpu" class="form-input" min="0" max="100" style="width: 100px;">
+                    <div class="summary-item firing">
+                        <span class="summary-value" id="alerts-firing-count">0</span>
+                        <span class="summary-label">Firing</span>
                     </div>
-                    <div style="margin-bottom: 15px;">
-                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Memory Threshold (%)</label>
-                        <input type="number" id="alert-mem" class="form-input" min="0" max="100" style="width: 100px;">
+                    <div class="summary-item">
+                        <span class="summary-value" id="alerts-today-events">0</span>
+                        <span class="summary-label">Today</span>
                     </div>
-                    <div style="margin-bottom: 15px;">
-                        <label style="display: block; margin-bottom: 5px; color: var(--text-dim);">Disk Threshold (%)</label>
-                        <input type="number" id="alert-disk" class="form-input" min="0" max="100" style="width: 100px;">
+                </div>
+                <div class="alerts-actions">
+                    <button onclick="testAlertNotification()" class="btn btn-secondary" title="Send test notification">
+                        <i class="fa-solid fa-paper-plane"></i> Test
+                    </button>
+                    <button onclick="saveAlertConfig()" class="btn btn-primary">
+                        <i class="fa-solid fa-save"></i> Save Config
+                    </button>
+                </div>
+            </div>
+
+            <div class="alerts-grid">
+                <!-- Active Alerts -->
+                <div class="card alerts-active-card">
+                    <div class="card-title">
+                        <i class="fa-solid fa-bell"></i> Active Alerts
+                        <span class="badge badge-danger" id="active-alerts-badge" style="display: none;">0</span>
                     </div>
-                    <button onclick="saveAlerts()" class="btn btn-primary btn-lg">Save Configuration</button>
+                    <div id="active-alerts-list" class="alerts-list">
+                        <div class="empty-state">
+                            <i class="fa-solid fa-check-circle"></i>
+                            <span>No active alerts</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Presets -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Quick Presets
+                    </div>
+                    <div class="presets-container">
+                        <div class="preset-item" onclick="enablePreset('essential')">
+                            <div class="preset-icon"><i class="fa-solid fa-shield"></i></div>
+                            <div class="preset-info">
+                                <div class="preset-name">Essential</div>
+                                <div class="preset-desc">CPU, Memory, Disk critical alerts</div>
+                            </div>
+                            <button class="btn btn-sm btn-primary">Enable</button>
+                        </div>
+                        <div class="preset-item" onclick="enablePreset('standard')">
+                            <div class="preset-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                            <div class="preset-info">
+                                <div class="preset-name">Standard</div>
+                                <div class="preset-desc">Warning + Critical levels</div>
+                            </div>
+                            <button class="btn btn-sm btn-primary">Enable</button>
+                        </div>
+                        <div class="preset-item" onclick="enablePreset('comprehensive')">
+                            <div class="preset-icon"><i class="fa-solid fa-shield-virus"></i></div>
+                            <div class="preset-info">
+                                <div class="preset-name">Comprehensive</div>
+                                <div class="preset-desc">All builtin rules</div>
+                            </div>
+                            <button class="btn btn-sm btn-primary">Enable</button>
+                        </div>
+                        <div class="preset-item danger" onclick="disableAllAlertRules()">
+                            <div class="preset-icon"><i class="fa-solid fa-power-off"></i></div>
+                            <div class="preset-info">
+                                <div class="preset-name">Disable All</div>
+                                <div class="preset-desc">Turn off all alert rules</div>
+                            </div>
+                            <button class="btn btn-sm btn-danger">Disable</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Alert Rules -->
+                <div class="card" style="grid-column: span 2;">
+                    <div class="card-title">
+                        <i class="fa-solid fa-list-check"></i> Alert Rules
+                    </div>
+                    <div id="alert-rules-list" class="rules-table-container">
+                        <table class="rules-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 50px;">On</th>
+                                    <th>Rule Name</th>
+                                    <th style="width: 100px;">Metric</th>
+                                    <th style="width: 120px;">Condition</th>
+                                    <th style="width: 80px;">Duration</th>
+                                    <th style="width: 80px;">Severity</th>
+                                    <th style="width: 100px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rules-tbody">
+                                <!-- Rules injected by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Notification Channels -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fa-solid fa-tower-broadcast"></i> Notification Channels
+                    </div>
+                    <div class="channels-container">
+                        <!-- Global Enable -->
+                        <div class="channel-item">
+                            <div class="channel-header">
+                                <label class="switch">
+                                    <input type="checkbox" id="alerts-global-enabled">
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="channel-name">Enable Alerts</span>
+                            </div>
+                        </div>
+
+                        <!-- Dashboard -->
+                        <div class="channel-item">
+                            <div class="channel-header">
+                                <label class="switch">
+                                    <input type="checkbox" id="channel-dashboard">
+                                    <span class="slider round"></span>
+                                </label>
+                                <i class="fa-solid fa-desktop channel-icon"></i>
+                                <span class="channel-name">Dashboard</span>
+                            </div>
+                            <div class="channel-desc">Show alert notifications in dashboard</div>
+                        </div>
+
+                        <!-- Webhook -->
+                        <div class="channel-item">
+                            <div class="channel-header">
+                                <label class="switch">
+                                    <input type="checkbox" id="channel-webhook">
+                                    <span class="slider round"></span>
+                                </label>
+                                <i class="fa-solid fa-link channel-icon"></i>
+                                <span class="channel-name">Webhook</span>
+                                <button class="btn btn-xs btn-secondary" onclick="testAlertNotification('webhook')">Test</button>
+                            </div>
+                            <input type="text" id="webhook-url" class="form-input" placeholder="https://hooks.slack.com/..." style="margin-top: 8px;">
+                        </div>
+
+                        <!-- Email (placeholder) -->
+                        <div class="channel-item disabled">
+                            <div class="channel-header">
+                                <label class="switch">
+                                    <input type="checkbox" id="channel-email" disabled>
+                                    <span class="slider round"></span>
+                                </label>
+                                <i class="fa-solid fa-envelope channel-icon"></i>
+                                <span class="channel-name">Email</span>
+                                <span class="badge badge-secondary">Coming Soon</span>
+                            </div>
+                        </div>
+
+                        <!-- Options -->
+                        <div class="channel-item" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+                            <div class="channel-header">
+                                <label class="switch">
+                                    <input type="checkbox" id="notify-on-resolved" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="channel-name">Notify on Resolved</span>
+                            </div>
+                            <div class="channel-desc">Also send notification when alert resolves</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Alert History -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Alert History
+                        <select id="history-filter" class="form-select-sm" onchange="loadAlertHistory()">
+                            <option value="">All</option>
+                            <option value="firing">Firing</option>
+                            <option value="resolved">Resolved</option>
+                        </select>
+                    </div>
+                    <div id="alert-history-list" class="history-list">
+                        <div class="empty-state">
+                            <i class="fa-solid fa-inbox"></i>
+                            <span>No history records</span>
+                        </div>
+                    </div>
+                    <div class="history-pagination" id="history-pagination" style="display: none;">
+                        <button class="btn btn-sm btn-secondary" onclick="loadMoreHistory()">Load More</button>
+                    </div>
                 </div>
             </div>
         </div>

@@ -199,12 +199,13 @@ func InitUserDatabase() error {
 		userDB = &types.UserDatabase{
 			Users: []types.User{
 				{
-					ID:        "admin",
-					Username:  "admin",
-					Password:  "$2a$10$Spuxl0kXOXW2hFb//8Ylj.Nrr./Qpa2Ba0JA0eKprr0NoNHaMJwUC", // bcrypt hash of "admin123"
-					Role:      "admin",
-					CreatedAt: now,
-					LastLogin: nil,
+					ID:                 "admin",
+					Username:           "admin",
+					Password:           "$2a$10$Spuxl0kXOXW2hFb//8Ylj.Nrr./Qpa2Ba0JA0eKprr0NoNHaMJwUC", // bcrypt hash of "admin123"
+					Role:               "admin",
+					CreatedAt:          now,
+					LastLogin:          nil,
+					MustChangePassword: true, // Force password change on first login
 				},
 			},
 		}
@@ -491,6 +492,7 @@ func ChangePassword(requesterUsername, requesterRole, targetUsername, oldPasswor
 	userDB.Users[idx].Password = hash
 	userDB.Users[idx].FailedLoginCount = 0
 	userDB.Users[idx].LockedUntil = nil
+	userDB.Users[idx].MustChangePassword = false // Clear forced change flag
 	now := time.Now()
 	userDB.Users[idx].LastPasswordChange = &now
 	return SaveUserDatabase()

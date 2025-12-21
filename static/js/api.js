@@ -1833,3 +1833,417 @@ function updateUIForModules(modules) {
         hideSidebarItem("switchPage('processes')");
     }
 }
+
+// ============================================================================
+//  NEW ALERTS SYSTEM
+// ============================================================================
+
+// Alert state
+let alertRules = [];
+let alertConfig = null;
+let alertHistoryOffset = 0;
+const ALERT_HISTORY_LIMIT = 20;
+
+// Load all alert data
+async function loadAlertsPage() {
+    try {
+        await Promise.all([
+            loadAlertSummary(),
+            loadAlertRules(),
+            loadAlertConfig(),
+            loadActiveAlerts(),
+            loadAlertHistory()
+        ]);
+    } catch (e) {
+        console.error('Failed to load alerts page:', e);
+    }
+}
+
+// Load summary
+async function loadAlertSummary() {
+    try {
+        const res = await fetch('/api/alerts/summary');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        document.getElementById('alerts-total-rules').textContent = data.total_rules || 0;
+        document.getElementById('alerts-enabled-rules').textContent = data.enabled_rules || 0;
+        document.getElementById('alerts-firing-count').textContent = data.firing_alerts || 0;
+        document.getElementById('alerts-today-events').textContent = data.today_events || 0;
+        
+        // Update firing badge visibility
+        const firingCount = data.firing_alerts || 0;
+        const badge = document.getElementById('active-alerts-badge');
+        if (badge) {
+            badge.textContent = firingCount;
+            badge.style.display = firingCount > 0 ? 'inline-block' : 'none';
+        }
+    } catch (e) {
+        console.error('Failed to load alert summary:', e);
+    }
+}
+
+// Load rules
+async function loadAlertRules() {
+    try {
+        const res = await fetch('/api/alerts/rules');
+        if (!res.ok) return;
+        alertRules = await res.json();
+        renderAlertRules();
+    } catch (e) {
+        console.error('Failed to load alert rules:', e);
+    }
+}
+
+// Render rules table
+function renderAlertRules() {
+    const tbody = document.getElementById('rules-tbody');
+    if (!tbody) return;
+    
+    if (!alertRules || alertRules.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-inbox"></i> No rules</td></tr>';
+        return;
+    }
+    
+    const metricNames = {
+        'cpu': 'CPU',
+        'memory': 'Memory',
+        'disk': 'Disk',
+        'swap': 'Swap',
+        'load1': 'Load (1m)',
+        'load5': 'Load (5m)',
+        'load15': 'Load (15m)'
+    };
+    
+    tbody.innerHTML = alertRules.map(rule => `
+        <tr>
+            <td>
+                <label class="switch switch-sm">
+                    <input type="checkbox" ${rule.enabled ? 'checked' : ''} 
+                           onchange="toggleAlertRule('${rule.id}', this.checked)">
+                    <span class="slider round"></span>
+                </label>
+            </td>
+            <td>
+                <div class="rule-name">${escapeHtml(rule.name)}</div>
+                ${rule.description ? `<div class="rule-desc">${escapeHtml(rule.description)}</div>` : ''}
+            </td>
+            <td>${metricNames[rule.metric] || rule.metric}</td>
+            <td class="condition">${rule.operator} ${rule.threshold}${rule.metric.startsWith('load') ? '' : '%'}</td>
+            <td>${rule.duration || '1m'}</td>
+            <td><span class="badge badge-${rule.severity}">${rule.severity}</span></td>
+            <td>
+                <button class="btn btn-xs btn-secondary" onclick="editAlertRule('${rule.id}')" title="Edit">
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+                ${!rule.builtin ? `
+                <button class="btn btn-xs btn-danger" onclick="deleteAlertRule('${rule.id}')" title="Delete">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+                ` : ''}
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Toggle rule enable/disable
+async function toggleAlertRule(ruleId, enabled) {
+    try {
+        const action = enabled ? 'enable' : 'disable';
+        const res = await fetch(`/api/alerts/rules/${ruleId}/${action}`, { method: 'POST' });
+        if (!res.ok) {
+            const msg = await readErrorMessage(res);
+            throw new Error(msg);
+        }
+        appSuccess(`Rule ${enabled ? 'enabled' : 'disabled'}`);
+        loadAlertSummary();
+    } catch (e) {
+        appError('Operation failed: ' + e.message);
+        loadAlertRules(); // Reload to reset checkbox
+    }
+}
+
+// Edit rule (placeholder - could open modal)
+function editAlertRule(ruleId) {
+    const rule = alertRules.find(r => r.id === ruleId);
+    if (!rule) return;
+    
+    // For now, just show an alert with rule details
+    // In a full implementation, this would open an edit modal
+    appAlert(
+        `<div style="text-align: left;">
+            <p><strong>Rule Name:</strong> ${escapeHtml(rule.name)}</p>
+            <p><strong>Metric:</strong> ${rule.metric}</p>
+            <p><strong>Condition:</strong> ${rule.operator} ${rule.threshold}</p>
+            <p><strong>Duration:</strong> ${rule.duration}</p>
+            <p><strong>Severity:</strong> ${rule.severity}</p>
+            <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 10px;">
+                Note: Edit feature coming soon
+            </p>
+        </div>`,
+        { title: `Edit Rule: ${rule.name}` }
+    );
+}
+
+// Delete rule
+async function deleteAlertRule(ruleId) {
+    const rule = alertRules.find(r => r.id === ruleId);
+    if (!rule) return;
+    
+    const confirmed = await appConfirm(`Delete rule "${rule.name}"?`);
+    if (!confirmed) return;
+    
+    try {
+        const res = await fetch(`/api/alerts/rules/${ruleId}`, { method: 'DELETE' });
+        if (!res.ok) {
+            const msg = await readErrorMessage(res);
+            throw new Error(msg);
+        }
+        appSuccess('Rule deleted');
+        loadAlertRules();
+        loadAlertSummary();
+    } catch (e) {
+        appError('Delete failed: ' + e.message);
+    }
+}
+
+// Enable preset
+async function enablePreset(presetId) {
+    try {
+        const res = await fetch(`/api/alerts/presets/${presetId}/enable`, { method: 'POST' });
+        if (!res.ok) {
+            const msg = await readErrorMessage(res);
+            throw new Error(msg);
+        }
+        appSuccess('Preset enabled');
+        loadAlertRules();
+        loadAlertSummary();
+    } catch (e) {
+        appError('Enable failed: ' + e.message);
+    }
+}
+
+// Disable all rules
+async function disableAllAlertRules() {
+    const confirmed = await appConfirm('Disable all alert rules?');
+    if (!confirmed) return;
+    
+    try {
+        const res = await fetch('/api/alerts/disable-all', { method: 'POST' });
+        if (!res.ok) {
+            const msg = await readErrorMessage(res);
+            throw new Error(msg);
+        }
+        appSuccess('All rules disabled');
+        loadAlertRules();
+        loadAlertSummary();
+        loadActiveAlerts();
+    } catch (e) {
+        appError('Operation failed: ' + e.message);
+    }
+}
+
+// Load config
+async function loadAlertConfig() {
+    try {
+        const res = await fetch('/api/alerts/config');
+        if (!res.ok) return;
+        alertConfig = await res.json();
+        
+        // Populate UI
+        const globalEnabled = document.getElementById('alerts-global-enabled');
+        if (globalEnabled) globalEnabled.checked = alertConfig.enabled;
+        
+        const notifyResolved = document.getElementById('notify-on-resolved');
+        if (notifyResolved) notifyResolved.checked = alertConfig.notify_on_resolved !== false;
+        
+        // Parse channels
+        const channels = alertConfig.channels || [];
+        
+        const dashboardCh = channels.find(c => c.type === 'dashboard');
+        const webhookCh = channels.find(c => c.type === 'webhook');
+        
+        const dashboardEl = document.getElementById('channel-dashboard');
+        if (dashboardEl) dashboardEl.checked = dashboardCh?.enabled || false;
+        
+        const webhookEl = document.getElementById('channel-webhook');
+        const webhookUrlEl = document.getElementById('webhook-url');
+        if (webhookEl) webhookEl.checked = webhookCh?.enabled || false;
+        if (webhookUrlEl) webhookUrlEl.value = webhookCh?.config?.url || '';
+        
+    } catch (e) {
+        console.error('Failed to load alert config:', e);
+    }
+}
+
+// Save config
+async function saveAlertConfig() {
+    try {
+        const config = {
+            enabled: document.getElementById('alerts-global-enabled')?.checked || false,
+            notify_on_resolved: document.getElementById('notify-on-resolved')?.checked || false,
+            global_silence_period: '5m',
+            channels: [
+                {
+                    type: 'dashboard',
+                    enabled: document.getElementById('channel-dashboard')?.checked || false,
+                    config: {}
+                },
+                {
+                    type: 'webhook',
+                    enabled: document.getElementById('channel-webhook')?.checked || false,
+                    config: {
+                        url: document.getElementById('webhook-url')?.value || ''
+                    }
+                }
+            ]
+        };
+        
+        const res = await fetch('/api/alerts/config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        if (!res.ok) {
+            const msg = await readErrorMessage(res);
+            throw new Error(msg);
+        }
+        
+        appSuccess('Config saved');
+    } catch (e) {
+        appError('Save failed: ' + e.message);
+    }
+}
+
+// Load active alerts
+async function loadActiveAlerts() {
+    try {
+        const res = await fetch('/api/alerts/active');
+        if (!res.ok) return;
+        const alerts = await res.json();
+        
+        const container = document.getElementById('active-alerts-list');
+        if (!container) return;
+        
+        if (!alerts || alerts.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fa-solid fa-check-circle" style="color: var(--accent-mem);"></i>
+                    <span>No active alerts</span>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = alerts.map(alert => `
+            <div class="alert-item ${alert.severity}">
+                <div class="alert-item-icon">
+                    ${alert.severity === 'critical' ? '🔴' : '🟡'}
+                </div>
+                <div class="alert-item-content">
+                    <div class="alert-item-name">${escapeHtml(alert.rule_name)}</div>
+                    <div class="alert-item-detail">
+                        ${alert.metric}: <span class="alert-item-value">${alert.value.toFixed(1)}${alert.metric.startsWith('load') ? '' : '%'}</span>
+                        ${alert.operator} ${alert.threshold}${alert.metric.startsWith('load') ? '' : '%'}
+                    </div>
+                </div>
+                <div class="alert-item-duration">${alert.duration}</div>
+            </div>
+        `).join('');
+        
+    } catch (e) {
+        console.error('Failed to load active alerts:', e);
+    }
+}
+
+// Load alert history
+async function loadAlertHistory(reset = true) {
+    try {
+        if (reset) alertHistoryOffset = 0;
+        
+        const filter = document.getElementById('history-filter')?.value || '';
+        let url = `/api/alerts/history?limit=${ALERT_HISTORY_LIMIT}&offset=${alertHistoryOffset}`;
+        if (filter) url += `&status=${filter}`;
+        
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        const container = document.getElementById('alert-history-list');
+        const pagination = document.getElementById('history-pagination');
+        if (!container) return;
+        
+        if (!data.events || data.events.length === 0) {
+            if (reset) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fa-solid fa-inbox"></i>
+                        <span>No history records</span>
+                    </div>
+                `;
+            }
+            if (pagination) pagination.style.display = 'none';
+            return;
+        }
+        
+        const html = data.events.map(event => {
+            const time = new Date(event.fired_at);
+            const timeStr = time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const statusIcon = event.status === 'firing' ? '🔴' : '✅';
+            
+            return `
+                <div class="history-item ${event.status}">
+                    <div class="history-item-time">${timeStr}</div>
+                    <div class="history-item-status">${statusIcon}</div>
+                    <div class="history-item-name">${escapeHtml(event.rule_name)}</div>
+                    <div class="history-item-value">${event.value.toFixed(1)}${event.metric.startsWith('load') ? '' : '%'}</div>
+                </div>
+            `;
+        }).join('');
+        
+        if (reset) {
+            container.innerHTML = html;
+        } else {
+            container.insertAdjacentHTML('beforeend', html);
+        }
+        
+        // Show/hide pagination
+        if (pagination) {
+            pagination.style.display = data.total > alertHistoryOffset + data.events.length ? 'block' : 'none';
+        }
+        
+    } catch (e) {
+        console.error('Failed to load alert history:', e);
+    }
+}
+
+// Load more history
+function loadMoreHistory() {
+    alertHistoryOffset += ALERT_HISTORY_LIMIT;
+    loadAlertHistory(false);
+}
+
+// Test notification
+async function testAlertNotification(channel = 'webhook') {
+    try {
+        const res = await fetch(`/api/alerts/test?channel=${channel}`, { method: 'POST' });
+        if (!res.ok) {
+            const msg = await readErrorMessage(res);
+            throw new Error(msg);
+        }
+        appSuccess('Test notification sent');
+    } catch (e) {
+        appError('Send failed: ' + e.message);
+    }
+}
+
+// Helper: escape HTML
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+}

@@ -70,14 +70,14 @@ help:
 # ============================================================================
 
 up:
-	docker compose -f docker/docker-compose.yml up -d web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml --env-file .env up -d web-monitor-go docker-socket-proxy
 
 down:
-	docker compose -f docker/docker-compose.yml down
+	docker compose -f docker/docker-compose.yml --env-file .env down
 
 restart:
-	docker compose -f docker/docker-compose.yml stop web-monitor-go docker-socket-proxy || true
-	docker compose -f docker/docker-compose.yml up -d web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml --env-file .env stop web-monitor-go docker-socket-proxy || true
+	docker compose -f docker/docker-compose.yml --env-file .env up -d web-monitor-go docker-socket-proxy
 
 logs:
 	docker compose -f docker/docker-compose.yml logs -f web-monitor-go
@@ -110,8 +110,8 @@ _check-plugin:
 ifndef P
 	$(error Please specify plugin name: make <target> P=webshell)
 endif
-ifeq ($(filter $(P),webshell filemanager),)
-	$(error Unknown plugin '$(P)'. Available: webshell, filemanager)
+ifeq ($(filter $(P),webshell filemanager db-explorer),)
+	$(error Unknown plugin '$(P)'. Available: webshell, filemanager, db-explorer)
 endif
 
 # Plugins use separate compose file for minimal intrusion

@@ -10,6 +10,7 @@ import (
 	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
@@ -80,8 +81,23 @@ func (s *MonitoringService) getRealSystemMetrics() (*types.SystemMetrics, error)
 		}
 	}
 
-	// 检查告警
+	// 检查告警 (旧版)
 	CheckAlerts(cpuPercent[0], memInfo.UsedPercent, diskInfo.UsedPercent)
+
+	// 检查告警 (新版) - 获取更多指标
+	var swapPercent float64
+	if swapInfo, err := mem.SwapMemory(); err == nil && swapInfo.Total > 0 {
+		swapPercent = swapInfo.UsedPercent
+	}
+
+	var load1, load5, load15 float64
+	if loadInfo, err := load.Avg(); err == nil {
+		load1 = loadInfo.Load1
+		load5 = loadInfo.Load5
+		load15 = loadInfo.Load15
+	}
+
+	CheckAlertsWithManager(cpuPercent[0], memInfo.UsedPercent, diskInfo.UsedPercent, swapPercent, load1, load5, load15)
 
 	metrics := &types.SystemMetrics{
 		CPUPercent:    cpuPercent[0],

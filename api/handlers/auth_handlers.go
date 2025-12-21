@@ -112,10 +112,11 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// 返回响应
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(types.LoginResponse{
-		Token:    jwtToken,
-		Message:  "Login successful",
-		Username: user.Username,
-		Role:     user.Role,
+		Token:              jwtToken,
+		Message:            "Login successful",
+		Username:           user.Username,
+		Role:               user.Role,
+		MustChangePassword: user.MustChangePassword,
 	})
 }
 

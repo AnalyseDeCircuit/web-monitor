@@ -62,3 +62,4 @@ plugins/**/*
 !plugins/README.md
 !plugins/DEVELOPMENT.md
 refactor.md
+docker/docker-compose.plugins.yml
