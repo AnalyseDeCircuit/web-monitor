@@ -1077,47 +1077,75 @@ function renderPermissions(permissions) {
                 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;">
     `;
 
-    const permIcons = {
-        view_dashboard: 'fa-tachometer-alt',
-        manage_users: 'fa-users-cog',
-        manage_docker: 'fa-docker',
-        manage_services: 'fa-cogs',
-        manage_cron: 'fa-clock',
-        view_logs: 'fa-file-alt',
-        manage_alerts: 'fa-bell'
+    // Icon mapping based on permission text keywords
+    const getPermIcon = (text) => {
+        const lower = text.toLowerCase();
+        if (lower.includes('docker')) return 'fa-docker';
+        if (lower.includes('container')) return 'fa-box';
+        if (lower.includes('service') || lower.includes('systemd')) return 'fa-cogs';
+        if (lower.includes('cron') || lower.includes('job')) return 'fa-clock';
+        if (lower.includes('process')) return 'fa-microchip';
+        if (lower.includes('user')) return 'fa-users-cog';
+        if (lower.includes('log')) return 'fa-file-alt';
+        if (lower.includes('metric') || lower.includes('monitor')) return 'fa-chart-line';
+        if (lower.includes('setting') || lower.includes('config')) return 'fa-sliders-h';
+        if (lower.includes('password')) return 'fa-key';
+        if (lower.includes('view') || lower.includes('read')) return 'fa-eye';
+        if (lower.includes('kill') || lower.includes('stop')) return 'fa-power-off';
+        if (lower.includes('create') || lower.includes('add')) return 'fa-plus-circle';
+        if (lower.includes('delete') || lower.includes('remove')) return 'fa-trash-alt';
+        if (lower.includes('edit') || lower.includes('modify')) return 'fa-edit';
+        if (lower.includes('admin')) return 'fa-crown';
+        return 'fa-check';
     };
 
-    const permLabels = {
-        view_dashboard: 'View Dashboard',
-        manage_users: 'Manage Users',
-        manage_docker: 'Manage Docker',
-        manage_services: 'Manage Services',
-        manage_cron: 'Manage Cron',
-        view_logs: 'View Logs',
-        manage_alerts: 'Manage Alerts'
-    };
-
-    if (permissions.allowed) {
-        permissions.allowed.forEach(perm => {
-            const icon = permIcons[perm] || 'fa-check';
-            const label = permLabels[perm] || perm.replace(/_/g, ' ');
+    // Render "Can Do" permissions
+    if (permissions.can_do && permissions.can_do.length > 0) {
+        html += `<div style="grid-column: 1 / -1; font-size: 0.8rem; color: #2ed573; margin-top: 5px; font-weight: 500;"><i class="fas fa-check-circle"></i> Allowed Actions</div>`;
+        permissions.can_do.forEach(perm => {
+            const icon = getPermIcon(perm);
             html += `
                 <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(46, 213, 115, 0.1); border-radius: 6px; border: 1px solid rgba(46, 213, 115, 0.2);">
-                    <i class="fas ${icon}" style="color: #2ed573; font-size: 0.85rem;"></i>
-                    <span style="font-size: 0.85rem;">${label}</span>
+                    <i class="fas ${icon}" style="color: #2ed573; font-size: 0.85rem; flex-shrink: 0;"></i>
+                    <span style="font-size: 0.8rem; line-height: 1.3;">${perm}</span>
                 </div>
             `;
         });
     }
 
+    // Render "Cannot Do" permissions
+    if (permissions.cannot_do && permissions.cannot_do.length > 0) {
+        html += `<div style="grid-column: 1 / -1; font-size: 0.8rem; color: #ff4757; margin-top: 10px; font-weight: 500;"><i class="fas fa-times-circle"></i> Restricted Actions</div>`;
+        permissions.cannot_do.forEach(perm => {
+            const icon = getPermIcon(perm);
+            html += `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255, 71, 87, 0.08); border-radius: 6px; border: 1px solid rgba(255, 71, 87, 0.15);">
+                    <i class="fas ${icon}" style="color: #ff4757; font-size: 0.85rem; opacity: 0.7; flex-shrink: 0;"></i>
+                    <span style="font-size: 0.8rem; line-height: 1.3; opacity: 0.7;">${perm}</span>
+                </div>
+            `;
+        });
+    }
+
+    // Fallback for old API format (allowed/denied)
+    if (permissions.allowed) {
+        permissions.allowed.forEach(perm => {
+            const icon = getPermIcon(perm);
+            html += `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(46, 213, 115, 0.1); border-radius: 6px; border: 1px solid rgba(46, 213, 115, 0.2);">
+                    <i class="fas ${icon}" style="color: #2ed573; font-size: 0.85rem;"></i>
+                    <span style="font-size: 0.85rem;">${perm.replace(/_/g, ' ')}</span>
+                </div>
+            `;
+        });
+    }
     if (permissions.denied) {
         permissions.denied.forEach(perm => {
-            const icon = permIcons[perm] || 'fa-times';
-            const label = permLabels[perm] || perm.replace(/_/g, ' ');
+            const icon = getPermIcon(perm);
             html += `
                 <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255, 71, 87, 0.1); border-radius: 6px; border: 1px solid rgba(255, 71, 87, 0.2);">
                     <i class="fas ${icon}" style="color: #ff4757; font-size: 0.85rem;"></i>
-                    <span style="font-size: 0.85rem; text-decoration: line-through; opacity: 0.7;">${label}</span>
+                    <span style="font-size: 0.85rem; text-decoration: line-through; opacity: 0.7;">${perm.replace(/_/g, ' ')}</span>
                 </div>
             `;
         });

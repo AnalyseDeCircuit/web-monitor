@@ -376,6 +376,7 @@ graph LR
     - **User**: User management (admin only)
     - **Network/Power/SSH**: Specialized monitoring endpoints
     - **WebSocket**: Upgrades connections for real-time streaming
+    - **Plugin**: Plugin discovery, lifecycle management, and reverse proxy
 
 ### 5. Core Services (`internal`)
 
@@ -487,3 +488,45 @@ All collectors use `gopsutil` and respect HostFS environment variables for conta
   - Service Worker for offline support
   - Responsive design with dark mode
   - Modular JS architecture (api.js, ws.js, state.js, render.js)
+
+### 14. Plugin System (`internal/plugin`)
+
+The plugin system enables extending Web Monitor with isolated components:
+
+```mermaid
+graph TB
+    subgraph Main["Web Monitor (Main)"]
+        PluginMgr["Plugin Manager"]
+        Proxy["Reverse Proxy Gateway"]
+        Discovery["Plugin Discovery<br/>(fs scan + plugin.json)"]
+    end
+    
+    subgraph Plugins["Plugin Containers (Isolated)"]
+        WS["WebShell<br/>:38101"]
+        FM["FileManager<br/>:38102"]
+        DB["DB Explorer<br/>:38104"]
+        PR["Perf Report<br/>:38105"]
+    end
+    
+    Browser -->|"/api/plugins/{id}/*"| Proxy
+    Proxy -->|"JWT passthrough"| Plugins
+    PluginMgr -->|"docker start/stop"| Plugins
+    Discovery -->|"Load plugin.json"| PluginMgr
+```
+
+**Key Features**:
+- **Container Isolation**: Each plugin runs in its own Docker container
+- **No Self-Auth**: Plugins trust the main gateway; JWT is passed through
+- **Reverse Proxy**: All plugin requests go through `/api/plugins/{id}/`
+- **Health Checks**: Main program monitors plugin health endpoints
+- **Hot Loading**: Plugins can be installed/started without restarting core
+
+**Built-in Plugins**:
+| Plugin | Description | Port |
+|--------|-------------|------|
+| WebShell | SSH terminal (xterm.js, 24-bit color) | 38101 |
+| FileManager | SFTP file browser | 38102 |
+| DB Explorer | Database connector | 38104 |
+| Perf Report | Performance visualization | 38105 |
+
+**Plugin Development**: See `plugins/DEVELOPMENT.md` for the development guide.

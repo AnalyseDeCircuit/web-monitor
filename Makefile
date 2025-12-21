@@ -1,7 +1,8 @@
 .PHONY: help up down restart logs stats build rebuild dev clean \
         up-minimal up-server up-no-docker \
         plugin-build plugin-create plugin-up plugin-down plugin-rm plugin-logs \
-        plugins-build plugins-create plugins-up plugins-down plugins-rm
+        plugins-build plugins-create plugins-up plugins-down plugins-rm \
+        all
 
 # ============================================================================
 #  HELP
@@ -60,9 +61,12 @@ help:
 	@echo "│  make rebuild       down + build + up                            │"
 	@echo "│  make dev           Run locally (Go, no Docker)                  │"
 	@echo "│  make clean         Clean up build artifacts                     │"
+	@echo "├─────────────────────────────────────────────────────────────────┤"
+	@echo "│  QUICK START                                                      │"
+	@echo "│  make all           Start core + ALL plugins (one command)        │"
 	@echo "└─────────────────────────────────────────────────────────────────┘"
 	@echo ""
-	@echo "  Available plugins: webshell, filemanager"
+	@echo "  Available plugins: webshell, filemanager, db-explorer, perf-report"
 	@echo ""
 
 # ============================================================================
@@ -110,8 +114,8 @@ _check-plugin:
 ifndef P
 	$(error Please specify plugin name: make <target> P=webshell)
 endif
-ifeq ($(filter $(P),webshell filemanager db-explorer),)
-	$(error Unknown plugin '$(P)'. Available: webshell, filemanager, db-explorer)
+ifeq ($(filter $(P),webshell filemanager db-explorer perf-report),)
+	$(error Unknown plugin '$(P)'. Available: webshell, filemanager, db-explorer, perf-report)
 endif
 
 # Plugins use separate compose file for minimal intrusion
@@ -145,7 +149,7 @@ plugin-rebuild: _check-plugin
 #  ALL PLUGINS OPERATIONS
 # ============================================================================
 
-PLUGINS := plugin-webshell plugin-filemanager
+PLUGINS := plugin-webshell plugin-filemanager plugin-db-explorer plugin-perf-report
 
 plugins-build:
 	$(PLUGIN_COMPOSE) build $(PLUGINS)
@@ -186,3 +190,13 @@ dev:
 
 clean:
 	rm -f server cmd/server/server
+
+# ============================================================================
+#  QUICK START
+# ============================================================================
+
+all: up plugins-up
+	@echo ""
+	@echo "✓ Core services and all plugins started!"
+	@echo "  Dashboard: http://localhost:38080"
+	@echo ""

@@ -38,6 +38,14 @@
 - **Cron Jobs**: Create, list, delete cron jobs, view logs
 - **Process Management**: Kill processes (admin only)
 
+### 🧩 Plugin System
+- **WebShell**: SSH Terminal (24-bit true color, xterm.js)
+- **FileManager**: SFTP file browser
+- **DB Explorer**: Database connection browser
+- **Perf Report**: Performance report generator
+- **Plugin Isolation**: Each plugin runs in its own container
+- **Hot Loading**: Install plugins without restarting core
+
 ### 🔐 Security Features
 - **JWT Authentication**: Secure token-based authentication
 - **Role-Based Access**: Admin and regular user separation
@@ -133,11 +141,26 @@ ENABLE_DOCKER=false ENABLE_GPU=false make up
 | `make up-minimal` | Start minimal mode (Core metrics only) |
 | `make up-server` | Start server mode (No GPU/Power) |
 | `make up-no-docker` | Start without Docker management |
+| `make all` | Start core services + ALL plugins |
 | `make down` | Stop and remove containers |
 | `make restart` | Restart services |
 | `make logs` | View real-time logs |
 | `make rebuild` | Rebuild images and restart |
 | `make stats` | Show service resource usage |
+
+### Plugin Commands
+
+| Command | Description |
+| :--- | :--- |
+| `make plugin-build P=webshell` | Build a single plugin |
+| `make plugin-up P=webshell` | Start a single plugin |
+| `make plugin-down P=webshell` | Stop a single plugin |
+| `make plugin-logs P=webshell` | View plugin logs |
+| `make plugins-build` | Build all plugins |
+| `make plugins-up` | Start all plugins |
+| `make plugins-down` | Stop all plugins |
+
+Available plugins: `webshell`, `filemanager`, `db-explorer`, `perf-report`
 
 ### Streaming Aggregator Architecture
 
@@ -189,8 +212,14 @@ web-monitor/
 │   ├── docker/          # Docker API client
 │   ├── middleware/      # HTTP middleware
 │   ├── monitoring/      # Monitoring service & alerts
+│   ├── plugin/          # Plugin manager
 │   ├── systemd/         # Systemd service management
 │   └── websocket/       # WebSocket hub
+├── plugins/                 # Plugin directory
+│   ├── webshell/        # SSH terminal plugin
+│   ├── filemanager/     # File manager plugin
+│   ├── db-explorer/     # Database browser plugin
+│   └── perf-report/     # Performance report plugin
 ├── pkg/types/           # Shared type definitions
 ├── static/              # Frontend static assets
 ├── templates/           # HTML templates
@@ -278,6 +307,40 @@ For detailed API documentation, see [API_DOCUMENTATION.md](./API_DOCUMENTATION.m
 3. **Restrict Network Access**: Use a reverse proxy (Nginx) with HTTPS
 4. **Docker Socket Proxy**: Use `docker-socket-proxy` to limit Docker API exposure
 5. **Keep Updated**: Follow project updates for security patches
+
+---
+
+## 🧩 Plugin System
+
+Web Monitor supports extending functionality through plugins. Plugins run in isolated containers and are accessed via the main program's proxy.
+
+### Built-in Plugins
+
+| Plugin | Description | Port |
+|--------|-------------|------|
+| **WebShell** | SSH Terminal (24-bit true color, clickable links) | 38101 |
+| **FileManager** | SFTP file browser | 38102 |
+| **DB Explorer** | MySQL/PostgreSQL/SQLite connector | 38104 |
+| **Perf Report** | Performance report generator (Chart.js visualization) | 38105 |
+
+### Plugin Management
+
+```bash
+# Build and start all plugins
+make plugins-build
+make plugins-up
+
+# Or use one-command start (core + plugins)
+make all
+
+# Manage individual plugins
+make plugin-up P=webshell
+make plugin-logs P=webshell
+```
+
+### Plugin Development
+
+See [plugins/DEVELOPMENT.md](./plugins/DEVELOPMENT.md) for the plugin development guide.
 
 ---
 
