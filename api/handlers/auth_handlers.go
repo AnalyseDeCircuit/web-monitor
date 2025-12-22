@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/session"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/auth"
+	"github.com/AnalyseDeCircuit/opskernel/internal/logs"
+	"github.com/AnalyseDeCircuit/opskernel/internal/session"
+	"github.com/AnalyseDeCircuit/opskernel/internal/utils"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 func clientIP(r *http.Request) string {

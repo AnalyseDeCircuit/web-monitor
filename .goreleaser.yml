@@ -1,4 +1,4 @@
-project_name: web-monitor
+project_name: opskernel
 
 builds:
   - id: server
@@ -15,7 +15,7 @@ builds:
 
 archives:
   - id: default
-    project_name: web-monitor
+    project_name: opskernel
 
     builds:
       - id: server
@@ -39,8 +39,8 @@ archives:
 
     dockers:
       - image_templates:
-          - "ghcr.io/AnalyseDeCircuit/web-monitor:{{ .Tag }}"
-          - "ghcr.io/AnalyseDeCircuit/web-monitor:latest"
+          - "ghcr.io/AnalyseDeCircuit/opskernel:{{ .Tag }}"
+          - "ghcr.io/AnalyseDeCircuit/opskernel:latest"
         dockerfile: Dockerfile
         buildx: true
         platforms:
@@ -50,4 +50,4 @@ archives:
     release:
       github:
         owner: AnalyseDeCircuit
-        name: web-monitor
+        name: opskernel

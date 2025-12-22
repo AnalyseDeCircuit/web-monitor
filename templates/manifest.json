@@ -1,6 +1,6 @@
 {
-  "name": "Web Monitor",
-  "short_name": "WebMon",
+  "name": "OpsKernel",
+  "short_name": "OpsKernel",
   "description": "Real-time system monitoring dashboard for servers and workstations",
   "start_url": "/",
   "scope": "/",
@@ -25,13 +25,13 @@
   "categories": ["utilities", "productivity"],
   "screenshots": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%231a1a1a' width='540' height='720'/><rect fill='%232a2a2a' width='540' height='100'/><text x='20' y='60' font-size='24' fill='%2300a8ff' font-family='monospace'>Web Monitor</text></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%231a1a1a' width='540' height='720'/><rect fill='%232a2a2a' width='540' height='100'/><text x='20' y='60' font-size='24' fill='%2300a8ff' font-family='monospace'>OpsKernel</text></svg>",
       "sizes": "540x720",
       "type": "image/svg+xml",
       "form_factor": "narrow"
     },
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1280 720'><rect fill='%231a1a1a' width='1280' height='720'/><rect fill='%232a2a2a' width='250' height='720'/><text x='300' y='60' font-size='32' fill='%2300a8ff' font-family='monospace'>Web Monitor</text></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1280 720'><rect fill='%231a1a1a' width='1280' height='720'/><rect fill='%232a2a2a' width='250' height='720'/><text x='300' y='60' font-size='32' fill='%2300a8ff' font-family='monospace'>OpsKernel</text></svg>",
       "sizes": "1280x720",
       "type": "image/svg+xml",
       "form_factor": "wide"

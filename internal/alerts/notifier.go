@@ -166,7 +166,7 @@ func formatWebhookMessage(event *AlertEvent) string {
 		unit = ""
 	}
 
-	return fmt.Sprintf(`%s **Web Monitor Alert** %s
+	return fmt.Sprintf(`%s **OpsKernel Alert** %s
 
 **Status:** %s %s
 **Severity:** %s %s

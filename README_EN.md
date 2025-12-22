@@ -2,8 +2,6 @@
 
 Single-node Linux monitoring kernel. Provides local system observability and limited management capabilities via HTTP APIs, WebSocket streaming and Docker-based plugins.
 
-The codebase and module paths still use the original name `web-monitor`. In this document we use the target project name **OpsKernel**; both names currently refer to the same project and will be unified over time.
-
 [简体中文](README.md) | English
 
 ---
@@ -201,12 +199,10 @@ Not suitable for:
 
 ### Key Environment Variables
 
-Note: some defaults still refer to `web-monitor`; names will be aligned over time.
-
 ```bash
 # Core
 PORT=8000                        # HTTP port
-DATA_DIR=/var/lib/web-monitor    # Data directory (legacy name)
+DATA_DIR=/var/lib/opskernel      # Data directory
 JWT_SECRET=<random>              # JWT signing key (required in production)
 
 # Host mounting (container mode)
@@ -237,7 +233,7 @@ ENABLE_SSH=false \
 ```yaml
 services:
   opskernel:
-    image: opskernel/opskernel:latest   # Image name will be migrated from web-monitor
+    image: opskernel:latest
     network_mode: host
     pid: host
     cap_add:
@@ -285,18 +281,6 @@ This section outlines categories only. Treat the router implementation and the b
 - `/api/plugins/install`: run install hooks (POST, admin-only; mainly for privileged plugins)
 - `/api/plugins/uninstall`: run uninstall hooks (POST, admin-only)
 - `/api/plugins/<plugin_name>/...`: reverse proxy to the plugin container
-
----
-
-## Naming & Migration Status
-
-- Repository name and Go module path are currently `web-monitor`
-- Several environment variables, directory names (e.g. DATA_DIR), and Swagger titles still mention "Web Monitor"
-- This README uses **OpsKernel** as the project name going forward; code and configuration will be gradually updated to match
-
-When reading code or troubleshooting, treat "OpsKernel" and the existing "web-monitor" identifiers as different stages of the same project.
-
----
 
 ## License
 

@@ -1,10 +1,10 @@
-# Web Monitor Architecture
+# OpsKernel Architecture
 
-This document describes the high-level architecture of the Web Monitor project.
+This document describes the high-level architecture of the OpsKernel project.
 
 ## Overview
 
-Web Monitor is a real-time system monitoring application consisting of a Go backend and a web-based frontend. The backend collects system metrics and exposes them via REST APIs and WebSockets.
+OpsKernel is a real-time system monitoring application consisting of a Go backend and a web-based frontend. The backend collects system metrics and exposes them via REST APIs and WebSockets.
 
 ## Architecture Diagram
 
@@ -491,11 +491,11 @@ All collectors use `gopsutil` and respect HostFS environment variables for conta
 
 ### 14. Plugin System (`internal/plugin`)
 
-The plugin system enables extending Web Monitor with isolated components:
+The plugin system enables extending OpsKernel with isolated components:
 
 ```mermaid
 graph TB
-    subgraph Main["Web Monitor (Main)"]
+    subgraph Main["OpsKernel (Main)"]
         PluginMgr["Plugin Manager"]
         Proxy["Reverse Proxy Gateway"]
         Discovery["Plugin Discovery<br/>(fs scan + plugin.json)"]

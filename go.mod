@@ -1,4 +1,4 @@
-module github.com/AnalyseDeCircuit/web-monitor
+module github.com/AnalyseDeCircuit/opskernel
 
 go 1.24.0
 

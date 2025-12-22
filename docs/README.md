@@ -40,12 +40,12 @@ go mod vendor
 ### 主程序注释 (cmd/server/main.go)
 
 ```go
-// @title Web Monitor API
+// @title OpsKernel API
 // @version 2.0
 // @description 轻量级系统监控API服务
 
 // @contact.name API Support
-// @contact.url https://github.com/AnalyseDeCircuit/web-monitor
+// @contact.url https://github.com/AnalyseDeCircuit/opskernel
 // @contact.email support@example.com
 
 // @license.name CC BY-NC 4.0

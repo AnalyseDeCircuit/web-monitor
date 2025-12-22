@@ -1,4 +1,4 @@
-const CACHE_NAME = 'web-monitor-no-cache-v1';
+const CACHE_NAME = 'opskernel-no-cache-v1';
 const urlsToCache = [];
 
 // Installation event - cache files
@@ -64,7 +64,7 @@ self.addEventListener('push', event => {
     body: event.data.text(),
     icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect fill="%231a1a1a" width="192" height="192"/><circle cx="96" cy="96" r="70" fill="%2300a8ff"/></svg>',
     badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><circle cx="96" cy="96" r="90" fill="%2300a8ff"/></svg>',
-    tag: 'web-monitor-notification',
+    tag: 'opskernel-notification',
     requireInteraction: false,
     actions: [
       {
@@ -81,7 +81,7 @@ self.addEventListener('push', event => {
   };
 
   event.waitUntil(
-    self.registration.showNotification('Web Monitor Alert', options)
+    self.registration.showNotification('OpsKernel Alert', options)
   );
 });
 

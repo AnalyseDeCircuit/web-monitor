@@ -10,22 +10,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/api/handlers"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/alerts"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/plugin"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/session"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/settings"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
+	"github.com/AnalyseDeCircuit/opskernel/api/handlers"
+	"github.com/AnalyseDeCircuit/opskernel/internal/alerts"
+	"github.com/AnalyseDeCircuit/opskernel/internal/assets"
+	"github.com/AnalyseDeCircuit/opskernel/internal/auth"
+	"github.com/AnalyseDeCircuit/opskernel/internal/config"
+	"github.com/AnalyseDeCircuit/opskernel/internal/logs"
+	"github.com/AnalyseDeCircuit/opskernel/internal/monitoring"
+	"github.com/AnalyseDeCircuit/opskernel/internal/plugin"
+	"github.com/AnalyseDeCircuit/opskernel/internal/session"
+	"github.com/AnalyseDeCircuit/opskernel/internal/settings"
+	"github.com/AnalyseDeCircuit/opskernel/internal/websocket"
 
-	_ "github.com/AnalyseDeCircuit/web-monitor/docs" // swagger docs
+	_ "github.com/AnalyseDeCircuit/opskernel/docs" // swagger docs
 )
 
-// @title Web Monitor API
+// @title OpsKernel API
 // @version 2.0
 // @description 轻量级系统监控API服务，提供实时CPU、内存、磁盘、网络、GPU监控，以及Docker和Systemd管理功能
 // @description
@@ -41,7 +41,7 @@ import (
 // @description - Prometheus指标导出
 
 // @contact.name API Support
-// @contact.url https://github.com/AnalyseDeCircuit/web-monitor
+// @contact.url https://github.com/AnalyseDeCircuit/opskernel
 // @contact.email support@example.com
 
 // @license.name CC BY-NC 4.0
@@ -83,7 +83,7 @@ import (
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Println("Starting web-monitor server...")
+	log.Println("Starting opskernel server...")
 
 	// 加载全局配置
 	cfg := config.Load()

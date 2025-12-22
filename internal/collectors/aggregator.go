@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/config"
+	"github.com/AnalyseDeCircuit/opskernel/internal/monitoring"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 // ModuleData holds the latest data from a single collector module

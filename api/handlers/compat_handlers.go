@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/power"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/monitoring"
+	"github.com/AnalyseDeCircuit/opskernel/internal/power"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 // AlertsHandler provides legacy-compatible alert config endpoints.

@@ -1,24 +1,24 @@
 {
   "containers": {
     "webshell": {
-      "containerName": "web-monitor-plugin-webshell",
+      "containerName": "opskernel-plugin-webshell",
       "baseUrl": "http://127.0.0.1:38101"
     },
     "filemanager": {
-      "containerName": "web-monitor-plugin-filemanager",
+      "containerName": "opskernel-plugin-filemanager",
       "baseUrl": "http://127.0.0.1:38102"
     }
   },
   "ssh": {
     "host": "127.0.0.1",
     "port": 22,
-    "user": "webmonitor",
-    "knownHosts": "/etc/webmonitor/known_hosts",
+    "user": "opskernel",
+    "knownHosts": "/etc/opskernel/known_hosts",
     "insecureHostKey": false,
     "connectTimeout": "10s",
     "keys": {
-      "webshell": "/etc/webmonitor/webshell_id_ed25519",
-      "filemanager": "/etc/webmonitor/filemanager_id_ed25519"
+      "webshell": "/etc/opskernel/webshell_id_ed25519",
+      "filemanager": "/etc/opskernel/filemanager_id_ed25519"
     }
   },
   "webshell": {

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/config"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 var (
@@ -59,7 +59,7 @@ func cronCmd(args ...string) *exec.Cmd {
 }
 
 // ListCronJobs 列出所有Cron任务
-// 改进：只返回 Web-Monitor 管理的任务，或者标记哪些是管理的。
+// 改进：只返回 OpsKernel 管理的任务，或者标记哪些是管理的。
 // 目前为了兼容性，我们只解析位于管理区块内的任务。
 func ListCronJobs() ([]types.CronJob, error) {
 	cronMutex.Lock()
@@ -174,12 +174,12 @@ func ListCronJobs() ([]types.CronJob, error) {
 }
 
 // SaveCronJobs 安全地保存Cron任务
-// 策略：读取现有 crontab，保留所有非 Web-Monitor 管理的行，
-// 然后追加/更新 Web-Monitor 管理的任务。
-// 我们使用特殊的注释标记来界定 Web-Monitor 管理的区域。
+// 策略：读取现有 crontab，保留所有非 OpsKernel 管理的行，
+// 然后追加/更新 OpsKernel 管理的任务。
+// 我们使用特殊的注释标记来界定 OpsKernel 管理的区域。
 const (
-	startMarker = "# --- BEGIN WEB MONITOR MANAGED BLOCK ---"
-	endMarker   = "# --- END WEB MONITOR MANAGED BLOCK ---"
+	startMarker = "# --- BEGIN OPSKERNEL MANAGED BLOCK ---"
+	endMarker   = "# --- END OPSKERNEL MANAGED BLOCK ---"
 )
 
 func SaveCronJobs(jobs []types.CronJob) error {
@@ -248,7 +248,7 @@ func SaveCronJobs(jobs []types.CronJob) error {
 		newLines = append(newLines, "")
 	}
 	newLines = append(newLines, startMarker)
-	newLines = append(newLines, "# Do not edit this block manually. It is managed by Web Monitor.")
+	newLines = append(newLines, "# Do not edit this block manually. It is managed by OpsKernel.")
 
 	for _, job := range jobs {
 		if strings.TrimSpace(job.Schedule) == "" || strings.TrimSpace(job.Command) == "" {

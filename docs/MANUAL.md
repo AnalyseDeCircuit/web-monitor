@@ -1,14 +1,14 @@
-# Web Monitor - User Manual
+# OpsKernel - User Manual
 
 **Version**: 2.0
 **Last Updated**: December 17, 2025
 **License**: CC BY-NC 4.0 (Attribution-NonCommercial)
 
-[English Version](#web-monitor-user-manual) | [中文版本](#web-monitor-用户手册)
+[English Version](#opskernel-user-manual) | [中文版本](#opskernel-用户手册)
 
 ---
 
-# Web Monitor - User Manual
+# OpsKernel - User Manual
 
 ## Table of Contents
 
@@ -25,9 +25,9 @@
 
 ## 1. Overview
 
-### 1.1 What is Web Monitor?
+### 1.1 What is OpsKernel?
 
-Web Monitor is a **lightweight, high-performance Linux server monitoring and management panel** that provides real-time system metrics, container management, service control, and security auditing through a web interface.
+OpsKernel is a **lightweight, high-performance Linux server monitoring and management panel** that provides real-time system metrics, container management, service control, and security auditing through a web interface.
 
 ### 1.2 System Architecture
 
@@ -67,7 +67,7 @@ export JWT_SECRET=$(openssl rand -base64 64)
 # 2. Start services
 docker compose up -d
 
-# 3. Access Web Monitor
+# 3. Access OpsKernel
 open http://localhost:38080
 
 # 4. Login with default credentials
@@ -80,13 +80,13 @@ open http://localhost:38080
 ```bash
 # 1. Build from source
 cd cmd/server
-go build -o web-monitor main.go
+go build -o opskernel main.go
 
 # 2. Set JWT secret
 export JWT_SECRET=$(openssl rand -base64 64)
 
 # 3. Run with root privileges
-sudo ./web-monitor
+sudo ./opskernel
 ```
 
 ---
@@ -112,7 +112,7 @@ sudo ./web-monitor
 ```bash
 # Clone repository
 git clone <repository-url>
-cd web-monitor
+cd opskernel
 
 # Configure environment
 cp .env.example .env
@@ -127,7 +127,7 @@ docker compose up -d
 ```yaml
 # docker-compose.yml - Production Configuration
 services:
-  web-monitor-go:
+  opskernel:
     environment:
       - JWT_SECRET=${JWT_SECRET}
       - DOCKER_READ_ONLY=true  # Enable read-only mode
@@ -144,18 +144,18 @@ services:
 
 ```bash
 # Build static binary
-go build -ldflags="-s -w -extldflags '-static'" -o web-monitor ./cmd/server
+go build -ldflags="-s -w -extldflags '-static'" -o opskernel ./cmd/server
 
 # Run with systemd
-sudo tee /etc/systemd/system/web-monitor.service > /dev/null << EOF
+sudo tee /etc/systemd/system/opskernel.service > /dev/null << EOF
 [Unit]
-Description=Web Monitor
+Description=OpsKernel
 After=network.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/web-monitor
+ExecStart=/usr/local/bin/opskernel
 Restart=always
 Environment="JWT_SECRET=your-secret-here"
 Environment="PORT=38080"
@@ -165,7 +165,7 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now web-monitor
+sudo systemctl enable --now opskernel
 ```
 
 ---
@@ -394,7 +394,7 @@ The dashboard displays **real-time system metrics** with 2-60 second refresh int
 
 Enable debug logging:
 ```bash
-docker exec -it web-monitor-go sh
+docker exec -it opskernel sh
 echo 'VERBOSE=1' >> /app/config/debug.conf
 ```
 
@@ -404,7 +404,7 @@ View runtime metrics:
 curl http://localhost:38080/api/metrics
 
 # For Docker
-docker exec web-monitor-go curl http://localhost:38080/api/metrics
+docker exec opskernel curl http://localhost:38080/api/metrics
 ```
 
 ---
@@ -414,7 +414,7 @@ docker exec web-monitor-go curl http://localhost:38080/api/metrics
 ### 7.1 Architecture
 
 ```
-Client → HTTPS → Reverse Proxy → Web Monitor
+Client → HTTPS → Reverse Proxy → OpsKernel
                 ↓
          ┌──────┴──────┐
          ↓             ↓
@@ -531,17 +531,17 @@ deploy:
 **Backup:**
 ```bash
 # With Docker
-docker exec web-monitor-go tar -czf /tmp/backup.tar.gz /data
-docker cp web-monitor-go:/tmp/backup.tar.gz ./web-monitor-backup- $(date +%Y%m%d).tar.gz
+docker exec opskernel tar -czf /tmp/backup.tar.gz /data
+docker cp opskernel:/tmp/backup.tar.gz ./opskernel-backup- $(date +%Y%m%d).tar.gz
 
 # With binary
-tar -czf web-monitor-backup-$(date +%Y%m%d).tar.gz /data
+tar -czf opskernel-backup-$(date +%Y%m%d).tar.gz /data
 ```
 
 **Restore:**
 ```bash
 # Stop service first
-tar -xzf web-monitor-backup-20250101.tar.gz -C /
+tar -xzf opskernel-backup-20250101.tar.gz -C /
 docker compose up -d
 ```
 
@@ -561,7 +561,7 @@ docker compose up -d
 
 ---
 
-**Need help?** See [Troubleshooting](#6-troubleshooting) or [GitHub Issues](https://github.com/AnalyseDeCircuit/web-monitor/issues)
+**Need help?** See [Troubleshooting](#6-troubleshooting) or [GitHub Issues](https://github.com/AnalyseDeCircuit/opskernel/issues)
 
 ---
 
@@ -577,7 +577,7 @@ See [LICENSE](./LICENSE) for details.
 
 ---
 
-# Web Monitor - 用户手册
+# OpsKernel - 用户手册
 
 **版本**: 2.0
 **最后更新**: 2025年12月17日
@@ -599,9 +599,9 @@ See [LICENSE](./LICENSE) for details.
 
 ## 1. 概述
 
-### 1.1 什么是 Web Monitor？
+### 1.1 什么是 OpsKernel？
 
-Web Monitor 是一个**轻量级、高性能的 Linux 服务器监控与管理面板**，通过 Web 界面提供实时系统指标、容器管理、服务控制和安全审计功能。
+OpsKernel 是一个**轻量级、高性能的 Linux 服务器监控与管理面板**，通过 Web 界面提供实时系统指标、容器管理、服务控制和安全审计功能。
 
 ### 1.2 系统架构
 
@@ -640,7 +640,7 @@ export JWT_SECRET=$(openssl rand -base64 64)
 # 2. 启动服务
 docker compose up -d
 
-# 3. 访问 Web Monitor
+# 3. 访问 OpsKernel
 open http://localhost:38080
 
 # 4. 使用默认凭据登录
@@ -653,13 +653,13 @@ open http://localhost:38080
 ```bash
 # 1. 从源码构建
 cd cmd/server
-go build -o web-monitor main.go
+go build -o opskernel main.go
 
 # 2. 设置 JWT 密钥
 export JWT_SECRET=$(openssl rand -base64 64)
 
 # 3. 使用 root 权限运行
-sudo ./web-monitor
+sudo ./opskernel
 ```
 
 ---
@@ -874,7 +874,7 @@ sudo ./web-monitor
 
 启用调试日志:
 ```bash
-docker exec -it web-monitor-go sh
+docker exec -it opskernel sh
 echo 'VERBOSE=1' >> /app/config/debug.conf
 ```
 
@@ -883,7 +883,7 @@ echo 'VERBOSE=1' >> /app/config/debug.conf
 curl http://localhost:38080/api/metrics
 
 # 对于 Docker
-docker exec web-monitor-go curl http://localhost:38080/api/metrics
+docker exec opskernel curl http://localhost:38080/api/metrics
 ```
 
 ---
@@ -945,17 +945,17 @@ environment:
 **备份:**
 ```bash
 # Docker 部署
-docker exec web-monitor-go tar -czf /tmp/backup.tar.gz /data
-docker cp web-monitor-go:/tmp/backup.tar.gz ./web-monitor-backup-$(date +%Y%m%d).tar.gz
+docker exec opskernel tar -czf /tmp/backup.tar.gz /data
+docker cp opskernel:/tmp/backup.tar.gz ./opskernel-backup-$(date +%Y%m%d).tar.gz
 
 # 二进制部署
-tar -czf web-monitor-backup-$(date +%Y%m%d).tar.gz /data
+tar -czf opskernel-backup-$(date +%Y%m%d).tar.gz /data
 ```
 
 **恢复:**
 ```bash
 # 先停止服务
-tar -xzf web-monitor-backup-20250101.tar.gz -C /
+tar -xzf opskernel-backup-20250101.tar.gz -C /
 docker compose up -d
 ```
 
@@ -975,7 +975,7 @@ docker compose up -d
 
 ---
 
-**需要帮助？** 查看 [故障排除](#5-故障排除) 或 [GitHub Issues](https://github.com/AnalyseDeCircuit/web-monitor/issues)
+**需要帮助？** 查看 [故障排除](#5-故障排除) 或 [GitHub Issues](https://github.com/AnalyseDeCircuit/opskernel/issues)
 
 ---
 

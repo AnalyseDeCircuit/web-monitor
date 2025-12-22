@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/alerts"
+	"github.com/AnalyseDeCircuit/opskernel/internal/alerts"
 )
 
 // AlertManager 全局告警管理器引用

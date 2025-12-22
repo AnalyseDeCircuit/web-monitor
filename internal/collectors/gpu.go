@@ -3,8 +3,8 @@ package collectors
 import (
 	"context"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/gpu"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/gpu"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 // GPUCollector 采集 GPU 信息

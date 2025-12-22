@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
+	"github.com/AnalyseDeCircuit/opskernel/internal/config"
+	"github.com/AnalyseDeCircuit/opskernel/internal/utils"
 	"github.com/shirou/gopsutil/v3/host"
 )
 

@@ -2,8 +2,6 @@
 
 单机 Linux 服务器监控内核。通过 WebSocket 推送系统指标，提供本机监控与有限管理能力，支持通过 Docker 插件扩展功能。
 
-当前仓库与代码中仍大量使用原名 `web-monitor`，README 中使用的名称为目标项目名 **OpsKernel**，两者在后续会逐步统一。
-
 简体中文 | [English](README_EN.md)
 
 ---
@@ -205,12 +203,10 @@ OpsKernel 是一个面向单机 Linux 的监控与运维内核，用来在**一�
 
 ### 关键环境变量
 
-（名称与默认值可能仍保留原名 `web-monitor`，请以实际代码为准。）
-
 ```bash
 # 基础
 PORT=8000                    # HTTP 端口
-DATA_DIR=/var/lib/web-monitor  # 数据目录（现阶段仍使用旧路径命名）
+DATA_DIR=/var/lib/opskernel   # 数据目录
 JWT_SECRET=<random>          # JWT 签名密钥（生产必须设置）
 
 # 宿主机挂载（容器模式）
@@ -241,7 +237,7 @@ ENABLE_SSH=false \
 ```yaml
 services:
   opskernel:
-    image: opskernel/opskernel:latest   # 镜像名后续将从 web-monitor 统一迁移
+    image: opskernel:latest
     network_mode: host
     pid: host
     cap_add:
@@ -289,18 +285,6 @@ services:
 - `/api/plugins/install`：执行安装钩子（POST，仅管理员，主要用于 privileged 插件）
 - `/api/plugins/uninstall`：执行卸载钩子（POST，仅管理员）
 - `/api/plugins/<plugin_name>/...`：代理到插件容器
-
----
-
-## 命名与迁移状态
-
-- 仓库名与 Go module 目前仍为 `web-monitor`
-- 部分环境变量、目录名（如 DATA_DIR）和 Swagger 标题中仍出现 “Web Monitor” 字样
-- README 使用的名称 **OpsKernel** 代表该项目后续的定位与品牌，未来会逐步在代码与配置中完成统一
-
-在阅读文档或排查问题时，可将 “OpsKernel” 与现有代码中的 “web-monitor” 视为同一项目的不同阶段命名。
-
----
 
 ## 许可证
 

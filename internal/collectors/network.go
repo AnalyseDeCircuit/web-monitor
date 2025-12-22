@@ -3,9 +3,9 @@ package collectors
 import (
 	"context"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/network"
+	"github.com/AnalyseDeCircuit/opskernel/internal/utils"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 	gopsutilnet "github.com/shirou/gopsutil/v3/net"
 )
 

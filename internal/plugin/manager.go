@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/docker"
+	"github.com/AnalyseDeCircuit/opskernel/internal/docker"
 )
 
 // Plugin represents a loaded plugin instance
@@ -61,7 +61,7 @@ type Manager struct {
 const (
 	defaultPluginsDir    = "/app/plugins"
 	defaultInstalledDir  = "/data/plugins/installed"
-	defaultPluginsConfig = "/etc/webmonitor/plugins.json"
+	defaultPluginsConfig = "/etc/opskernel/plugins.json"
 	enabledStatePath     = "/data/plugins-enabled.json"
 	hostPortRangeStart   = 38100
 	hostPortRangeEnd     = 38199
@@ -91,16 +91,13 @@ func (m *Manager) LoadPlugins(pluginDir string) error {
 	// 1. Discover manifests from plugins directory
 	m.discoverManifests()
 
-	// 2. Load legacy config (backward compatibility)
-	m.loadLegacyConfig()
-
-	// 3. Sync container states from Docker
+	// 2. Sync container states from Docker
 	m.syncContainerStates()
 
-	// 4. Apply persisted enabled state
+	// 3. Apply persisted enabled state
 	m.applyEnabledState()
 
-	// 5. Start enabled plugins
+	// 4. Start enabled plugins
 	m.startEnabledPlugins()
 
 	return nil
@@ -190,80 +187,6 @@ func (m *Manager) registerPluginFromManifest(manifest *Manifest) {
 	}
 
 	m.plugins[manifest.Name] = plugin
-}
-
-// loadLegacyConfig loads the old plugins.json format for backward compatibility
-func (m *Manager) loadLegacyConfig() {
-	path := strings.TrimSpace(os.Getenv("WEBMONITOR_PLUGINS_CONFIG"))
-	if path == "" {
-		path = defaultPluginsConfig
-	}
-
-	// Check if path is a directory (Docker creates dir if mount source doesn't exist)
-	if info, err := os.Stat(path); err != nil || info.IsDir() {
-		return
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-
-	var cfg struct {
-		Containers map[string]struct {
-			ContainerName string `json:"containerName"`
-			BaseURL       string `json:"baseUrl"`
-		} `json:"containers"`
-	}
-
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		fmt.Printf("Warning: could not parse legacy config %s: %v\n", path, err)
-		return
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for name, spec := range cfg.Containers {
-		// Skip if already loaded from manifest
-		if _, exists := m.plugins[name]; exists {
-			continue
-		}
-
-		baseURL := normalizeBaseURL(spec.BaseURL)
-		if spec.ContainerName == "" || baseURL == "" {
-			continue
-		}
-
-		// Classify based on name (legacy behavior)
-		adminOnly, risk := classifyLegacyPlugin(name)
-
-		plugin := &Plugin{
-			Name:          name,
-			Version:       "legacy",
-			Type:          PluginTypePrivileged, // Assume legacy plugins are privileged
-			Risk:          risk,
-			AdminOnly:     adminOnly,
-			State:         StateInstalled,
-			Enabled:       false,
-			Running:       false,
-			ContainerName: spec.ContainerName,
-			BaseURL:       baseURL,
-			Mode:          "docker",
-		}
-
-		m.plugins[name] = plugin
-	}
-}
-
-// classifyLegacyPlugin determines plugin classification based on name
-func classifyLegacyPlugin(name string) (adminOnly bool, risk string) {
-	switch name {
-	case "webshell", "filemanager":
-		return true, "high"
-	default:
-		return false, "low"
-	}
 }
 
 // syncContainerStates queries Docker to update running states

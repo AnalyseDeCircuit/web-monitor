@@ -9,21 +9,21 @@ import (
 func GetMetricsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(`# HELP web_monitor_info Web Monitor information
-# TYPE web_monitor_info gauge
-web_monitor_info{version="1.0.0"} 1
+		w.Write([]byte(`# HELP opskernel_info OpsKernel information
+# TYPE opskernel_info gauge
+opskernel_info{version="1.0.0"} 1
 
-# HELP web_monitor_health Web Monitor health status
-# TYPE web_monitor_health gauge
-web_monitor_health 1
+# HELP opskernel_health OpsKernel health status
+# TYPE opskernel_health gauge
+opskernel_health 1
 
-# HELP web_monitor_api_requests_total Total API requests
-# TYPE web_monitor_api_requests_total counter
-web_monitor_api_requests_total 0
+# HELP opskernel_api_requests_total Total API requests
+# TYPE opskernel_api_requests_total counter
+opskernel_api_requests_total 0
 
-# HELP web_monitor_cache_size Cache size
-# TYPE web_monitor_cache_size gauge
-web_monitor_cache_size 0
+# HELP opskernel_cache_size Cache size
+# TYPE opskernel_cache_size gauge
+opskernel_cache_size 0
 `))
 	})
 }

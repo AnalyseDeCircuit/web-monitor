@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
+	"github.com/AnalyseDeCircuit/opskernel/internal/auth"
 	"github.com/gorilla/websocket"
 )
 

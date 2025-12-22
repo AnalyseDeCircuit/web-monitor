@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/alerts"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/alerts"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 var (
@@ -110,7 +110,7 @@ func CheckAlerts(cpuPercent float64, memPercent float64, diskPercent float64) {
 // sendWebhook 发送Webhook告警
 func sendWebhook(url string, message string) {
 	payload := map[string]string{
-		"text": "Web Monitor Alert:\n" + message,
+		"text": "OpsKernel Alert:\n" + message,
 	}
 	jsonPayload, _ := json.Marshal(payload)
 

@@ -9,18 +9,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/cache"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/cron"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/docker"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/monitoring"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/power"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/prometheus"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/system"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/systemd"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/auth"
+	"github.com/AnalyseDeCircuit/opskernel/internal/cache"
+	"github.com/AnalyseDeCircuit/opskernel/internal/cron"
+	"github.com/AnalyseDeCircuit/opskernel/internal/docker"
+	"github.com/AnalyseDeCircuit/opskernel/internal/logs"
+	"github.com/AnalyseDeCircuit/opskernel/internal/monitoring"
+	"github.com/AnalyseDeCircuit/opskernel/internal/network"
+	"github.com/AnalyseDeCircuit/opskernel/internal/power"
+	"github.com/AnalyseDeCircuit/opskernel/internal/prometheus"
+	"github.com/AnalyseDeCircuit/opskernel/internal/system"
+	"github.com/AnalyseDeCircuit/opskernel/internal/systemd"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 // SystemInfoHandler 处理系统信息请求
@@ -484,7 +484,7 @@ func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "healthy",
 		"version": "1.0.0",
-		"message": "Web Monitor is running",
+		"message": "OpsKernel is running",
 	})
 }
 

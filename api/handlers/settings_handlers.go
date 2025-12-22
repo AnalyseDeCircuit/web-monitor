@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/settings"
+	"github.com/AnalyseDeCircuit/opskernel/internal/logs"
+	"github.com/AnalyseDeCircuit/opskernel/internal/settings"
 )
 
 // SystemSettingsHandler 处理系统设置请求

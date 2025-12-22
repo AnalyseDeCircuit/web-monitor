@@ -226,7 +226,7 @@ func (e *HookExecutor) executeGenerateSSHKey(hook InstallHook) (func() error, er
 		"-t", algorithm,
 		"-f", keyPath,
 		"-N", "", // Empty passphrase
-		"-C", fmt.Sprintf("webmonitor-plugin-%s", e.manifest.Name),
+		"-C", fmt.Sprintf("opskernel-plugin-%s", e.manifest.Name),
 	}
 
 	cmd := exec.Command("ssh-keygen", args...)

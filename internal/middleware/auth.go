@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
+	"github.com/AnalyseDeCircuit/opskernel/internal/auth"
 )
 
 // AuthMiddleware 认证中间件

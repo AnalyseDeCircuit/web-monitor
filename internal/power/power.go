@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/config"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 var (

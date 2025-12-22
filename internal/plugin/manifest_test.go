@@ -137,8 +137,8 @@ func TestContainerNameOrDefault(t *testing.T) {
 	m := &Manifest{Name: "mytest"}
 
 	// Default name
-	if n := m.ContainerNameOrDefault(); n != "web-monitor-plugin-mytest" {
-		t.Errorf("Expected web-monitor-plugin-mytest, got %s", n)
+	if n := m.ContainerNameOrDefault(); n != "opskernel-plugin-mytest" {
+		t.Errorf("Expected opskernel-plugin-mytest, got %s", n)
 	}
 
 	// Custom name

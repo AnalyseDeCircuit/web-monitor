@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/auth"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/session"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/auth"
+	"github.com/AnalyseDeCircuit/opskernel/internal/session"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 // ProfileHandler 获取完整的用户 Profile 信息

@@ -11,7 +11,7 @@ const docTemplate = `{
         "title": "{{.Title}}",
         "contact": {
             "name": "API Support",
-            "url": "https://github.com/AnalyseDeCircuit/web-monitor",
+            "url": "https://github.com/AnalyseDeCircuit/opskernel",
             "email": "support@example.com"
         },
         "license": {
@@ -373,7 +373,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_AnalyseDeCircuit_web-monitor_pkg_types.Interface": {
+        "github_com_AnalyseDeCircuit_opskernel_pkg_types.Interface": {
             "type": "object",
             "properties": {
                 "bytes_recv": {
@@ -754,7 +754,7 @@ const docTemplate = `{
                 "interfaces": {
                     "type": "object",
                     "additionalProperties": {
-                        "$ref": "#/definitions/github_com_AnalyseDeCircuit_web-monitor_pkg_types.Interface"
+                        "$ref": "#/definitions/github_com_AnalyseDeCircuit_opskernel_pkg_types.Interface"
                     }
                 },
                 "listening_ports": {
@@ -1040,7 +1040,7 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "localhost:8000",
 	BasePath:         "/",
 	Schemes:          []string{},
-	Title:            "Web Monitor API",
+	Title:            "OpsKernel API",
 	Description:      "轻量级系统监控API服务，提供实时CPU、内存、磁盘、网络、GPU监控，以及Docker和Systemd管理功能\n\n特性:\n- 实时系统监控 (CPU/内存/磁盘/网络/GPU/传感器)\n- WebSocket推送 (动态订阅主题)\n- Docker容器管理\n- Systemd服务管理\n- SSH会话监控\n- Cron任务管理\n- 用户权限管理 (admin/user)\n- JWT认证 (HttpOnly Cookie)\n- Prometheus指标导出",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,

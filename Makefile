@@ -12,7 +12,7 @@ default: help
 help:
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════════════╗"
-	@echo "║              Web Monitor - Management Commands                   ║"
+	@echo "║              OpsKernel - Management Commands                     ║"
 	@echo "╚══════════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "┌─────────────────────────────────────────────────────────────────┐"
@@ -74,17 +74,17 @@ help:
 # ============================================================================
 
 up:
-	docker compose -f docker/docker-compose.yml --env-file .env up -d web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml --env-file .env up -d opskernel docker-socket-proxy
 
 down:
 	docker compose -f docker/docker-compose.yml --env-file .env down
 
 restart:
-	docker compose -f docker/docker-compose.yml --env-file .env stop web-monitor-go docker-socket-proxy || true
-	docker compose -f docker/docker-compose.yml --env-file .env up -d web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml --env-file .env stop opskernel docker-socket-proxy || true
+	docker compose -f docker/docker-compose.yml --env-file .env up -d opskernel docker-socket-proxy
 
 logs:
-	docker compose -f docker/docker-compose.yml logs -f web-monitor-go
+	docker compose -f docker/docker-compose.yml logs -f opskernel
 
 stats:
 	docker compose -f docker/docker-compose.yml stats
@@ -96,14 +96,14 @@ stats:
 up-minimal:
 	ENABLE_DOCKER=false ENABLE_GPU=false ENABLE_CRON=false ENABLE_SSH=false \
 	ENABLE_SYSTEMD=false ENABLE_SENSORS=false ENABLE_POWER=false ENABLE_SYSTEM=false \
-	docker compose -f docker/docker-compose.yml up -d web-monitor-go
+	docker compose -f docker/docker-compose.yml up -d opskernel
 
 up-server:
 	ENABLE_GPU=false ENABLE_POWER=false \
-	docker compose -f docker/docker-compose.yml up -d web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml up -d opskernel docker-socket-proxy
 
 up-no-docker:
-	ENABLE_DOCKER=false docker compose -f docker/docker-compose.yml up -d web-monitor-go
+	ENABLE_DOCKER=false docker compose -f docker/docker-compose.yml up -d opskernel
 
 # ============================================================================
 #  SINGLE PLUGIN OPERATIONS (use P=pluginname)
@@ -177,7 +177,7 @@ plugins-rebuild:
 # ============================================================================
 
 build:
-	docker compose -f docker/docker-compose.yml build web-monitor-go docker-socket-proxy
+	docker compose -f docker/docker-compose.yml build opskernel docker-socket-proxy
 
 build-all:
 	docker compose -f docker/docker-compose.yml build

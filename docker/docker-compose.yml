@@ -1,10 +1,10 @@
 services:
-  web-monitor-go:
+  opskernel:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: web-monitor-go:latest
-    container_name: web-monitor-go
+    image: opskernel:latest
+    container_name: opskernel
     env_file:
       - ../.env
     # privileged: true
@@ -49,20 +49,17 @@ services:
       - ENABLE_DOCKER=${ENABLE_DOCKER:-true}
       - ENABLE_CRON=${ENABLE_CRON:-true}
       - ENABLE_SYSTEMD=${ENABLE_SYSTEMD:-true}
-      # Legacy plugins config (for backward compatibility only)
-      # New plugins are loaded from plugins/*/plugin.json
-      - WEBMONITOR_PLUGINS_CONFIG=/hostfs/etc/webmonitor/plugins.json
     volumes:
       - /:/hostfs:ro
       - /var/run/utmp:/var/run/utmp:ro
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
-      - web-monitor-data:/data
+      - opskernel-data:/data
     restart: unless-stopped
 
   # Optional sidecar: restrict Docker API surface while keeping Docker Management working.
-  # Exposes TCP 2375 on localhost only. Enable by setting DOCKER_HOST=tcp://127.0.0.1:2375 for web-monitor-go.
+  # Exposes TCP 2375 on localhost only. Enable by setting DOCKER_HOST=tcp://127.0.0.1:2375 for opskernel.
   docker-socket-proxy:
     build:
       context: ..
@@ -84,5 +81,5 @@ services:
 
 
 volumes:
-  web-monitor-data:
+  opskernel-data:
     driver: local

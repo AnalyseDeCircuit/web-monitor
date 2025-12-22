@@ -53,13 +53,13 @@ type Manifest struct {
 
 // ContainerConfig defines how to run the plugin container
 type ContainerConfig struct {
-	// Image reference (e.g., "ghcr.io/user/plugin:v1.0.0" or local "web-monitor-plugin-xxx:latest")
+	// Image reference (e.g., "ghcr.io/user/plugin:v1.0.0" or local "opskernel-plugin-xxx:latest")
 	Image string `json:"image"`
 
 	// Internal port the plugin listens on
 	Port int `json:"port"`
 
-	// Optional: explicit container name (default: web-monitor-plugin-{name})
+	// Optional: explicit container name (default: opskernel-plugin-{name})
 	ContainerName string `json:"containerName,omitempty"`
 
 	// Environment variables
@@ -171,7 +171,7 @@ func (m *Manifest) ContainerNameOrDefault() string {
 	if m.Container.ContainerName != "" {
 		return m.Container.ContainerName
 	}
-	return "web-monitor-plugin-" + m.Name
+	return "opskernel-plugin-" + m.Name
 }
 
 // BaseURL returns the plugin's base URL for proxying

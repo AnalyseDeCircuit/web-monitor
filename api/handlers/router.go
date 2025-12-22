@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/assets"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/plugin"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/websocket"
+	"github.com/AnalyseDeCircuit/opskernel/internal/assets"
+	"github.com/AnalyseDeCircuit/opskernel/internal/config"
+	"github.com/AnalyseDeCircuit/opskernel/internal/logs"
+	"github.com/AnalyseDeCircuit/opskernel/internal/plugin"
+	"github.com/AnalyseDeCircuit/opskernel/internal/websocket"
 
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )

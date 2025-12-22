@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/power"
+	"github.com/AnalyseDeCircuit/opskernel/internal/power"
 )
 
 // GUIStatusHandler returns display/session manager state (auth required).

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/config"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/gpu"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
+	"github.com/AnalyseDeCircuit/opskernel/internal/config"
+	"github.com/AnalyseDeCircuit/opskernel/internal/gpu"
+	"github.com/AnalyseDeCircuit/opskernel/internal/utils"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"

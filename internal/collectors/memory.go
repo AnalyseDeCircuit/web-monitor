@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/utils"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 	"github.com/shirou/gopsutil/v3/mem"
 )
 

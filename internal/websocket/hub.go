@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/collectors"
-	"github.com/AnalyseDeCircuit/web-monitor/internal/settings"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/collectors"
+	"github.com/AnalyseDeCircuit/opskernel/internal/settings"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 type netDetailSnapshot struct {

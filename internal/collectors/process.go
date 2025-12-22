@@ -8,15 +8,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/utils"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/utils"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
 // ProcessCollector 采集进程信息
 type ProcessCollector struct {
-	cache       map[int32]*processCacheEntry
-	cacheMu     sync.Mutex
+	cache        map[int32]*processCacheEntry
+	cacheMu      sync.Mutex
 	maxCacheSize int
 }
 
@@ -61,7 +61,6 @@ func (c *ProcessCollector) CleanupCache(seenPids map[int32]bool) {
 
 	log.Printf("Process cache cleanup: removed %d entries, remaining %d", removed, len(c.cache))
 }
-
 
 func (c *ProcessCollector) Collect(ctx context.Context) interface{} {
 	pids, err := process.Pids()

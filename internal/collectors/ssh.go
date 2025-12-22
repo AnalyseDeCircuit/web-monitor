@@ -3,8 +3,8 @@ package collectors
 import (
 	"context"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
-	"github.com/AnalyseDeCircuit/web-monitor/pkg/types"
+	"github.com/AnalyseDeCircuit/opskernel/internal/network"
+	"github.com/AnalyseDeCircuit/opskernel/pkg/types"
 )
 
 // SSHCollector 采集 SSH 连接信息

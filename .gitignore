@@ -1,8 +1,7 @@
 # Binaries
-/web-monitor-go
-web-monitor-go
-/web-monitor
-/web-monitor-test
+/opskernel
+opskernel
+/opskernel-test
 bin/
 build/
 dist/
@@ -12,9 +11,9 @@ out/
 release/
 *.deb
 *.tar.gz
-web-monitor-go-*.tar.gz
-web-monitor-go-docker-image*.tar.gz
-web-monitor-go_*.deb
+opskernel-*.tar.gz
+opskernel-docker-image*.tar.gz
+opskernel_*.deb
 deb_build/
 
 # Logs

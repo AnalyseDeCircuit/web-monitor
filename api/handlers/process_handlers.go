@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/logs"
+	"github.com/AnalyseDeCircuit/opskernel/internal/logs"
 	"github.com/shirou/gopsutil/v3/process"
 )
 

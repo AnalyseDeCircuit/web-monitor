@@ -1,6 +1,6 @@
 basePath: /
 definitions:
-  github_com_AnalyseDeCircuit_web-monitor_pkg_types.Interface:
+  github_com_AnalyseDeCircuit_opskernel_pkg_types.Interface:
     properties:
       bytes_recv:
         type: string
@@ -250,7 +250,7 @@ definitions:
         type: object
       interfaces:
         additionalProperties:
-          $ref: '#/definitions/github_com_AnalyseDeCircuit_web-monitor_pkg_types.Interface'
+          $ref: '#/definitions/github_com_AnalyseDeCircuit_opskernel_pkg_types.Interface'
         type: object
       listening_ports:
         items:
@@ -409,7 +409,7 @@ info:
   contact:
     email: support@example.com
     name: API Support
-    url: https://github.com/AnalyseDeCircuit/web-monitor
+    url: https://github.com/AnalyseDeCircuit/opskernel
   description: |-
     轻量级系统监控API服务，提供实时CPU、内存、磁盘、网络、GPU监控，以及Docker和Systemd管理功能
 
@@ -426,7 +426,7 @@ info:
   license:
     name: CC BY-NC 4.0
     url: https://creativecommons.org/licenses/by-nc/4.0/
-  title: Web Monitor API
+  title: OpsKernel API
   version: "2.0"
 paths:
   /api/docker/containers:

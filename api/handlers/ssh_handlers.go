@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AnalyseDeCircuit/web-monitor/internal/network"
+	"github.com/AnalyseDeCircuit/opskernel/internal/network"
 )
 
 // SSHStatsHandler returns SSH stats. Use ?force=1 to bypass TTL caches.
