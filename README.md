@@ -201,6 +201,33 @@ OpsKernel 是一个面向单机 Linux 的监控与运维内核，用来在**一�
 
 ## 配置与部署概览
 
+### 使用 Makefile 快速启动/停止
+
+在仓库根目录直接使用 `make` 即可便捷启动/停止核心与插件（依赖 docker compose）：
+
+```bash
+# 核心服务（opskernel + docker-socket-proxy）
+make up         # 启动核心
+make down       # 停止并移除核心相关容器
+make restart    # 重启核心
+make logs       # 持续查看核心日志
+
+# 所有插件（需要先构建并创建一次容器）
+make plugins-build   # 构建所有插件镜像
+make plugins-create  # 创建但不启动插件容器（相当于 docker compose up -d --no-start ...）
+make plugins-up      # 启动所有插件容器
+make plugins-down    # 停止所有插件容器
+
+# 单个插件（以 webshell 为例）
+make plugin-build  P=webshell
+make plugin-create P=webshell
+make plugin-up     P=webshell
+make plugin-down   P=webshell
+
+# 一键启动核心 + 所有插件
+make all
+```
+
 ### 关键环境变量
 
 ```bash

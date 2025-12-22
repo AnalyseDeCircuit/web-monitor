@@ -197,6 +197,33 @@ Not suitable for:
 
 ## Configuration & Deployment (Overview)
 
+### Quick Start with Makefile
+
+From the repo root, you can use `make` targets as a thin wrapper around docker compose:
+
+```bash
+# Core services (opskernel + docker-socket-proxy)
+make up         # Start core services
+make down       # Stop and remove core containers
+make restart    # Restart core services
+make logs       # Follow core logs
+
+# All plugins (containers must be created at least once)
+make plugins-build   # Build all plugin images
+make plugins-create  # Create but do not start plugin containers (docker compose up -d --no-start ...)
+make plugins-up      # Start all plugin containers
+make plugins-down    # Stop all plugin containers
+
+# Single plugin (example: webshell)
+make plugin-build  P=webshell
+make plugin-create P=webshell
+make plugin-up     P=webshell
+make plugin-down   P=webshell
+
+# One-shot: core + all plugins
+make all
+```
+
 ### Key Environment Variables
 
 ```bash
