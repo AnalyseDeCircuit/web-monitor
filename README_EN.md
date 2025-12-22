@@ -1,416 +1,303 @@
-# Web Monitor
+# OpsKernel
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version">
-  <img src="https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg" alt="License">
-  <img src="https://img.shields.io/badge/Platform-Linux-FCC624?logo=linux&logoColor=black" alt="Platform">
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white" alt="Docker">
-</p>
+Single-node Linux monitoring kernel. Provides local system observability and limited management capabilities via HTTP APIs, WebSocket streaming and Docker-based plugins.
 
-<p align="center">
-  <strong>🚀 High-Performance Real-Time System Monitoring Dashboard</strong>
-</p>
+The codebase and module paths still use the original name `web-monitor`. In this document we use the target project name **OpsKernel**; both names currently refer to the same project and will be unified over time.
 
-<p align="center">
-  A lightweight system monitoring tool built with Go, supporting both Docker and bare-metal deployments.<br/>
-  Real-time updates via WebSocket for CPU, Memory, GPU, Network, Docker, Systemd, and more.
-</p>
-
-<p align="center">
-  English | <a href="./README.md">简体中文</a>
-</p>
+[简体中文](README.md) | English
 
 ---
 
-## ✨ Features
+## Overview
 
-### 📊 Real-Time Monitoring
-- **CPU**: Usage, per-core load, frequency, temperature history
-- **Memory**: Physical memory, Swap, cache, buffer analysis
-- **Disk**: Partition info, usage, I/O stats, inode status
-- **GPU**: NVIDIA GPU support (via nvml) - VRAM, temp, power, processes
-- **Network**: Interface traffic, connection states, listening ports, socket stats
-- **Processes**: Top processes by CPU/memory, I/O statistics
+OpsKernel is designed for **one Linux host at a time**. It collects system metrics, exposes them via WebSocket and APIs, and—when enabled—allows a small set of administrative operations (Docker, systemd, cron, power, processes).
 
-### 🔧 System Management
-- **Docker**: Start/stop/restart/remove containers, image management
-- **Systemd Services**: List, start/stop/restart/enable/disable services
-- **Cron Jobs**: Create, list, delete cron jobs, view logs
-- **Process Management**: Kill processes (admin only)
+Design goals:
 
-### 🧩 Plugin System
-- **WebShell**: SSH Terminal (24-bit true color, xterm.js)
-- **FileManager**: SFTP file browser
-- **DB Explorer**: Database connection browser
-- **Perf Report**: Performance report generator
-- **Plugin Isolation**: Each plugin runs in its own container
-- **Hot Loading**: Install plugins without restarting core
+- Focus on **single-node** monitoring and control, not clusters or a centralized control plane
+- Core is **shrinkable**: monitoring-only mode is possible by disabling management modules
+- Plugins are **isolated containers** (Docker-based HTTP services), not in-process extensions
+- High-risk capabilities (kill process, shutdown, Docker/systemd/cron operations, privileged plugins) are admin-only and intended for trusted networks (LAN/VPN)
 
-### 🔐 Security Features
-- **JWT Authentication**: Secure token-based authentication
-- **Role-Based Access**: Admin and regular user separation
-- **Rate Limiting**: Brute-force protection for login
-- **Security Headers**: CSP, X-Frame-Options, HSTS, etc.
-- **Token Revocation**: Logout invalidates tokens
+This project intentionally does **not** provide:
 
-### 🌐 Modern Frontend
-- **Real-Time Updates**: WebSocket bidirectional communication
-- **PWA Support**: Installable as desktop/mobile app
-- **Responsive Design**: Works on all screen sizes
-- **Dark Theme**: Easy on the eyes
-- **Chart Visualization**: Real-time charts powered by Chart.js
-
-### ⚡ High-Performance Design
-- **Streaming Data Collection**: Each module runs independently with its own interval
-- **Smart Caching**: TTL-based cache to reduce system load
-- **Canvas Charts**: HiDPI-aware Canvas rendering for better performance
-- **DOM Reuse**: Smart list updates without recreating DOM elements
-- **Render Throttling**: 10 FPS max render rate for WebSocket data
-- **Graceful Shutdown**: Signal handling and smooth exit
-- **Modular Architecture**: Enable/disable features via environment variables
+- "Intelligent operations", auto-remediation, or self-healing
+- AIOps, machine learning, anomaly detection, or predictive features
+- Multi-tenant control plane, agent fleet management, or automatic host discovery
 
 ---
 
-## 🚀 Quick Start
+## Architecture
 
-### Docker Deployment (Recommended)
+High-level components:
 
-We provide a `Makefile` to simplify common operations.
+- **Collectors**: periodic samplers for CPU, memory, disk, network, GPU, processes, SSH, sensors, power, etc.
+- **Streaming Aggregator**: aggregates the latest values from all collectors into a single snapshot structure
+- **HTTP API & WebSocket Hub**: exposes REST endpoints and a WebSocket stream for real-time metrics
+- **Managers**: optional modules providing operational actions (Docker, systemd, cron, power, process control)
+- **Alerts**: rule-based evaluation over metrics and alert history storage
+- **Plugins**: external HTTP services run as Docker containers, managed and proxied by OpsKernel
+
+Core can be trimmed down by turning off modules using `ENABLE_*` environment variables. With all management-related flags disabled, OpsKernel behaves as a read-only monitoring kernel.
+
+---
+
+## Functional Modules
+
+### 1. Data Collection (Collectors)
+
+Each collector runs independently and can be toggled via environment flags:
+
+| Module | Env Flag | Default | Description |
+|--------|----------|---------|-------------|
+| CPU | `ENABLE_CPU` | true | Overall usage, per-core load, frequency, temperature trend (derived from Sensors aggregation) |
+| Memory | `ENABLE_MEMORY` | true | Physical memory, swap, buffers/cached/slab, etc. |
+| Disk | `ENABLE_DISK` | true | Per-partition usage, I/O, inodes |
+| Network | `ENABLE_NETWORK` | true | Interface traffic, connections, listening ports |
+| GPU | `ENABLE_GPU` | true | Detailed NVIDIA metrics via NVML, basic info for other vendors via DRM |
+| Sensors | `ENABLE_SENSORS` | true | Temperatures, fans and other hardware sensors |
+| Power | `ENABLE_POWER` | true | Battery and power profile |
+| SSH | `ENABLE_SSH` | true | SSH session statistics |
+
+If a collector is disabled, related UI sections naturally degrade to empty or hidden.
+
+### 2. Management & Control (Managers)
+
+All management capabilities below are **high-risk** by design. They are admin-only and recommended for LAN/VPN environments, not public Internet exposure:
+
+| Module | Env Flag | Capabilities | Scope |
+|--------|----------|-------------|-------|
+| Docker | `ENABLE_DOCKER` | List/start/stop/restart/remove containers; list/remove images; view logs; prune | Current Docker daemon only |
+| Systemd | `ENABLE_SYSTEMD` | List units; start/stop/restart/reload; enable/disable | Local host systemd |
+| Cron | `ENABLE_CRON` | Manage crontab entries marked as managed by OpsKernel; list/create/update/delete; view logs | Local host cron |
+| Power | `ENABLE_POWER` | Shutdown, reboot, suspend, cancel scheduled shutdown; view uptime and power state | Local host |
+| Process | built-in | List processes; terminate by PID | Local host |
+
+If the corresponding `ENABLE_*` flag is off, the related HTTP routes are not registered and the UI does not expose these controls.
+
+### 3. Alerting
+
+- Static rule-based alert engine
+  - Rules: metric name, comparison operator, threshold, duration, severity (`warning` / `critical`), enabled flag
+  - Supports enabling/disabling rules, restoring built-in presets
+  - Tracks firing and resolved events, stored both in memory and persistence
+- Notification channels
+  - Webhook: JSON payload to arbitrary HTTP endpoints
+  - Dashboard: in-UI listing of active and historical alerts
+  - Other channels (e.g. email) are configuration-driven
+- The engine only **detects and notifies**; it does **not** execute any automated remediation actions.
+
+### 4. Authentication & Sessions
+
+- Local user database (JSON), with built-in `admin` account and two roles: `admin` and `user`
+- Passwords stored via bcrypt
+- JWT-based authentication (HttpOnly cookie or Authorization header)
+- Login rate limiting and optional account lockout
+- Active sessions and login history tracked per user; users can view and revoke their own sessions
+  - Note: revoking a session entry is not the same as revoking an already-issued JWT.
+
+### 5. Frontend & APIs
+
+- Built-in HTML templates and static assets implement a web dashboard
+- WebSocket stream for real-time metrics; REST APIs for snapshots and management actions
+- `/api/metrics` returns Prometheus text output (current implementation is a minimal stub, mainly for connectivity/integration; it is not a full system-metrics exporter)
+
+---
+
+## Plugin System
+
+Design boundaries of the plugin system:
+
+- **Plugins are Docker containers**, typically exposing an HTTP service
+- The core process is responsible only for:
+  - Discovering plugin manifests from a directory
+  - Starting/stopping/uninstalling plugin containers via the local Docker daemon (container auto-creation is not implemented yet; you usually pre-create containers via docker compose)
+  - Reverse-proxying certain URL paths to the plugin container
+  - Tracking plugin runtime state and errors
+- The core process does **not** dynamically load plugin code into its own address space and does not execute third-party scripts.
+
+Examples of built-in plugins (for illustration only; reference implementations are not shipped with the core by default):
+
+- WebShell: SSH terminal over the browser
+- FileManager: SFTP-based file browser
+- DB Explorer: read-oriented database exploration
+- Perf Report: report generation based on monitoring data
+
+Security boundary notes:
+
+- Isolation level is that of Docker containers; there is no specialized sandbox beyond Docker itself
+- Credentials used by plugins (SSH, databases, etc.) are provided by users or configuration and are not auto-managed by the core
+- `privileged` plugins are visible and operable to admins only
+
+The `plugins/` directory is ignored in version control by default, and plugin implementations/images are typically maintained and released separately. This section documents the plugin mechanism and typical plugin types, not a guaranteed built-in plugin set.
+
+Plugin implementations will be released as separate repositories and follow the same license as the core (CC BY-NC 4.0).
+
+---
+
+## Security Model
+
+### Roles & Authorization
+
+- Two roles:
+  - `admin`: full management capabilities (Docker/Systemd/Cron/Power/processes, user management, plugin management, etc.)
+  - `user`: read-only access to monitoring data and alerts
+- Authorization is implemented explicitly in handlers; there is no editable fine-grained RBAC policy.
+
+### Authentication & Protection
+
+- JWT authentication; logout adds the current JWT into an in-memory revoke list (not persisted across restarts)
+- Login rate limiting (per IP and username) and optional lockout on repeated failures
+- Multiple HTTP security headers (CSP, X-Frame-Options, X-Content-Type-Options, etc.)
+
+Note: WebSocket Origin checks are currently permissive by default to avoid breaking reverse-proxy setups; use `WS_ALLOWED_ORIGINS` to enforce an allowlist.
+
+### High-Risk Capabilities (Not for Public Internet)
+
+The following are intended for trusted networks and should normally **not** be exposed directly on the public Internet:
+
+- Docker container and image management
+- Systemd service management
+- Cron job creation/modification/deletion
+- Process termination
+- Power actions (shutdown, reboot, suspend)
+- All `privileged` plugins (e.g. webshell, filemanager, db-explorer)
+
+For Internet-facing deployments, you can disable these modules via `ENABLE_*` flags and run OpsKernel in a monitoring-only profile.
+
+---
+
+## Use Cases
+
+Suitable for:
+
+- Monitoring and day-to-day operations on single servers or small server sets
+- Teams that want a local web console without a central control plane
+- Development/test environments where quick host introspection is useful
+- Scenarios that benefit from a few carefully chosen plugins (WebShell, FileManager, etc.)
+
+Not suitable for:
+
+- Large-scale clusters, data centers, or multi-tenant environments
+- Centralized platform-style management of agents or nodes
+- Environments expecting automatic scaling, self-healing, or runbook automation
+- Long-term metrics storage and advanced analytics (OpsKernel keeps only short-term in-memory history)
+
+---
+
+## Constraints & Limitations
+
+- **Single-node architecture**: no cross-node aggregation or central management
+- **Linux-only**: relies on gopsutil, `/proc`, `/sys`, systemd D-Bus, etc.
+- **Short metrics history**: focuses on current state and short time windows, not historical TSDB
+- **No auto-remediation**: alerts do not invoke automatic actions
+- **GPU support is limited**: NVIDIA gets richer data via NVML; other vendors get basic info via DRM
+- **Plugins are not an in-process SDK**: integration is via HTTP/Docker, not a shared API/runtime
+- **Simple RBAC**: only `admin` and `user`; no tenants, projects, or namespaces
+
+---
+
+## Configuration & Deployment (Overview)
+
+### Key Environment Variables
+
+Note: some defaults still refer to `web-monitor`; names will be aligned over time.
 
 ```bash
-# Clone the repository
-git clone https://github.com/AnalyseDeCircuit/web-monitor.git
-cd web-monitor
+# Core
+PORT=8000                        # HTTP port
+DATA_DIR=/var/lib/web-monitor    # Data directory (legacy name)
+JWT_SECRET=<random>              # JWT signing key (required in production)
 
-# Start service (Full Mode)
-make up
+# Host mounting (container mode)
+HOST_FS=/hostfs
+HOST_PROC=/hostfs/proc
+HOST_SYS=/hostfs/sys
 
-# Start minimal mode (Core metrics only)
-make up-minimal
-
-# View logs
-make logs
+# Docker
+DOCKER_HOST=unix:///var/run/docker.sock
+DOCKER_READ_ONLY=false
 ```
 
-Access `http://localhost:38080` with default credentials:
-- Username: `admin`
-- Password: `admin123`
+### Minimal Profile Example
 
-> ⚠️ **Change the default password immediately after first login!**
-
-### Basic Configuration (.env)
-
-The `.env` file in the root directory controls core security and network settings. Please check it before deployment:
-
-```dotenv
-# REQUIRED! Set a long, random string for JWT signing
-JWT_SECRET=change-me-to-a-long-random-string
-
-# If accessing via a domain or reverse proxy, set allowed WebSocket origins
-# Comma-separated
-WS_ALLOWED_ORIGINS=https://your-domain.com
-
-# Service Port (Internal Docker port, change host port in docker-compose.yml)
-PORT=38080
-```
-
-### Modular Configuration
-
-You can control enabled modules via environment variables. Modify `docker-compose.yml` or specify them at startup:
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `ENABLE_DOCKER` | `true` | Enable Docker management |
-| `ENABLE_GPU` | `true` | Enable NVIDIA GPU monitoring |
-| `ENABLE_SSH` | `true` | Enable SSH session monitoring |
-| `ENABLE_CRON` | `true` | Enable Cron job management |
-| `ENABLE_SYSTEMD` | `true` | Enable Systemd service management |
-| `ENABLE_SENSORS` | `true` | Enable hardware sensors (Temp/Fan) |
-| `ENABLE_POWER` | `true` | Enable power management (Battery/Profile) |
-
-**Example: Disable Docker and GPU only**
-```bash
-ENABLE_DOCKER=false ENABLE_GPU=false make up
-```
-
-### Common Commands
-
-| Command | Description |
-| :--- | :--- |
-| `make up` | Start all services (Background) |
-| `make up-minimal` | Start minimal mode (Core metrics only) |
-| `make up-server` | Start server mode (No GPU/Power) |
-| `make up-no-docker` | Start without Docker management |
-| `make all` | Start core services + ALL plugins |
-| `make down` | Stop and remove containers |
-| `make restart` | Restart services |
-| `make logs` | View real-time logs |
-| `make rebuild` | Rebuild images and restart |
-| `make stats` | Show service resource usage |
-
-### Plugin Commands
-
-| Command | Description |
-| :--- | :--- |
-| `make plugin-build P=webshell` | Build a single plugin |
-| `make plugin-up P=webshell` | Start a single plugin |
-| `make plugin-down P=webshell` | Stop a single plugin |
-| `make plugin-logs P=webshell` | View plugin logs |
-| `make plugins-build` | Build all plugins |
-| `make plugins-up` | Start all plugins |
-| `make plugins-down` | Stop all plugins |
-
-Available plugins: `webshell`, `filemanager`, `db-explorer`, `perf-report`
-
-### Streaming Aggregator Architecture
-
-This project uses a streaming data collection architecture where each collector runs independently without blocking others:
-
-| Collector | Update Interval | Description |
-| :--- | :--- | :--- |
-| CPU, Memory, Network | User-defined (2-60s) | Fast metrics, responds to user selection |
-| Disk, Sensors, GPU | 2s | Medium-speed metrics |
-| Power | 3s | Battery/Power consumption |
-| SSH | 5s | Session monitoring |
-| System Info | 10s | Process list, etc. |
-
-**Benefits**:
-- Fast metrics (CPU/Memory) are not affected by slow metrics (SSH)
-- Each module uses atomic storage, instant merge during WebSocket push
-- No goroutine blocking, stable memory usage
-
-### Bare-Metal Deployment
+Monitoring-only profile with all management modules disabled:
 
 ```bash
-# Build
-go build -mod=vendor -o server ./cmd/server
-
-# Set environment variables
-export PORT=8000
-export DATA_DIR=/var/lib/web-monitor
-
-# Run
-./server
+ENABLE_DOCKER=false \
+ENABLE_SYSTEMD=false \
+ENABLE_CRON=false \
+ENABLE_POWER=false \
+ENABLE_SSH=false \
+./opskernel
 ```
 
----
-
-## 📁 Project Structure
-
-```
-web-monitor/
-├── cmd/
-│   ├── server/          # Main entry point
-│   └── dockerproxy/     # Docker socket proxy
-├── api/handlers/        # HTTP routes and handlers
-├── internal/
-│   ├── auth/            # Authentication & authorization
-│   ├── cache/           # Metrics cache
-│   ├── collectors/      # Data collectors (11 total)
-│   ├── config/          # Configuration management
-│   ├── cron/            # Cron job management
-│   ├── docker/          # Docker API client
-│   ├── middleware/      # HTTP middleware
-│   ├── monitoring/      # Monitoring service & alerts
-│   ├── plugin/          # Plugin manager
-│   ├── systemd/         # Systemd service management
-│   └── websocket/       # WebSocket hub
-├── plugins/                 # Plugin directory
-│   ├── webshell/        # SSH terminal plugin
-│   ├── filemanager/     # File manager plugin
-│   ├── db-explorer/     # Database browser plugin
-│   └── perf-report/     # Performance report plugin
-├── pkg/types/           # Shared type definitions
-├── static/              # Frontend static assets
-├── templates/           # HTML templates
-└── vendor/              # Dependencies (offline build)
-```
-
----
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8000` | HTTP server port |
-| `DATA_DIR` | `/data` | Data storage directory |
-| `JWT_SECRET` | Random | JWT signing key |
-| `WS_ALLOWED_ORIGINS` | `*` | WebSocket allowed origins |
-| `HOST_FS` | `/hostfs` | Host filesystem mount point |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker API endpoint |
-
-### Container Mode vs Bare-Metal Mode
-
-**Container Mode** (auto-detected when `HOST_FS` is set):
-- Access host system via `/hostfs` mount
-- Requires specific Linux capabilities
-
-**Bare-Metal Mode** (`HOST_FS` is empty):
-- Direct access to local `/proc`, `/sys`, etc.
-- No additional permission configuration needed
-
-### Docker Compose Reference
+### Docker Example
 
 ```yaml
 services:
-  web-monitor-go:
-    image: web-monitor-go:latest
-    cap_add:
-      - SYS_PTRACE        # Read process info
-      - DAC_READ_SEARCH   # Read log files
-      - SYS_CHROOT        # Cron management
+  opskernel:
+    image: opskernel/opskernel:latest   # Image name will be migrated from web-monitor
     network_mode: host
     pid: host
+    cap_add:
+      - SYS_PTRACE
+      - DAC_READ_SEARCH
     volumes:
       - /:/hostfs:ro
-      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+    environment:
+      - HOST_FS=/hostfs
+      - JWT_SECRET=${JWT_SECRET}
 ```
 
 ---
 
-## 📡 API Overview
+## API Overview
 
-### Authentication
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/login` | POST | User login |
-| `/api/logout` | POST | User logout |
-| `/api/password` | POST | Change password |
+This section outlines categories only. Treat the router implementation and the built-in Swagger UI as the source of truth.
 
-### Monitoring Data
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/ws/stats` | WebSocket | Real-time monitoring stream |
-| `/api/system/info` | GET | System info snapshot |
-| `/api/info` | GET | Static system info |
+### Public Endpoints
 
-### Management (Authenticated)
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/docker/containers` | GET | List Docker containers |
-| `/api/docker/action` | POST | Container operations (admin) |
-| `/api/systemd/services` | GET | List Systemd services |
-| `/api/systemd/action` | POST | Service operations (admin) |
-| `/api/cron/jobs` | GET | List cron jobs |
-| `/api/users` | GET/POST | User management (admin) |
+- `/api/login`: user login
+- `/api/health`: health check
+- `/api/metrics`: Prometheus metrics export
 
-For detailed API documentation, see [API_DOCUMENTATION.md](./API_DOCUMENTATION.md).
+### Authenticated (All Users)
 
----
+- `/ws/stats`: WebSocket monitoring stream
+- `/api/system/info`: system information snapshot
+- `/api/alerts/history`: alert history
+- `/api/profile/*`: user profile, preferences, login history, active sessions
 
-## 🛡️ Security Recommendations
+### Administrative (Admins Only)
 
-1. **Change Default Password**: Immediately change the admin password after first login
-2. **Set JWT_SECRET**: Always set a strong random key in production
-3. **Restrict Network Access**: Use a reverse proxy (Nginx) with HTTPS
-4. **Docker Socket Proxy**: Use `docker-socket-proxy` to limit Docker API exposure
-5. **Keep Updated**: Follow project updates for security patches
+- `/api/docker/*`: Docker containers and images
+- `/api/systemd/*`: systemd units
+- `/api/cron/*`: cron jobs
+- `/api/power/*`: power status and actions
+- `/api/process/io`: process I/O (lazy-loaded by PID)
+- `/api/process/kill`: terminate process (POST, admin-only)
+- `/api/users/*`: user management
+- `/api/plugins/list`: list plugins (filtered by role)
+- `/api/plugins/action`: enable/disable (POST, admin-only)
+- `/api/plugins/install`: run install hooks (POST, admin-only; mainly for privileged plugins)
+- `/api/plugins/uninstall`: run uninstall hooks (POST, admin-only)
+- `/api/plugins/<plugin_name>/...`: reverse proxy to the plugin container
 
 ---
 
-## 🧩 Plugin System
+## Naming & Migration Status
 
-Web Monitor supports extending functionality through plugins. Plugins run in isolated containers and are accessed via the main program's proxy.
+- Repository name and Go module path are currently `web-monitor`
+- Several environment variables, directory names (e.g. DATA_DIR), and Swagger titles still mention "Web Monitor"
+- This README uses **OpsKernel** as the project name going forward; code and configuration will be gradually updated to match
 
-### Built-in Plugins
-
-| Plugin | Description | Port |
-|--------|-------------|------|
-| **WebShell** | SSH Terminal (24-bit true color, clickable links) | 38101 |
-| **FileManager** | SFTP file browser | 38102 |
-| **DB Explorer** | MySQL/PostgreSQL/SQLite connector | 38104 |
-| **Perf Report** | Performance report generator (Chart.js visualization) | 38105 |
-
-### Plugin Management
-
-```bash
-# Build and start all plugins
-make plugins-build
-make plugins-up
-
-# Or use one-command start (core + plugins)
-make all
-
-# Manage individual plugins
-make plugin-up P=webshell
-make plugin-logs P=webshell
-```
-
-### Plugin Development
-
-See [plugins/DEVELOPMENT.md](./plugins/DEVELOPMENT.md) for the plugin development guide.
+When reading code or troubleshooting, treat "OpsKernel" and the existing "web-monitor" identifiers as different stages of the same project.
 
 ---
 
-## 🔌 GPU Support
+## License
 
-### NVIDIA GPU
-
-Automatically detected and collected via nvml:
-- GPU utilization
-- VRAM usage
-- Temperature/Power
-- GPU processes
-
-Enable NVIDIA Container Toolkit in Docker:
-
-```yaml
-environment:
-  - NVIDIA_VISIBLE_DEVICES=all
-  - NVIDIA_DRIVER_CAPABILITIES=all
-```
-
----
-
-## 📊 Architecture
-
-For detailed architecture diagrams, see [ARCHITECTURE.md](./ARCHITECTURE.md).
-
-```
-┌─────────────┐     ┌──────────────────────────────────────┐
-│   Browser   │────▶│            Go Server                 │
-│  (WebSocket)│◀────│  ┌─────────┐  ┌──────────────────┐  │
-└─────────────┘     │  │ Router  │──│ WebSocket Hub    │  │
-                    │  └────┬────┘  └────────┬─────────┘  │
-                    │       │                │            │
-                    │  ┌────▼────┐  ┌────────▼─────────┐  │
-                    │  │ Cache   │◀─│ Stats Aggregator │  │
-                    │  └─────────┘  └────────┬─────────┘  │
-                    │                        │            │
-                    │         ┌──────────────┼──────────┐ │
-                    │         ▼              ▼          ▼ │
-                    │  ┌──────────┐ ┌──────────┐ ┌──────┐ │
-                    │  │Collectors│ │  Docker  │ │Systemd││
-                    │  │ (x11)    │ │  Client  │ │ D-Bus ││
-                    │  └──────────┘ └──────────┘ └──────┘ │
-                    └──────────────────────────────────────┘
-```
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to submit Issues and Pull Requests.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under [CC BY-NC 4.0](./LICENSE) (Attribution-NonCommercial).
-
----
-
-## 🙏 Acknowledgments
-
-- [gopsutil](https://github.com/shirou/gopsutil) - Cross-platform system info
-- [go-nvml](https://github.com/NVIDIA/go-nvml) - NVIDIA GPU monitoring
-- [gorilla/websocket](https://github.com/gorilla/websocket) - WebSocket implementation
-- [Chart.js](https://www.chartjs.org/) - Frontend charting library
+This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** license. See the LICENSE file in this repository for the full text.
