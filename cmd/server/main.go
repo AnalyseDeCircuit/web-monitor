@@ -143,15 +143,24 @@ func main() {
 		log.Printf("Warning: Failed to initialize assets manager: %v\n", err)
 	}
 
-	// 初始化插件管理器
-	pluginManager := plugin.NewManager()
-	// 尝试加载 plugins 目录下的插件
-	if err := pluginManager.LoadPlugins("plugins"); err != nil {
+	// 初始化插件管理器 (V2 - 模块化架构)
+	pluginConfig := &plugin.Config{
+		PluginsDir: "/app/plugins", // 容器内插件清单目录
+		DataDir:    dataDir,        // 状态持久化目录 (/data)
+		// 默认安全策略：需要确认、允许高风险插件（但需 admin 显式批准）
+		RequireConfirmation: true,
+		AllowCriticalRisk:   true,
+		AllowPrivileged:     true,
+	}
+	pluginManagerV2 := plugin.NewManagerV2(pluginConfig)
+
+	// 加载插件清单并启动已启用的插件
+	if err := pluginManagerV2.LoadPlugins(""); err != nil {
 		log.Printf("Warning: Failed to load plugins: %v\n", err)
 	}
 
-	// 设置HTTP路由
-	router := handlers.SetupRouter(pluginManager)
+	// 设置HTTP路由 (V2 - 支持 /plugins/{name}/ 统一路径)
+	router := handlers.SetupRouterV2(pluginManagerV2)
 
 	// 启动服务器
 	port := os.Getenv("PORT")
@@ -185,8 +194,8 @@ func main() {
 	// 优雅关闭 WebSocket hub
 	websocket.Shutdown()
 
-	// 清理插件进程
-	pluginManager.Cleanup()
+	// 清理插件（V2：停止所有运行中的插件容器）
+	pluginManagerV2.Cleanup()
 
 	// 优雅关闭 HTTP 服务器（等待最多 10 秒）
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -201,31 +201,60 @@ OpsKernel 是一个面向单机 Linux 的监控与运维内核，用来在**一�
 
 ## 配置与部署概览
 
-### 使用 Makefile 快速启动/停止
+### 使用管理脚本快速启动/停止
 
-在仓库根目录直接使用 `make` 即可便捷启动/停止核心与插件（依赖 docker compose）：
+在仓库根目录使用 `./opskernel.sh` 即可便捷管理核心与插件（依赖 docker compose）：
+
+#### 交互模式（TUI 菜单）
+
+直接运行脚本会启动基于 whiptail 的交互式菜单界面：
 
 ```bash
-# 核心服务（opskernel + docker-socket-proxy）
-make up         # 启动核心
-make down       # 停止并移除核心相关容器
-make restart    # 重启核心
-make logs       # 持续查看核心日志
+./opskernel.sh
+```
 
-# 所有插件（需要先构建并创建一次容器）
-make plugins-build   # 构建所有插件镜像
-make plugins-create  # 创建但不启动插件容器（相当于 docker compose up -d --no-start ...）
-make plugins-up      # 启动所有插件容器
-make plugins-down    # 停止所有插件容器
+> 需要安装 whiptail：`sudo apt install whiptail`
+
+交互菜单顶部会显示简要状态（Docker / Core / Plugins），并提供 `View Status` 查看更详细的 running/stopped/是否崩溃等信息。
+
+#### 命令行模式
+
+也可以直接传入命令参数，无需交互：
+
+```bash
+# 状态（推荐先看一眼，避免重复 Start/Stop）
+./opskernel.sh status
+
+# 核心服务
+./opskernel.sh up              # 启动核心
+./opskernel.sh down            # 停止并移除所有容器
+./opskernel.sh restart         # 重启核心
+./opskernel.sh logs            # 持续查看核心日志
+./opskernel.sh stats           # 查看容器资源占用
+
+# 预设模式
+./opskernel.sh up-minimal      # 最小模式（仅 CPU/Mem/Disk/Net）
+./opskernel.sh up-server       # 服务器模式（无 GPU/Power）
+./opskernel.sh up-no-docker    # 禁用 Docker 管理
+
+# 所有插件
+./opskernel.sh plugins-build   # 构建所有插件镜像
+./opskernel.sh plugins-create  # 创建但不启动插件容器
+./opskernel.sh plugins-up      # 启动所有插件
+./opskernel.sh plugins-down    # 停止所有插件
 
 # 单个插件（以 webshell 为例）
-make plugin-build  P=webshell
-make plugin-create P=webshell
-make plugin-up     P=webshell
-make plugin-down   P=webshell
+./opskernel.sh plugin-build webshell
+./opskernel.sh plugin-create webshell
+./opskernel.sh plugin-up webshell
+./opskernel.sh plugin-down webshell
+./opskernel.sh plugin-logs webshell
 
 # 一键启动核心 + 所有插件
-make all
+./opskernel.sh all
+
+# 查看帮助
+./opskernel.sh help
 ```
 
 ### 关键环境变量

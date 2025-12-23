@@ -39,6 +39,52 @@ async function togglePlugin(name, enabled) {
     }
 }
 
+// Enable plugin with explicit confirmation
+async function enablePlugin(name, confirmation = null) {
+    const body = { name };
+    if (confirmation) {
+        body.acknowledgedRisk = confirmation.risk;
+        body.acknowledgedPermissions = confirmation.permissions || [];
+        body.acknowledgedDockerParams = confirmation.dockerParams || [];
+        body.explicitApproval = true;
+    }
+    
+    const response = await fetch('/api/plugins/enable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+        const msg = await readErrorMessage(response);
+        throw new Error(msg);
+    }
+    return await response.json();
+}
+
+// Disable plugin
+async function disablePlugin(name) {
+    const response = await fetch('/api/plugins/disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+    if (!response.ok) {
+        const msg = await readErrorMessage(response);
+        throw new Error(msg);
+    }
+    return await response.json();
+}
+
+// Get plugin security summary (for confirmation dialog)
+async function getPluginSecuritySummary(name) {
+    const response = await fetch(`/api/plugins/security?name=${encodeURIComponent(name)}`);
+    if (!response.ok) {
+        const msg = await readErrorMessage(response);
+        throw new Error(msg);
+    }
+    return await response.json();
+}
+
 async function installPlugin(name) {
     const response = await fetch('/api/plugins/install', {
         method: 'POST',

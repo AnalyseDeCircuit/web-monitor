@@ -163,7 +163,8 @@ function switchPage(pageId) {
             // Determine theme from data-theme attribute (supports dark/light/warm)
             const theme = document.documentElement.getAttribute('data-theme') || 'dark';
             
-            iframe.src = `/api/plugins/${pluginName}/?theme=${theme}`;
+            // Use new unified path /plugins/{name}/
+            iframe.src = `/plugins/${pluginName}/?theme=${theme}`;
             pluginContainer.appendChild(iframe);
         }
     } else if (pageId === 'plugins') {
@@ -441,76 +442,75 @@ async function handlePluginToggle(name, enabled) {
     }
 }
 
+// In V2, "install" is a no-op (containers are created on enable).
+// This function now just shows plugin info and confirms enabling.
 async function handlePluginInstall(name) {
     try {
-        // Check if already installed
         const plugins = await loadPlugins();
         const plugin = plugins.find(p => p.name === name);
-        const installedStates = ['installed', 'enabled', 'running', 'stopped'];
-        if (plugin && installedStates.includes(plugin.state)) {
-            appInfo(`Plugin ${name} is already installed. Install hooks have been executed.`);
+        
+        // If already enabled/running, just inform
+        if (plugin && (plugin.enabled || plugin.running)) {
+            appInfo(`Plugin ${name} is already enabled.`);
             return;
         }
         
-        // First, get the manifest to show what will happen
-        const manifest = await getPluginManifest(name);
+        // Get security summary for confirmation
+        const summary = await getPluginSecuritySummary(name);
         
         // Build confirmation message
         let message = `<div style="text-align: left; max-width: 500px;">`;
-        message += `<p><strong>Plugin:</strong> ${manifest.name} v${manifest.version}</p>`;
-        message += `<p><strong>Type:</strong> <span style="color: ${manifest.type === 'privileged' ? '#ff6b7a' : '#2ed573'};">${manifest.type}</span></p>`;
+        message += `<p><strong>Plugin:</strong> ${name}</p>`;
+        message += `<p><strong>Risk Level:</strong> <span style="color: ${summary.risk === 'high' || summary.risk === 'critical' ? '#ff6b7a' : '#2ed573'};">${summary.risk}</span></p>`;
         
-        if (manifest.permissions && manifest.permissions.length > 0) {
+        if (summary.permissions && summary.permissions.length > 0) {
             message += `<p><strong>Permissions:</strong></p><ul style="margin: 8px 0; padding-left: 20px;">`;
-            manifest.permissions.forEach(perm => {
+            summary.permissions.forEach(perm => {
                 message += `<li style="color: var(--text-dim); margin: 4px 0;">${perm}</li>`;
             });
             message += `</ul>`;
         }
         
-        if (manifest.install && manifest.install.hooks && manifest.install.hooks.length > 0) {
-            message += `<p><strong>Install hooks to execute:</strong></p>`;
-            message += `<div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; margin: 8px 0; font-size: 0.85rem;">`;
-            manifest.install.hooks.forEach((hook, i) => {
-                const hookDesc = hook.description || `${hook.type}`;
-                let details = '';
-                if (hook.user) details += `user: ${hook.user}`;
-                if (hook.path) details += `${details ? ', ' : ''}path: ${hook.path}`;
-                if (hook.keyPath) details += `${details ? ', ' : ''}key: ${hook.keyPath}`;
-                
-                message += `<div style="margin: 6px 0; padding: 6px; background: rgba(255,255,255,0.03); border-radius: 4px;">`;
-                message += `<div style="color: var(--accent-cpu);"><i class="fas fa-chevron-right" style="margin-right: 6px;"></i>${hookDesc}</div>`;
-                if (details) message += `<div style="color: var(--text-dim); font-size: 0.8rem; margin-top: 4px; padding-left: 18px;">${details}</div>`;
-                message += `</div>`;
+        if (summary.warnings && summary.warnings.length > 0) {
+            message += `<p><strong>Security Warnings:</strong></p>`;
+            message += `<div style="background: rgba(255,71,87,0.1); padding: 12px; border-radius: 6px; margin: 8px 0;">`;
+            summary.warnings.forEach(w => {
+                message += `<div style="color: #ff6b7a; margin: 4px 0;"><i class="fas fa-exclamation-triangle" style="margin-right: 6px;"></i>${w}</div>`;
             });
             message += `</div>`;
         }
         
-        if (manifest.install && manifest.install.requiresApproval) {
-            message += `<div style="margin-top: 12px; padding: 10px; background: rgba(255,71,87,0.1); border-radius: 6px; border-left: 3px solid #ff4757;">`;
-            message += `<i class="fas fa-exclamation-triangle" style="color: #ff4757; margin-right: 6px;"></i>`;
-            message += `<span style="color: #ff6b7a;">This plugin requires host modifications.</span>`;
+        if (summary.dockerParams && summary.dockerParams.length > 0) {
+            message += `<p><strong>Container Config:</strong></p>`;
+            message += `<div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; margin: 8px 0; font-size: 0.85rem;">`;
+            summary.dockerParams.forEach(p => {
+                message += `<div style="color: var(--text-dim); margin: 2px 0;">${p}</div>`;
+            });
             message += `</div>`;
         }
         
+        message += `<p style="margin-top: 16px; color: var(--text-dim); font-size: 0.85rem;">Enabling will create and start the plugin container.</p>`;
         message += `</div>`;
         
-        const confirmed = await appConfirm('Run Install Hooks?', message);
+        const confirmed = await appConfirm('Enable Plugin?', message);
         if (!confirmed) return;
         
-        // Execute install
-        const result = await installPlugin(name);
+        // Enable with full confirmation
+        const result = await enablePlugin(name, {
+            risk: summary.risk,
+            permissions: summary.permissions || [],
+            dockerParams: summary.dockerParams || []
+        });
         
         if (result.success) {
-            appSuccess(result.message || `Plugin ${name} installed successfully`);
+            appSuccess(result.message || `Plugin ${name} enabled successfully`);
+        } else if (result.requiresConfirmation) {
+            appError('Additional confirmation required');
         } else {
-            appError(result.message || 'Installation failed');
-            if (result.errors && result.errors.length > 0) {
-                console.error('Install errors:', result.errors);
-            }
+            appError(result.message || 'Failed to enable plugin');
         }
     } catch (e) {
-        appError('Failed to install plugin: ' + e.message);
+        appError('Failed to enable plugin: ' + e.message);
     } finally {
         await loadPluginsPage();
         await initPlugins();

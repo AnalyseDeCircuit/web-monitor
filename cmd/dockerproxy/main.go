@@ -32,9 +32,24 @@ var (
 	reVersion        = regexp.MustCompile(`^/version$`)
 	reContainerLogs  = regexp.MustCompile(`^/containers/([^/]+)/logs$`)
 
+	// Container/Image inspection (read-only details)
+	reContainerInspect = regexp.MustCompile(`^/containers/([^/]+)/json$`)
+	reImageInspect     = regexp.MustCompile(`^/images/([^/]+)/json$`)
+
+	// Container lifecycle actions
 	reContainerAction = regexp.MustCompile(`^/containers/([^/]+)/(start|stop|restart)$`)
+	reContainerCreate = regexp.MustCompile(`^/containers/create$`)
 	reContainerRemove = regexp.MustCompile(`^/containers/([^/]+)$`)
-	reImageRemove     = regexp.MustCompile(`^/images/([^/]+)$`)
+
+	// Image operations
+	reImageCreate = regexp.MustCompile(`^/images/create$`)
+	reImageRemove = regexp.MustCompile(`^/images/([^/]+)$`)
+
+	// Network operations
+	reNetworkConnect    = regexp.MustCompile(`^/networks/([^/]+)/connect$`)
+	reNetworkDisconnect = regexp.MustCompile(`^/networks/([^/]+)/disconnect$`)
+
+	// Cleanup operations
 	reContainersPrune = regexp.MustCompile(`^/containers/prune$`)
 	reImagesPrune     = regexp.MustCompile(`^/images/prune$`)
 	reNetworksPrune   = regexp.MustCompile(`^/networks/prune$`)
@@ -67,6 +82,10 @@ func allowed(method, path string) bool {
 			return true
 		case reContainerLogs.MatchString(path):
 			return true
+		case reContainerInspect.MatchString(path):
+			return true
+		case reImageInspect.MatchString(path):
+			return true
 		default:
 			return false
 		}
@@ -76,6 +95,14 @@ func allowed(method, path string) bool {
 	if method == http.MethodPost {
 		switch {
 		case reContainerAction.MatchString(path):
+			return true
+		case reContainerCreate.MatchString(path):
+			return true
+		case reImageCreate.MatchString(path):
+			return true
+		case reNetworkConnect.MatchString(path):
+			return true
+		case reNetworkDisconnect.MatchString(path):
 			return true
 		case reContainersPrune.MatchString(path):
 			return true

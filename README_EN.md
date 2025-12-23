@@ -197,31 +197,55 @@ Not suitable for:
 
 ## Configuration & Deployment (Overview)
 
-### Quick Start with Makefile
+### Quick Start with Management Script
 
-From the repo root, you can use `make` targets as a thin wrapper around docker compose:
+From the repo root, use `./opskernel.sh` as a thin wrapper around docker compose.
+
+#### Interactive mode (TUI)
 
 ```bash
-# Core services (opskernel + docker-socket-proxy)
-make up         # Start core services
-make down       # Stop and remove core containers
-make restart    # Restart core services
-make logs       # Follow core logs
+./opskernel.sh
+```
 
-# All plugins (containers must be created at least once)
-make plugins-build   # Build all plugin images
-make plugins-create  # Create but do not start plugin containers (docker compose up -d --no-start ...)
-make plugins-up      # Start all plugin containers
-make plugins-down    # Stop all plugin containers
+Requires whiptail:
+
+```bash
+sudo apt install whiptail
+```
+
+The main menu shows a compact status line (Docker / Core / Plugins). Use `View Status` for a more detailed breakdown (running/stopped/not created, crash exit code, etc.).
+
+#### CLI mode (non-interactive)
+
+```bash
+# Status (recommended before Start/Stop)
+./opskernel.sh status
+
+# Core services (opskernel + docker-socket-proxy)
+./opskernel.sh up
+./opskernel.sh down
+./opskernel.sh restart
+./opskernel.sh logs
+./opskernel.sh stats
+
+# All plugins
+./opskernel.sh plugins-build
+./opskernel.sh plugins-create
+./opskernel.sh plugins-up
+./opskernel.sh plugins-down
 
 # Single plugin (example: webshell)
-make plugin-build  P=webshell
-make plugin-create P=webshell
-make plugin-up     P=webshell
-make plugin-down   P=webshell
+./opskernel.sh plugin-build webshell
+./opskernel.sh plugin-create webshell
+./opskernel.sh plugin-up webshell
+./opskernel.sh plugin-down webshell
+./opskernel.sh plugin-logs webshell
 
 # One-shot: core + all plugins
-make all
+./opskernel.sh all
+
+# Help
+./opskernel.sh help
 ```
 
 ### Key Environment Variables
