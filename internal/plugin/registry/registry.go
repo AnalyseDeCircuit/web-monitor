@@ -75,7 +75,12 @@ func (r *Registry) Discover() error {
 		r.manifests[manifest.Name] = manifest
 		r.sources[manifest.Name] = source
 
-		fmt.Printf("  + Registered plugin: %s (v%s, risk=%s)\n", manifest.Name, manifest.Version, manifest.Risk)
+		// Log with schema version
+		schemaVersion := "v1"
+		if manifest.ManifestVersion == "2" {
+			schemaVersion = "v2"
+		}
+		fmt.Printf("  + Registered plugin: %s (v%s, risk=%s, schema=%s)\n", manifest.Name, manifest.Version, manifest.Risk, schemaVersion)
 	}
 
 	// Print deprecation warnings

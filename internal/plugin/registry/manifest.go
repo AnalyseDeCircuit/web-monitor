@@ -10,8 +10,11 @@ import (
 	"strings"
 )
 
-// ManifestVersion is the current manifest schema version.
-const ManifestVersion = "1"
+// Manifest version constants.
+const (
+	ManifestVersion   = "1"
+	ManifestVersionV2 = "2"
+)
 
 // RiskLevel defines the risk classification of a plugin.
 type RiskLevel string
@@ -92,6 +95,7 @@ type SecurityConfig struct {
 type DockerConfig struct {
 	Image         string            `json:"image"`                   // Required
 	Port          int               `json:"port"`                    // Internal port plugin listens on
+	Protocol      string            `json:"protocol,omitempty"`      // "http" or "https" (default: "http")
 	ContainerName string            `json:"containerName,omitempty"` // Optional override (default: opskernel-plugin-{name})
 	Env           map[string]string `json:"env,omitempty"`
 	Volumes       []VolumeMount     `json:"volumes,omitempty"`
@@ -99,6 +103,7 @@ type DockerConfig struct {
 	Network       string            `json:"network,omitempty"` // "bridge", "host", "none" or custom
 	Resources     *ResourceLimits   `json:"resources,omitempty"`
 	Security      *SecurityConfig   `json:"security,omitempty"`
+	ShmSize       string            `json:"shmSize,omitempty"` // Shared memory size, e.g. "512m"
 	ExtraHosts    []string          `json:"extraHosts,omitempty"`
 	WorkingDir    string            `json:"workingDir,omitempty"`
 	Entrypoint    []string          `json:"entrypoint,omitempty"`
@@ -151,9 +156,9 @@ var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*[a-z0-9]$`)
 
 // Validate checks if the manifest is structurally valid.
 func (m *Manifest) Validate() error {
-	// Schema version
-	if m.ManifestVersion != "" && m.ManifestVersion != ManifestVersion {
-		return fmt.Errorf("unsupported manifest version: %s (expected %s)", m.ManifestVersion, ManifestVersion)
+	// Schema version - support both v1 and v2
+	if m.ManifestVersion != "" && m.ManifestVersion != ManifestVersion && m.ManifestVersion != ManifestVersionV2 {
+		return fmt.Errorf("unsupported manifest version: %s (expected %s or %s)", m.ManifestVersion, ManifestVersion, ManifestVersionV2)
 	}
 
 	// Name
@@ -486,15 +491,39 @@ func loadLegacyPluginJSON(path string) (*Manifest, error) {
 }
 
 // LoadManifestWithMigration attempts to load manifest.json, falling back to
-// plugin.json with a deprecation warning.
+// plugin.json with a deprecation warning. Supports both v1 and v2 schemas.
 func LoadManifestWithMigration(pluginDir string) (*Manifest, string, error) {
 	manifestPath := filepath.Join(pluginDir, "manifest.json")
-	if _, err := os.Stat(manifestPath); err == nil {
-		manifest, err := LoadManifest(manifestPath)
-		if err != nil {
-			return nil, manifestPath, err
+	if data, err := os.ReadFile(manifestPath); err == nil {
+		// Check manifest version
+		var versionCheck struct {
+			ManifestVersion string `json:"manifestVersion"`
 		}
-		return manifest, manifestPath, nil
+		if err := json.Unmarshal(data, &versionCheck); err != nil {
+			return nil, manifestPath, fmt.Errorf("invalid JSON: %w", err)
+		}
+
+		switch versionCheck.ManifestVersion {
+		case ManifestVersionV2:
+			// Parse as v2 and convert to internal format
+			v2, err := ParseManifestV2(data)
+			if err != nil {
+				return nil, manifestPath, fmt.Errorf("invalid v2 manifest: %w", err)
+			}
+			manifest := ConvertV2ToV1(v2)
+			return manifest, manifestPath, nil
+
+		case ManifestVersion, "":
+			// Parse as v1 (existing logic)
+			manifest, err := LoadManifest(manifestPath)
+			if err != nil {
+				return nil, manifestPath, err
+			}
+			return manifest, manifestPath, nil
+
+		default:
+			return nil, manifestPath, fmt.Errorf("unsupported manifest version: %s", versionCheck.ManifestVersion)
+		}
 	}
 
 	// Fallback to plugin.json (deprecated).

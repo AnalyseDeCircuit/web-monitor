@@ -183,6 +183,25 @@ func (m *ManagerV2) LoadPlugins(pluginDir string) error {
 	return nil
 }
 
+// RefreshRegistry implements passive reload: re-scans the plugins directory
+// and updates the registry. This should be called before ListPlugins when
+// the caller wants to see newly added/modified plugins.
+func (m *ManagerV2) RefreshRegistry() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Re-create registry and discover
+	m.registry = registry.NewRegistry(m.pluginsDir)
+	if err := m.registry.Discover(); err != nil {
+		return fmt.Errorf("failed to refresh plugin registry: %w", err)
+	}
+
+	// Update gateway with new registry
+	m.gateway = gateway.NewGateway(m.registry, m.runtime, m.store)
+
+	return nil
+}
+
 // startEnabledPlugins starts all plugins that are enabled
 func (m *ManagerV2) startEnabledPlugins(ctx context.Context) {
 	enabled := m.store.GetEnabledPlugins()
@@ -313,7 +332,17 @@ func (m *ManagerV2) buildPluginInfo(manifest *registry.Manifest) *PluginInfo {
 	}
 
 	if state.Enabled {
-		info.ProxyURL = fmt.Sprintf("/plugins/%s/", manifest.Name)
+		base := fmt.Sprintf("/plugins/%s", manifest.Name)
+		if manifest.UI != nil && manifest.UI.Path != "" {
+			// Handle path that might start with /
+			path := manifest.UI.Path
+			if !strings.HasPrefix(path, "/") {
+				path = "/" + path
+			}
+			info.ProxyURL = base + path
+		} else {
+			info.ProxyURL = base + "/"
+		}
 	}
 
 	// Check for deprecation warning

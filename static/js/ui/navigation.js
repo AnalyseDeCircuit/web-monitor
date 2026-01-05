@@ -163,9 +163,28 @@ function switchPage(pageId) {
             // Determine theme from data-theme attribute (supports dark/light/warm)
             const theme = document.documentElement.getAttribute('data-theme') || 'dark';
             
-            // Use new unified path /plugins/{name}/
-            iframe.src = `/plugins/${pluginName}/?theme=${theme}`;
-            pluginContainer.appendChild(iframe);
+            // Fetch plugin info to get correct entry URL (proxyUrl)
+            // We use a self-invoking async function to handle the fetch
+            (async () => {
+                let src = `/plugins/${pluginName}/`;
+                try {
+                    // Try to find plugin info in cached list or fetch it
+                    // Assuming loadPlugins is available globally
+                    if (typeof loadPlugins === 'function') {
+                        const plugins = await loadPlugins();
+                        const plugin = plugins.find(p => p.name === pluginName);
+                        if (plugin && plugin.proxyUrl) {
+                            src = plugin.proxyUrl;
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Failed to resolve plugin URL, using default", e);
+                }
+                
+                const separator = src.includes('?') ? '&' : '?';
+                iframe.src = `${src}${separator}theme=${theme}`;
+                pluginContainer.appendChild(iframe);
+            })();
         }
     } else if (pageId === 'plugins') {
         document.getElementById('page-title').innerText = 'Plugins';
@@ -311,7 +330,7 @@ function renderPluginManager(plugins) {
                     <i class="fas fa-plug" style="margin-right: 8px; color: var(--accent-cpu);"></i>
                     ${isAdmin ? 'Plugin Management' : 'Installed Plugins'}
                 </div>
-                ${isAdmin ? '<button onclick="loadPluginsPage()" style="padding: 6px 12px; background: rgba(255,255,255,0.1); border: none; border-radius: 4px; color: var(--text-main); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>' : ''}
+                ${isAdmin ? '<button onclick="handleRefreshPlugins()" title="Refresh plugins (rescan directory)" style="padding: 6px 12px; background: rgba(255,255,255,0.1); border: none; border-radius: 4px; color: var(--text-main); cursor: pointer;"><i class="fas fa-sync-alt"></i></button>' : ''}
             </div>
             ${isAdmin ? `
             <div style="display: flex; gap: 20px; margin-bottom: 20px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; font-size: 0.85rem;">
@@ -429,6 +448,20 @@ function renderPluginManager(plugins) {
     </div>
     `;
     container.innerHTML = html;
+}
+
+// Handle refresh button - rescan plugins directory and reload list
+async function handleRefreshPlugins() {
+    try {
+        // Trigger backend rescan (passive refresh)
+        await refreshPluginRegistry();
+    } catch (e) {
+        // Ignore refresh errors, still reload the page
+        console.warn('Registry refresh warning:', e);
+    }
+    // Reload plugin list and nav
+    await loadPluginsPage();
+    await initPlugins();
 }
 
 async function handlePluginToggle(name, enabled) {

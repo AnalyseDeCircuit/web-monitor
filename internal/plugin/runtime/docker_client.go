@@ -793,6 +793,11 @@ func buildDockerCreateRequest(config *ContainerCreateConfig) map[string]interfac
 		}
 	}
 
+	// ShmSize (shared memory)
+	if config.ShmSize > 0 {
+		hostConfig["ShmSize"] = config.ShmSize
+	}
+
 	// Security
 	if config.Security != nil {
 		if config.Security.Privileged {

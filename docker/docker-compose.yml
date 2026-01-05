@@ -7,6 +7,9 @@ services:
     container_name: opskernel
     env_file:
       - ../.env
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
     # privileged: true
     cap_add:
       - SYS_PTRACE        # 读取 /proc 进程信息
@@ -69,6 +72,12 @@ services:
     mem_limit: 16m
     ports:
       - "127.0.0.1:2375:2375"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2375/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 2s
     environment:
       - DOCKER_SOCK=/var/run/docker.sock
       # Encourage a lower steady-state RSS for this tiny proxy.

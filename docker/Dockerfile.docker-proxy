@@ -7,7 +7,7 @@ COPY . .
 ENV CGO_ENABLED=0 GO111MODULE=on GOOS=linux GOARCH=amd64
 RUN go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/docker-proxy ./cmd/dockerproxy
 
-FROM scratch
+FROM alpine:latest
 COPY --from=builder /out/docker-proxy /docker-proxy
 EXPOSE 2375
 ENTRYPOINT ["/docker-proxy"]

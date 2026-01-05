@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -37,6 +38,7 @@ type PluginInstance struct {
 	HostPort      int
 	InternalPort  int
 	BaseURL       string
+	Protocol      string // "http" or "https"
 	Proxy         *httputil.ReverseProxy
 	Error         string
 	StartedAt     *time.Time
@@ -86,6 +88,7 @@ type ContainerCreateConfig struct {
 	Network    string
 	Resources  *ResourceConfig
 	Security   *SecurityOptions
+	ShmSize    int64 // Shared memory size in bytes
 	ExtraHosts []string
 	WorkingDir string
 	Entrypoint []string
@@ -162,6 +165,7 @@ const (
 	LabelPluginName  = "opskernel.plugin.name"
 	LabelPluginVer   = "opskernel.plugin.version"
 	LabelManifestVer = "opskernel.manifest.version"
+	LabelProtocol    = "opskernel.plugin.protocol"
 )
 
 // NewRuntime creates a new plugin runtime manager
@@ -217,6 +221,13 @@ func (r *Runtime) SyncState(ctx context.Context) error {
 			State:         state,
 		}
 
+		// Get protocol from label (default to http)
+		protocol := c.Labels[LabelProtocol]
+		if protocol == "" {
+			protocol = "http"
+		}
+		instance.Protocol = protocol
+
 		// Extract port mapping
 		for containerPort, hostPort := range info.Ports {
 			instance.InternalPort = containerPort
@@ -225,7 +236,7 @@ func (r *Runtime) SyncState(ctx context.Context) error {
 		}
 
 		if instance.HostPort > 0 {
-			instance.BaseURL = fmt.Sprintf("http://127.0.0.1:%d", instance.HostPort)
+			instance.BaseURL = fmt.Sprintf("%s://127.0.0.1:%d", protocol, instance.HostPort)
 			r.portAlloc[instance.HostPort] = pluginName
 		}
 
@@ -308,6 +319,12 @@ func (r *Runtime) syncExistingInstance(manifest *registry.Manifest, info *Contai
 		r.portMu.Unlock()
 	}
 
+	// Determine protocol (default to http)
+	protocol := manifest.Docker.Protocol
+	if protocol == "" {
+		protocol = "http"
+	}
+
 	now := time.Now()
 	instance := &PluginInstance{
 		Name:          manifest.Name,
@@ -316,11 +333,12 @@ func (r *Runtime) syncExistingInstance(manifest *registry.Manifest, info *Contai
 		State:         info.State,
 		HostPort:      hostPort,
 		InternalPort:  manifest.Docker.Port,
+		Protocol:      protocol,
 		StartedAt:     &now,
 	}
 
 	if hostPort > 0 {
-		instance.BaseURL = fmt.Sprintf("http://127.0.0.1:%d", hostPort)
+		instance.BaseURL = fmt.Sprintf("%s://127.0.0.1:%d", protocol, hostPort)
 		r.setupProxy(instance)
 	}
 
@@ -386,6 +404,12 @@ func (r *Runtime) createNewContainer(ctx context.Context, manifest *registry.Man
 		return nil, fmt.Errorf("failed to start container: %w", err)
 	}
 
+	// Determine protocol (default to http)
+	protocol := manifest.Docker.Protocol
+	if protocol == "" {
+		protocol = "http"
+	}
+
 	now := time.Now()
 	instance := &PluginInstance{
 		Name:          manifest.Name,
@@ -394,7 +418,8 @@ func (r *Runtime) createNewContainer(ctx context.Context, manifest *registry.Man
 		State:         StateRunning,
 		HostPort:      hostPort,
 		InternalPort:  manifest.Docker.Port,
-		BaseURL:       fmt.Sprintf("http://127.0.0.1:%d", hostPort),
+		Protocol:      protocol,
+		BaseURL:       fmt.Sprintf("%s://127.0.0.1:%d", protocol, hostPort),
 		StartedAt:     &now,
 	}
 
@@ -538,6 +563,12 @@ func (r *Runtime) ListInstances() []*PluginInstance {
 
 // buildCreateConfig converts a manifest to container create config
 func (r *Runtime) buildCreateConfig(manifest *registry.Manifest, containerName string, hostPort int) *ContainerCreateConfig {
+	// Determine protocol (default to http)
+	protocol := manifest.Docker.Protocol
+	if protocol == "" {
+		protocol = "http"
+	}
+
 	config := &ContainerCreateConfig{
 		Name:     containerName,
 		Image:    manifest.Docker.Image,
@@ -549,6 +580,7 @@ func (r *Runtime) buildCreateConfig(manifest *registry.Manifest, containerName s
 			LabelPluginName:  manifest.Name,
 			LabelPluginVer:   manifest.Version,
 			LabelManifestVer: manifest.ManifestVersion,
+			LabelProtocol:    protocol,
 		},
 		Restart: "unless-stopped",
 	}
@@ -605,6 +637,11 @@ func (r *Runtime) buildCreateConfig(manifest *registry.Manifest, containerName s
 		}
 	}
 
+	// ShmSize
+	if manifest.Docker.ShmSize != "" {
+		config.ShmSize = parseMemory(manifest.Docker.ShmSize)
+	}
+
 	// Other settings
 	config.ExtraHosts = manifest.Docker.ExtraHosts
 	config.WorkingDir = manifest.Docker.WorkingDir
@@ -629,6 +666,15 @@ func (r *Runtime) setupProxy(instance *PluginInstance) {
 	}
 
 	instance.Proxy = httputil.NewSingleHostReverseProxy(target)
+
+	// Configure transport for HTTPS with self-signed certs
+	if instance.Protocol == "https" {
+		instance.Proxy.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Allow self-signed certificates
+			},
+		}
+	}
 
 	// Customize error handler
 	instance.Proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {

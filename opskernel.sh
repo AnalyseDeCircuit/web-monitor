@@ -716,6 +716,11 @@ COMMAND LINE USAGE
   ./opskernel.sh plugin-up NAME   Start a plugin
   ./opskernel.sh plugins-up       Start all plugins
   ./opskernel.sh all              Quick start everything
+
+PLUGIN DEVELOPMENT
+─────────────────────────────────────────────────────────────────
+  ./opskernel.sh plugin validate NAME   Validate plugin manifest
+  ./opskernel.sh plugin init NAME       Init new plugin from template
 " 30 75
 }
 
@@ -893,6 +898,10 @@ Commands:
     plugins-rm              Remove all containers
     plugins-rebuild         Rebuild all plugins
   
+  Plugin Development:
+    plugin validate <name>  Validate plugin manifest (v1 or v2)
+    plugin init <name>      Initialize new plugin from template
+  
   Build:
     build         Build core images
     build-all     Build all images
@@ -906,6 +915,9 @@ Commands:
 Available plugins: webshell, filemanager, db-explorer, perf-report
 EOF
             ;;
+        plugin)
+            plugin_dev_cmd "$arg" "$3"
+            ;;
         *)
             echo -e "${RED}Unknown command: $cmd${NC}"
             echo "Run '$0 help' for usage information"
@@ -914,6 +926,101 @@ EOF
     esac
 }
 
+# ============================================================================
+# Plugin Development Commands
+# ============================================================================
+
+PLUGINCTL_BIN="./bin/pluginctl"
+
+ensure_pluginctl() {
+    if [[ ! -x "$PLUGINCTL_BIN" ]]; then
+        echo -e "${YELLOW}Building pluginctl...${NC}"
+        mkdir -p bin
+        go build -o "$PLUGINCTL_BIN" ./cmd/pluginctl
+        if [[ $? -ne 0 ]]; then
+            echo -e "${RED}Failed to build pluginctl${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✓ pluginctl built${NC}"
+    fi
+}
+
+plugin_dev_cmd() {
+    local subcmd="$1"
+    local name="$2"
+    
+    case "$subcmd" in
+        validate)
+            [[ -z "$name" ]] && { echo -e "${RED}Usage: $0 plugin validate <name>${NC}"; exit 1; }
+            ensure_pluginctl
+            local plugin_dir="plugins/$name"
+            if [[ ! -d "$plugin_dir" ]]; then
+                echo -e "${RED}Plugin directory not found: $plugin_dir${NC}"
+                exit 1
+            fi
+            "$PLUGINCTL_BIN" validate "$plugin_dir"
+            ;;
+        init)
+            [[ -z "$name" ]] && { echo -e "${RED}Usage: $0 plugin init <name>${NC}"; exit 1; }
+            plugin_init "$name"
+            ;;
+        *)
+            echo -e "${RED}Unknown plugin subcommand: $subcmd${NC}"
+            echo "Available subcommands: validate, init"
+            exit 1
+            ;;
+    esac
+}
+
+plugin_init() {
+    local name="$1"
+    local target_dir="plugins/$name"
+    local template_dir="plugins/_template/go"
+    
+    # Validate name
+    if ! [[ "$name" =~ ^[a-z][a-z0-9-]*[a-z0-9]$ ]]; then
+        echo -e "${RED}Invalid plugin name: $name${NC}"
+        echo "Name must: start with letter, use lowercase a-z, 0-9, hyphen only"
+        exit 1
+    fi
+    
+    if [[ -d "$target_dir" ]]; then
+        echo -e "${RED}Plugin directory already exists: $target_dir${NC}"
+        exit 1
+    fi
+    
+    if [[ ! -d "$template_dir" ]]; then
+        echo -e "${RED}Template directory not found: $template_dir${NC}"
+        exit 1
+    fi
+    
+    echo "Creating plugin: $name"
+    
+    # Copy template
+    cp -r "$template_dir" "$target_dir"
+    
+    # Replace placeholders in manifest.json
+    sed -i "s/my-plugin/$name/g" "$target_dir/manifest.json"
+    sed -i "s/My Plugin/${name^}/g" "$target_dir/manifest.json"
+    
+    # Replace in go.mod
+    sed -i "s/plugin-template/plugin-$name/g" "$target_dir/go.mod"
+    
+    # Replace in main.go
+    sed -i "s/my-plugin/$name/g" "$target_dir/main.go"
+    sed -i "s/My Plugin/${name^}/g" "$target_dir/main.go"
+    
+    echo -e "${GREEN}✓ Plugin initialized: $target_dir${NC}"
+    echo ""
+    echo "Next steps:"
+    echo "  1. cd $target_dir"
+    echo "  2. Edit manifest.json (metadata, permissions, etc.)"
+    echo "  3. Edit main.go (add your plugin logic)"
+    echo "  4. ./opskernel.sh plugin validate $name"
+    echo "  5. ./opskernel.sh plugin-build $name"
+}
+
+# ============================================================================
 # ============================================================================
 # Entry Point
 # ============================================================================
@@ -924,10 +1031,11 @@ check_docker
 
 if [[ $# -gt 0 ]]; then
     # CLI mode
-    cli_mode "$1" "$2"
+    cli_mode "$1" "$2" "$3"
 else
     # Interactive mode
     UI_MODE=1
     check_whiptail
     main_menu
 fi
+

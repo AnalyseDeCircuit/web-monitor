@@ -109,6 +109,7 @@ func SetupRouterV2(pluginManager *plugin.ManagerV2) *Router {
 
 		// API endpoints
 		router.mux.HandleFunc("/api/plugins/list", ph.HandleList)
+		router.mux.HandleFunc("/api/plugins/refresh", ph.HandleRefresh) // Passive refresh (re-scan plugins directory)
 		router.mux.HandleFunc("/api/plugins/action", ph.HandleAction)
 		router.mux.HandleFunc("/api/plugins/enable", ph.HandleEnable)
 		router.mux.HandleFunc("/api/plugins/disable", ph.HandleDisable)

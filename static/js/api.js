@@ -10,14 +10,41 @@ let dockerImageSort = { column: 'created', direction: 'desc' };
 let serviceSort = { column: 'unit', direction: 'asc' };
 
 // Plugins
-async function loadPlugins() {
+
+/**
+ * Load plugins list
+ * @param {boolean} refresh - If true, re-scan plugins directory (passive refresh)
+ */
+async function loadPlugins(refresh = false) {
     try {
-        const response = await fetch('/api/plugins/list');
+        const url = refresh ? '/api/plugins/list?refresh=true' : '/api/plugins/list';
+        const response = await fetch(url);
         if (!response.ok) return [];
         return await response.json();
     } catch (e) {
         console.error("Failed to load plugins", e);
         return [];
+    }
+}
+
+/**
+ * Refresh plugin registry (re-scan plugins directory)
+ * @returns {Promise<{success: boolean, count: number, error?: string}>} Result with plugin count
+ */
+async function refreshPluginRegistry() {
+    try {
+        const response = await fetch('/api/plugins/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            return { success: false, error: data.error || 'Unknown error' };
+        }
+        return { success: true, count: data.count || 0 };
+    } catch (e) {
+        console.error("Failed to refresh plugin registry", e);
+        return { success: false, error: e.message };
     }
 }
 

@@ -106,6 +106,7 @@ func NewPluginHandlers(manager *plugin.ManagerV2) *PluginHandlers {
 }
 
 // HandleList returns the list of plugins (GET /api/plugins/list)
+// Supports passive refresh via ?refresh=true query parameter.
 func (h *PluginHandlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -116,6 +117,14 @@ func (h *PluginHandlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	_, role, ok := requireAuth(w, r)
 	if !ok {
 		return
+	}
+
+	// Passive refresh: re-scan plugins directory if requested
+	if r.URL.Query().Get("refresh") == "true" {
+		if err := h.manager.RefreshRegistry(); err != nil {
+			fmt.Printf("Warning: Failed to refresh plugin registry: %v\n", err)
+			// Continue anyway - show stale data rather than error
+		}
 	}
 
 	plugins := h.manager.ListPluginsForRole(role)
@@ -179,6 +188,41 @@ func (h *PluginHandlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// HandleRefresh refreshes the plugin registry (POST /api/plugins/refresh)
+// This implements passive reload - scans the directory for new/changed plugins.
+func (h *PluginHandlers) HandleRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Auth check (Admin only)
+	username, role, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if role != "admin" {
+		writePluginError(w, http.StatusForbidden, "forbidden", "Admin access required", false, nil)
+		return
+	}
+
+	if err := h.manager.RefreshRegistry(); err != nil {
+		writePluginError(w, http.StatusInternalServerError, "internal_error", err.Error(), true, nil)
+		return
+	}
+
+	// Get count of plugins after refresh
+	plugins := h.manager.ListPlugins()
+	count := len(plugins)
+
+	logs.LogOperation(username, "plugin_refresh", fmt.Sprintf("registry refreshed, %d plugins found", count), clientIP(r))
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "ok",
+		"message": "Plugin registry refreshed",
+		"count":   count,
+	})
 }
 
 // HandleAction handles plugin enable/disable (POST /api/plugins/action)
